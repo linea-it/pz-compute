@@ -9,3 +9,9 @@ The `rail-estimate` program is the main standalone script used to
 compute the PZ tables. The script accepts an input file containing raw
 data and outputs the estimated photo-z values as a probability
 distribution.
+
+## install-pz-rail
+A trivial script to install RAIL in an environment with the conda package
+manager. The script should be used by having an installed conda with a
+preconfigured and active environment and then calling it to install all
+the dependencies and RAIL.
