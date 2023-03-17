@@ -45,3 +45,8 @@ Preprocessing is done as efficiently as possible and memory usage is limited
 even with arbitrarily large files. The resulting output files are a set
 of parquet files, which are expected to be much smaller than the
 original file and suitable to use with the pz-rail algorithms.
+
+## Scheduler examples
+The  [scheduler_examples](/scheduler_examples) directory contains examples
+showing how to execute independent parallel tasks with the help of some
+scheduler.  Currently, there are examples for 2 schedulers: HTCondor and Slurm.
