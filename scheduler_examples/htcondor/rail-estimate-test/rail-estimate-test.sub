@@ -1,0 +1,13 @@
+request_cpus = 1
+request_memory = 500
+should_transfer_files = IF_NEEDED
+when_to_transfer_output = ON_EXIT
+getenv = true
+
+executable = rail-estimate-test.sh
+arguments = input/test-$(Process).hdf5 output/output-$(Process).hdf5
+output = log/rail-estimate-test-$(Process).out
+error = log/rail-estimate-test-$(Process).err
+log = rail-estimate-test.log
+
+queue 10

@@ -1,0 +1,8 @@
+#!/bin/sh
+#SBATCH --time=10
+#SBATCH -p cpu_dev
+#SBATCH -n 1
+#SBATCH -J RAIL-estimate-test
+date +"%F %H:%M:%S.%N Starting job..."
+srun -l rail-estimate-test.sh
+date +"%F %H:%M:%S.%N Job finished."
