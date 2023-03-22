@@ -62,3 +62,9 @@ utilities are available:
   command on a specific condor slot.
 - `parquet-count-rows`: count the total number of rows in a set of
   parquet files without loading all data in memory.
+
+## Performance analysis
+The [performance](/performance) directory contains performance analysis
+scripts for the schedulers and cluster. Currently, there's one script
+that parses the HTCondor log file and outputs the minimum and maximum
+execution time of each host in the cluster.
