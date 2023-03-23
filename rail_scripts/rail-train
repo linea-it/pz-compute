@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+'''Train photo-z algorithms with reference data.
+
+Usage:
+    rail-train [options] [--] <input> [<output>]
+    rail-train -h | --help
+    rail-train --version
+
+Options:
+    -h --help   Show help text.
+    --version   Show version.
+    -a <name>, --algorithm=<name>  Select estimation algorithm
+                                   [default: fzboost].
+    -b <bins>, --bins=<bins>       Set number of bins (columns) in the resulting
+                                   tables [default: 301].
+    -g <group>, --group=<group>    For HDF5 input, sets the group name (section)
+                                   where input data is stored [default: ]
+    --column-template=<template>   Set the names of the input columns
+                                   [default: mag_{band}]
+    --column-template-error=<template-error>  Set the names of the input error
+                                              columns [default: magerr_{band}]
+
+
+Available algorithms: bpz, fzboost
+
+The generated output file contains the resulting trained state and is in Python
+pickle format. The default output name is "estimator_<algorithm>.pkl".'''
+
+from collections import namedtuple
+from os.path import splitext
+
+from docopt import docopt
+
+from rail_scripts import ESTIMATOR_CONFIGURATION_TEMPLATE, VERSION_TEXT, \
+        abort, error, create_column_mapping_dict, info
+
+DEFAULT_ESTIMATOR = 'fzboost'
+
+Configuration = namedtuple('Configuration', ('input', 'output', 'estimator',
+                                             'num_bins', 'hdf5_group',
+                                             'column_template',
+                                             'column_template_error'))
+Context = namedtuple('Context', ('input', 'trainer'))
+
+def parse_cmdline():
+    args = docopt(__doc__, version=VERSION_TEXT)
+
+    estimator = args['--algorithm']
+    hdf5_group = args['--group']
+    column_template = args['--column-template']
+    column_template_error = args['--column-template-error']
+    output = args['<output>'] or ESTIMATOR_CONFIGURATION_TEMPLATE % estimator
+
+    try:
+        num_bins = int(args['--bins'])
+    except ValueError:
+        error('Invalid number of bins: %s' % args['--bins'])
+        abort()
+
+    info('Estimator algorithm: %s' % estimator)
+    info('Bins: %d' % num_bins)
+    info('HDF5 group name: \"%s\"' % hdf5_group)
+    info('Column template for magnitude data: \"%s\"' % column_template)
+    info('Column template for error data: \"%s\"' % column_template_error)
+
+    return Configuration(input=args['<input>'], output=output,
+                         estimator=estimator, num_bins=num_bins,
+                         hdf5_group=hdf5_group, column_template=column_template,
+                         column_template_error=column_template_error)
+
+def load_slow_modules(estimator):
+    global DEF_MAGLIMS, DS, TableHandle, Trainer, RailStage
+
+    from rail.core.common_params import lsst_def_maglims as DEF_MAGLIMS
+    from rail.core.data import TableHandle
+    from rail.core.stage import RailStage
+
+    if estimator == 'bpz':
+        from rail.estimation.algos.bpz_lite import Inform_BPZ_lite as Trainer
+    elif estimator == 'fzboost':
+        from rail.estimation.algos.flexzboost import Inform_FZBoost as Trainer
+    else:
+        raise ValueError('Invalid estimator identifier: %s' % estimator)
+
+    DS = RailStage.data_store
+
+def setup_trainer(output, column_template, column_template_error, hdf5_group='',
+                  num_bins=301):
+    column_info = create_column_mapping_dict(
+            column_template, column_template_error, DEF_MAGLIMS)
+
+    trainer = Trainer.make_stage(
+            name='train', model=output, hdf5_groupname=hdf5_group,
+            nzbins=num_bins, **column_info)
+
+    return trainer
+
+def load_input(file_name):
+    # Work around KeyError exception in DS.read_file() by standardizing the
+    # exception to ValueError.
+    if not splitext(file_name)[1]:
+        raise ValueError('Input file name extension is required but missing: '
+                         '"%s"' % file_name)
+
+    input = DS.read_file('input', TableHandle, file_name)
+    return input
+
+def setup(cfg):
+    info('Starting setup.')
+
+    try:
+        info('Loading all program modules...')
+        load_slow_modules(cfg.estimator)
+    except ImportError as e:
+        error('Error: unable to import program modules.')
+        error(e)
+        abort()
+
+    try:
+        info('Configuring trainer...')
+        trainer = setup_trainer(cfg.output, cfg.column_template,
+                                cfg.column_template_error, cfg.hdf5_group,
+                                cfg.num_bins)
+    except OSError as e:
+        error('Error: unable to load trainer configuration file.')
+        error(e)
+        abort()
+
+    try:
+        info('Loading input file...')
+        input = load_input(cfg.input)
+    except ValueError as e:
+        error('Error: input file name is invalid.')
+        error(e)
+        abort()
+    except OSError as e:
+        error('Error: unable to load input file.')
+        error(e)
+        abort()
+
+    info('Setup done.')
+
+    return Context(input=input, trainer=trainer)
+
+def train(cfg, ctx):
+    info('Starting training.')
+    ctx.trainer.inform(ctx.input)
+    info('Training done.')
+
+def cleanup(cfg, ctx):
+    pass
+
+def main():
+    cfg = parse_cmdline()
+    ctx = setup(cfg)
+    train(cfg, ctx)
+    cleanup(cfg, ctx)
+
+if __name__ == '__main__': main()
