@@ -1,0 +1,9 @@
+executable = multi-rail-estimate.py
+arguments = 10000 1450 $(Process)
+log = multi-rail-estimate.log
+output = log/multi-rail-estimate-$(Process).out
+error = log/multi-rail-estimate-$(Process).err
+should_transfer_files = IF_NEEDED
+when_to_transfer_output = ON_EXIT
+getenv = True
+queue 1450
