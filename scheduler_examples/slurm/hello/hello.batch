@@ -1,0 +1,9 @@
+#!/bin/sh
+#SBATCH --time=1
+#SBATCH -p cpu_dev
+#SBATCH -J Hello
+#SBATCH --mem=8
+
+echo $SLURM_JOB_NODELIST
+
+srun -l ./hello.sh
