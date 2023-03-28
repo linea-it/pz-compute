@@ -1,0 +1,10 @@
+#!/bin/sh
+#SBATCH --time=1
+#SBATCH -p cpu_dev
+#SBATCH -J Hello
+#SBATCH --mem=800
+
+echo args: $@
+echo ntasks: $SLURM_NTASKS
+
+srun -l ./multi-hello.py $@
