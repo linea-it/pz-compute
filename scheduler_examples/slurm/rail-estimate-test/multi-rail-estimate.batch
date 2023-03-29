@@ -1,0 +1,10 @@
+#!/bin/sh
+#SBATCH --time=59:00
+#SBATCH -p cpu_small
+#SBATCH -J RAIL-test
+#SBATCH -N 1-4
+
+echo args: $@
+echo ntasks: $SLURM_NTASKS
+
+srun -l ./multi-rail-estimate.py $@
