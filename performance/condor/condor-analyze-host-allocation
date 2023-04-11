@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+
+from collections import namedtuple
+from datetime import datetime, timedelta
+from os.path import splitext
+from re import search
+from sys import argv, stdin, stderr
+
+DATETIME = \
+    r'(\d{2}/\d{2} \d{2}:\d{2}:\d{2})'
+
+JOB_EXECUTING = \
+    r'[.](\d+)[.].*(\d{2}/\d{2} \d{2}:\d{2}:\d{2}) Job executing.*<(.*):'
+
+JOB_TERMINATED = \
+    r'[.](\d+)[.].*(\d{2}/\d{2} \d{2}:\d{2}:\d{2}) Job terminated'
+
+# Group IDs from the job regular expressions
+JOB_RE_TASK = 1
+JOB_RE_DATE = 2
+JOB_RE_HOST = 3
+
+EXECUTING = 1
+TERMINATED = 2
+IMAGE_EXT = '.png'
+
+EventInfo = namedtuple('EventInfo', ('events', 'all_hosts', 'datetime_begin',
+                                     'datetime_end'))
+AllocInfo = namedtuple('AllocInfo', ('alloc_data', 'max_active', 'max_per_host',
+                                     'dead_time_data'))
+Event = namedtuple('Event', ('time', 'task_id', 'host', 'event_id'))
+
+class Allocation:
+    def __init__(self, time, slots=0, duration=timedelta(0)):
+        self.time = time
+        self.slots = slots
+        self.duration = duration
+
+def color(v, max_):
+    # Full allocation gets its own color
+    if v >= (max_-1):
+        return (0.2, 0.2, 0.9)
+
+    # Near full allocation
+    if v > (max_-10):
+        return ((v-10)/(max_-10), (v-10)/(max_*2), 0.1)
+
+    # Not full
+    return (1.0-v/max_, 1.0-v/max_, 1.0-v/max_)
+
+def color_dead(v, max_):
+    if v <= 1:
+        return (1.0, 1.0, 1.0)
+
+    if v < max_ / 10:
+        return (0.9, 0.5-4*v/max_, 0.5-4*v/max_)
+
+    return (0.7-v*0.7/max_, 0.7-v*0.7/max_, 0.7-v*0.7/max_)
+
+def collect_allocation_events(file):
+    events = []
+    task_map = {}
+    all_hosts = set()
+    datetime_begin = None
+    datetime_end = None
+
+    for line in file:
+        m = search(DATETIME, line)
+        if m:
+            if not datetime_begin:
+                datetime_begin = datetime.strptime(m.group(0), '%m/%d %X')
+            else:
+                datetime_end = datetime.strptime(m.group(0), '%m/%d %X')
+
+        m = search(JOB_EXECUTING, line)
+        if m:
+            task_id = int(m.group(JOB_RE_TASK))
+            time_begin = datetime.strptime(m.group(JOB_RE_DATE), '%m/%d %X')
+            host = m.group(JOB_RE_HOST)
+            task_map[task_id] = host
+            all_hosts.add(host)
+            events.append(Event(time_begin, task_id, host, EXECUTING))
+
+        m = search(JOB_TERMINATED, line)
+        if m:
+            task_id = int(m.group(JOB_RE_TASK))
+            time_end = datetime.strptime(m.group(JOB_RE_DATE), '%m/%d %X')
+            host = task_map[task_id]
+            duration = time_end - time_begin
+            events.append(Event(time_end, task_id, host, TERMINATED))
+
+    events.sort()
+
+    return EventInfo(events, all_hosts, datetime_begin, datetime_end)
+
+def analyze_allocation(evinfo):
+    num_active = 0
+    max_active = 0
+    per_host = {h: 0 for h in evinfo.all_hosts}
+    max_per_host = {h: 0 for h in evinfo.all_hosts}
+    host_alloc_data = {h: [Allocation(evinfo.datetime_begin)] for h in
+                       evinfo.all_hosts}
+    total_alloc_data = [Allocation(evinfo.datetime_begin)]
+
+    for ev in evinfo.events:
+        if ev.event_id == EXECUTING:
+            num_active += 1
+            max_active = max(max_active, num_active)
+            per_host[ev.host] += 1
+            max_per_host[ev.host] = max(max_per_host[ev.host],
+                                        per_host[ev.host])
+        else:
+            num_active -= 1
+            per_host[ev.host] -= 1
+
+        total_alloc_data[-1].duration = ev.time - total_alloc_data[-1].time
+        total_alloc_data.append(Allocation(ev.time, num_active))
+
+        a = host_alloc_data[ev.host]
+        a[-1].duration = ev.time - a[-1].time
+        a.append(Allocation(ev.time, per_host[ev.host]))
+
+    try:
+        assert(num_active == 0)
+        assert(num == 0 for num in per_host.values())
+    except AssertionError:
+        raise RuntimeError('Incomplete log data detected.')
+
+    # Remove first and last dummy entries and zero duration entries, coalesce
+    # durations with same amount of active threads
+    trimmed_host_alloc_data = {}
+    for host, allocations in host_alloc_data.items():
+        trimmed_host_alloc_data[host] = []
+        last = Allocation(evinfo.datetime_begin, -1)
+        for a in allocations[1:-1]:
+            if a.duration == timedelta(0):
+                continue
+
+            if last.slots == a.slots:
+                assert(last.time + last.duration == a.time)
+                last.duration += a.duration
+            else:
+                trimmed_host_alloc_data[host].append(a)
+                last = a
+
+    # Invert active thread count to find out dead time data
+    dead_time_data = []
+    last = Allocation(evinfo.datetime_begin, -1)
+    for a in total_alloc_data:
+        if a.duration == timedelta(0):
+            continue
+
+        num_inactive = max_active - a.slots
+
+        if last.slots == num_inactive:
+            assert(last.time + last.duration == a.time)
+            last.duration += a.duration
+        else:
+            dead_time_data.append(Allocation(a.time, num_inactive, a.duration))
+            last = dead_time_data[-1]
+
+    print('Time     Duration # Idle')
+    for dead in dead_time_data:
+        print('%-8s %-8s %d' % (dead.time - evinfo.datetime_begin,
+                                dead.duration, dead.slots))
+
+    return AllocInfo(trimmed_host_alloc_data, max_active, max_per_host,
+                     dead_time_data)
+
+def plot_allocations(log_name, evinfo, ainfo):
+    rows = []
+    cols = []
+    durations = []
+    colors = []
+
+    for dead in ainfo.dead_time_data:
+        rows.append('dead time')
+        cols.append((dead.time - evinfo.datetime_begin).total_seconds())
+        durations.append(dead.duration.total_seconds())
+        colors.append(color_dead(dead.slots, ainfo.max_active))
+
+    for host, allocations in ainfo.alloc_data.items():
+        for a in allocations:
+            rows.append(host)
+            cols.append((a.time - evinfo.datetime_begin).total_seconds())
+            durations.append(a.duration.total_seconds())
+            colors.append(color(a.slots, ainfo.max_per_host[host]))
+
+    print('Plotting...', file=stderr)
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(1, figsize=(20, 10))
+    ax.barh(rows, durations, left=cols, color=colors)
+    fname = splitext(log_name)[0] + IMAGE_EXT
+    plt.savefig(fname)
+    print('Done.', file=stderr)
+
+def get_condor_log_file():
+    if len(argv) > 1:
+        return open(argv[1]), argv[1]
+    else:
+        return stdin, 'condor-log'
+
+def main():
+    f, fname = get_condor_log_file()
+    evinfo = collect_allocation_events(f)
+    ainfo = analyze_allocation(evinfo)
+    plot_allocations(fname, evinfo, ainfo)
+
+if __name__ == '__main__': main()

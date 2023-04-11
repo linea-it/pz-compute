@@ -67,4 +67,6 @@ utilities are available:
 The [performance](/performance) directory contains performance analysis
 scripts for the schedulers and cluster. Currently, there's one script
 that parses the HTCondor log file and outputs the minimum and maximum
-execution time of each host in the cluster.
+execution time of each host in the cluster and one script that analyzes
+the HTCondor log file and plots a time chart showing allocated time and
+dead time caused by the HTCondor scheduler.
