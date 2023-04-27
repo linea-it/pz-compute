@@ -1,0 +1,22 @@
+# rail-condor-preprocess - Generate skinny tables from large input
+# Example usage:
+#
+#     $ condor_submit rail-condor-preprocess.sub slots=896 \
+#             input_dir=input output_dir=output files="input/**"
+#
+# Note: the input directory appears twice: in the input_dir parameter
+# and in the files glob expression.
+
+executable = rail-condor-preprocess.py
+log = rail-condor-preprocess.log
+input_dir1 = $(input_dir:input)
+output_dir1 = $(output_dir:generated)
+files1 = $(files:input/1/missing.parquet)
+slots1 = $(slots:896)
+output = log/rail-condor-preprocess-$(Process).out
+error = log/rail-condor-preprocess-$(Process).err
+should_transfer_files = IF_NEEDED
+when_to_transfer_output = ON_EXIT
+getenv = True
+rank = -slotid
+queue arguments from ./condor-partition-file-list.py $(slots1) $(input_dir1) $(output_dir1) $(files1) |
