@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+'''Preprocess raw data so that it's standardized for rail-estimate.
+
+Usage:
+    rail-preprocess-parquet [options] [--] <input> <output_dir>
+    rail-preprocess-parquet -h | --help
+    rail-preprocess-parquet --version
+
+Options:
+    -h, --help                Show help text.
+    --version                 Show version.
+    -f, --flux                Force using the flux columns instead of the
+                              magnitude ones.
+    -r <rows>, --rows=<rows>  Maximum number of rows per output file
+                              [default: 200000].
+    --output-template=<template>      Set the names of the output files
+                                      [default: {fname}-part{idx}{ext}].
+    --flux-template=<template>        Set the names of the flux columns
+                                      [default: {band}_gaap1p0Flux].
+    --flux-error-template=<template>  Set the names of the flux error columns
+                                      [default: {band}_gaap1p0FluxErr].
+    --mag-template=<template>         Set the names of the magnitude columns
+                                      [default: mag_{band}].
+    --mag-error-template=<template>   Set the names of the magnitude error
+                                      columns [default: magerr_{band}].
+
+
+The following preprocessing steps are currently implemented:
+- Limit number of rows per file to a maximum, splitting the file if necessary.
+- Generate files only with magnitude columns.
+- Convert infinite values to NaN.
+- Convert flux to magnitude.
+
+Preprocessing is done as efficiently as possible and memory usage is limited
+even with arbitrarily large files.
+'''
+
+from collections import namedtuple
+from math import ceil
+from os.path import basename, join, splitext
+from sys import argv, stderr
+
+from docopt import docopt
+from numpy import log, log10, multiply, nan_to_num, nan
+from pyarrow import ArrowInvalid
+from pyarrow.parquet import ParquetFile, write_table
+
+from rail_scripts import DEFAULT_BANDS, VERSION_TEXT, abort, error, info, \
+        map_bands
+
+BUFFER_SIZE = 1<<20
+DEFAULT_EXT = '.pq'
+
+Configuration = namedtuple('Configuration',
+                           ('input', 'output_dir', 'flux_template',
+                            'flux_error_template', 'mag_template',
+                            'mag_error_template', 'rows', 'flux',
+                            'output_template'))
+
+def parse_cmdline():
+    args = docopt(__doc__, version=VERSION_TEXT)
+
+    try:
+        rows = args['--rows']
+        rows = int(rows)
+    except ValueError:
+        error('Invalid number of rows: %s' % rows)
+        abort()
+
+    return Configuration(input=args['<input>'], output_dir=args['<output_dir>'],
+                         flux_template=args['--flux-template'],
+                         flux_error_template=args['--flux-error-template'],
+                         mag_template=args['--mag-template'],
+                         mag_error_template=args['--mag-error-template'],
+                         rows=rows, flux=args['--flux'],
+                         output_template=args['--output-template'])
+
+def build_output_name(file_name, index, template, extension=DEFAULT_EXT):
+    file_name = basename(file_name)
+    split = splitext(file_name)
+    ext = extension or split[1]
+
+    return template.format(fname=split[0], idx=index, ext=ext)
+
+def parquet_check_column_presence(parquet, flux, mag):
+    columns = frozenset(parquet.schema.names)
+    has_magnitude = all(col in columns for col in mag)
+    has_flux = all(col in columns for col in flux)
+
+    return has_magnitude, has_flux
+
+def choose_columns(has_magnitude, has_flux, flux, flux_columns,
+                   flux_error_columns, mag_columns, mag_error_columns):
+    if not has_magnitude and not has_flux:
+        error('Error: magnitude or flux columns not found.')
+        abort()
+
+    if has_magnitude:
+        info('Magnitude columns are present.')
+
+    if has_flux:
+        info('Flux columns are present.')
+
+    if flux:
+        info('Force usage of flux columns requested.')
+        if not has_flux:
+            error('Error: flux columns not found.')
+            abort()
+        has_magnitude = False
+
+    if has_magnitude:
+        info('Magnitude columns will be used.')
+        return False, mag_columns, mag_error_columns
+
+    info('Flux columns will be used.')
+    return True, flux_columns, flux_error_columns
+
+def flux_to_mag(table, values, errors):
+    MAG_CONV = log(10)*0.4
+    MAG_OFFSET = 31.4
+
+    for val, err in zip(values, errors):
+        table[err] = table[err] / (table[val]*MAG_CONV)
+
+    for val in values:
+        table[val] = -2.5*log10(table[val]) + MAG_OFFSET
+
+def convert_to_magnitude(table, flux_columns, flux_error_columns, mag_columns,
+                         mag_error_columns):
+    all_flux = flux_columns + flux_error_columns
+    all_mag = mag_columns + mag_error_columns
+    flux_mag_map = {flux: mag for (flux, mag) in zip(all_flux, all_mag)}
+    table.rename(flux_mag_map, axis=1, inplace=True, errors='raise')
+    flux_to_mag(table, mag_columns, mag_error_columns)
+
+def preprocess(cfg):
+    bands = DEFAULT_BANDS
+    flux_columns = map_bands(cfg.flux_template, bands)
+    flux_error_columns = map_bands(cfg.flux_error_template, bands)
+    mag_columns = map_bands(cfg.mag_template, bands)
+    mag_error_columns = map_bands(cfg.mag_error_template, bands)
+
+    try:
+        # Note: specifying a buffer size seems to be necessary for
+        # iter_batches() to efficiently deal with allocations smaller than 1 row
+        # group. The resulting memory allocation reduction, however, is unclear.
+        with ParquetFile(cfg.input, buffer_size=BUFFER_SIZE) as f:
+            total_rows = f.metadata.num_rows
+
+            if total_rows < 1:
+                print(input_)
+                return
+
+            has_magnitude, has_flux = parquet_check_column_presence(
+                    f, flux_columns + flux_error_columns,
+                    mag_columns + mag_error_columns)
+            use_flux, value_columns, error_columns = choose_columns(
+                    has_magnitude, has_flux, cfg.flux, flux_columns,
+                    flux_error_columns, mag_columns, mag_error_columns)
+            all_columns = value_columns + error_columns
+
+            num_files = ceil(total_rows/cfg.rows)
+            batch_size = ceil(total_rows/num_files)
+            batches = f.iter_batches(batch_size=batch_size, columns=all_columns,
+                                     use_pandas_metadata=True)
+
+            for i, block in enumerate(batches):
+                table = block.to_pandas()
+
+                for col in all_columns:
+                    nan_to_num(table[col], copy=False, nan=nan, posinf=nan,
+                               neginf=nan)
+
+                if use_flux:
+                    convert_to_magnitude(table, flux_columns,
+                                         flux_error_columns, mag_columns,
+                                         mag_error_columns)
+
+                output_name = build_output_name(cfg.input, i,
+                                                cfg.output_template)
+                output_path = join(cfg.output_dir, output_name)
+                table.to_parquet(output_path)
+                print(output_path)
+
+    except ArrowInvalid as e:
+        print('Error: parquet library returned error.', file=stderr)
+        print(e, file=stderr)
+        raise SystemExit(1)
+    except OSError as e:
+        print('Error: %s' % e, file=stderr)
+        raise SystemExit(1)
+
+def main():
+    cfg = parse_cmdline()
+    preprocess(cfg)
+
+if __name__ == '__main__': main()

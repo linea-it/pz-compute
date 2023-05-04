@@ -28,3 +28,20 @@ A trivial script to install RAIL in an environment with the conda package
 manager. The script should be used by having an installed conda with a
 preconfigured and active environment and then calling it to install all
 the dependencies and RAIL.
+
+## rail-preprocess-parquet
+The `rail-preprocess-parquet` script may be used to read input data
+in parquet format containing either flux or magnitude data and transform
+it to a standard format. It does the following preprocessing steps:
+
+- Limit number of rows per file to a maximum, splitting the file if necessary.
+- Generate files only with magnitude columns.
+- Convert infinite values to NaN.
+- Convert flux to magnitude.
+
+Note: dereddening is not implemented yet.
+
+Preprocessing is done as efficiently as possible and memory usage is limited
+even with arbitrarily large files. The resulting output files are a set
+of parquet files, which are expected to be much smaller than the
+original file and suitable to use with the pz-rail algorithms.

@@ -6,6 +6,7 @@ from xdg.BaseDirectory import load_data_paths
 VERSION_TEXT = 'rail_scripts 0.1.0'
 PROJECT_NAME = 'rail_scripts'
 ESTIMATOR_CONFIGURATION_TEMPLATE = 'estimator_%s.pkl'
+DEFAULT_BANDS = ('u', 'g', 'r', 'i', 'z', 'y')
 
 def abort():
     raise SystemExit(1)
@@ -32,12 +33,15 @@ def find_estimator_configuration(model_name):
 
     return find_data_file(model_file)
 
+def map_bands(template, bands):
+    return [template.format(band=band) for band in bands]
+
 def create_column_mapping_dict(column_template, column_template_error,
                                def_maglimits):
-    bands = ('u', 'g', 'r', 'i', 'z', 'y')
+    bands = DEFAULT_BANDS
 
-    band_names = [column_template.format(band=band) for band in bands]
-    band_err_names = [column_template_error.format(band=band) for band in bands]
+    band_names = map_bands(column_template, bands)
+    band_err_names = map_bands(column_template_error, bands)
     ref_band = column_template.format(band='i')
 
     mag_limits = {name: def_maglimits['mag_%s_lsst' % band] for (band, name) in
