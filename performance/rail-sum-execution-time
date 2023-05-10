@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+
+from datetime import datetime, timedelta
+from glob import glob
+from os.path import join
+from re import search
+from sys import argv, stderr
+
+EVENT = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{6})\d*: ' \
+        r'(\S+): (.*)'
+STARTING = 1
+FINISHED = 2
+EVENT_MAP = {'Starting': STARTING, 'Finished': FINISHED}
+
+class EventInfo:
+    def __init__(self, start, event, description, finish, duration):
+        self.start = start
+        self.event = event
+        self.description = description
+        self.finish = finish
+        self.duration = duration
+
+def process_file(fname, file_event_map):
+    with open(fname) as f:
+        for line in f:
+            m = search(EVENT, line)
+            if m:
+                datetime_ = datetime.fromisoformat(m.group(1))
+                event = EVENT_MAP[m.group(2)]
+                description = m.group(3)
+
+                if event == STARTING and not fname in file_event_map:
+                    file_event_map[fname] = EventInfo(
+                            datetime_, event, description, datetime_,
+                            timedelta())
+                elif event == FINISHED:
+                    assert fname in file_event_map
+                    evinfo = file_event_map[fname]
+
+                    if evinfo.description != description:
+                        continue
+
+                    evinfo.finish = datetime_
+                    evinfo.duration = datetime_ - evinfo.start
+                    assert(evinfo.duration.total_seconds() > 0)
+
+def main():
+    if len(argv) < 2:
+        print('Usage: %s <log-files>...' % argv[0], file=stderr)
+        raise SystemExit(1)
+
+    patterns = argv[1:]
+
+    file_event_map = {}
+    for pattern in patterns:
+        for fname in glob(pattern):
+            process_file(fname, file_event_map)
+
+    for name, evinfo in file_event_map.items():
+        print(name, evinfo.start, evinfo.description, evinfo.finish, evinfo.duration)
+
+    durations = (evinfo.duration for evinfo in file_event_map.values())
+    total_duration = sum(durations, timedelta())
+    print(total_duration.total_seconds())
+
+if __name__ == '__main__': main()
