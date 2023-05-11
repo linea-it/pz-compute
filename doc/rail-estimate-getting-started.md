@@ -20,6 +20,12 @@ replicated here:
     pip install pz-rail-bpz
     pip install pz-rail-flexzboost
 
+The training and estimation scripts also have a set of package
+dependencies, like `docopt` and `pyxdg`. The dependencies are listed in
+the requirements file and can be installed with the following command:
+
+    pip install -r requirements.txt
+
 Both the "flexzboost" and "bpz" estimation algorithms are supported and
 require pre-trained data. Pre-trained data must be stored in files
 called `estimator_fzboost.pkl` and `estimator_bpz.pkl`. The program will
