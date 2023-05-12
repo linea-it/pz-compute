@@ -1,0 +1,8 @@
+error = log/test-cluster-$(Process).err
+executable = ./test-cluster.sh
+getenv = true
+log = test-cluster.log
+output = log/test-cluster-$(Process).out
+should_transfer_files = IF_NEEDED
+when_to_transfer_output = ON_EXIT
+queue 896
