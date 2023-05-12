@@ -58,3 +58,5 @@ utilities are available:
 
 - `condor-dispatch`: a trivial script for HTCondor that allows executing
   an arbitrary command in the cluster, possibly on multiple slots.
+- `condor-slot-run`: a trivial script for HTCondor to run a single
+  command on a specific condor slot.
