@@ -50,3 +50,11 @@ original file and suitable to use with the pz-rail algorithms.
 The  [scheduler_examples](/scheduler_examples) directory contains examples
 showing how to execute independent parallel tasks with the help of some
 scheduler.  Currently, there are examples for 2 schedulers: HTCondor and Slurm.
+
+## Utilities
+The [utils](/utils) directory contains simple tools to help using the
+cluster, the RAIL libraries and relevant data formats. The following
+utilities are available:
+
+- `condor-dispatch`: a trivial script for HTCondor that allows executing
+  an arbitrary command in the cluster, possibly on multiple slots.

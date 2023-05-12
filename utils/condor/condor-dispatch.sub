@@ -1,0 +1,14 @@
+# condor-dispatch - run a command on the cluster
+# Usage:
+#     $ condor_submit condor-dispatch.sub exec=<path> \
+#             args="<arguments>..." -queue <numslots>
+
+executable = $(exec)
+arguments = $(args)
+log = condor-dispatch.log
+output = log/condor-dispatch.out
+error = log/condor-dispatch.err
+should_transfer_files = IF_NEEDED
+when_to_transfer_output = ON_EXIT
+getenv = True
+rank = -slotid
