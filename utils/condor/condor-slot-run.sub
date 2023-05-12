@@ -1,0 +1,15 @@
+# condor-slot-run - run a command on a specific slot
+# Usage:
+#    $ condor_submit condor-slot-run.sub exec=<path> \
+#            args="<arguments>..." slotname=<slotid>@<hostname>
+
+executable = $(exec)
+arguments = $(args)
+log = condor-slot-run.log
+output = log/condor-slot-run-$(slotname).out
+error = log/condor-slot-run-$(slotname).err
+should_transfer_files = IF_NEEDED
+when_to_transfer_output = ON_EXIT
+getenv = True
+requirements = TARGET.Name == "$(slotname)"
+queue
