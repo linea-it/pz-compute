@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+
+from sys import argv
+
+from pyarrow.parquet import ParquetFile
+
+sum = 0
+
+for i in argv[1:]:
+    with ParquetFile(i) as f:
+        print(i, f.metadata.num_rows)
+        sum += f.metadata.num_rows
+
+print(sum)
