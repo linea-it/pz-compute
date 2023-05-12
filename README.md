@@ -75,3 +75,6 @@ following:
   time and dead time caused by the HTCondor scheduler.
 - `rail-sum-execution-time`: calculates the total live time (excluding
   the scheduler dead time) of the rail scripts executed on some cluster.
+- `benchmark-write-speed`: a set of scripts for HTCondor to test the
+  cluster's I/O write speed by writing random data from each condor
+  slot.

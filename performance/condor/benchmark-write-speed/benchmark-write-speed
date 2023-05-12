@@ -1,0 +1,29 @@
+#!/bin/sh
+date +"%F %H:%M:%S.%N: Starting: write speed test." 1>&2
+
+# Condor delays starting new jobs if running jobs start doing too much I/O, so
+# wait until all jobs have time to start.
+sleep 30
+
+if [ -z "$1" ];
+then
+	echo "Usage: $0 <output-dir>" 1>&2
+	exit 1
+fi
+
+mkdir -p "$1"
+
+for j in $(seq 2)
+do
+	for i in $(seq 12)
+	do
+		dd if=/dev/urandom of="$1/$i" bs=4M count=20
+	done
+
+	for i in $(seq 12)
+	do
+		rm "$1/$i"
+	done
+done
+
+date +"%F %H:%M:%S.%N: Finished: write speed test." 1>&2
