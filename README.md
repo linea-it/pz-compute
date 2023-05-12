@@ -60,3 +60,5 @@ utilities are available:
   an arbitrary command in the cluster, possibly on multiple slots.
 - `condor-slot-run`: a trivial script for HTCondor to run a single
   command on a specific condor slot.
+- `parquet-count-rows`: count the total number of rows in a set of
+  parquet files without loading all data in memory.
