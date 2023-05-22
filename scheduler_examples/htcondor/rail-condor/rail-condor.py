@@ -9,6 +9,8 @@ from subprocess import run
 from sys import argv, stderr
 from time import sleep
 
+RAIL_ESTIMATE = 'rail-estimate'
+
 @contextmanager
 def now(msg):
     print ('%s: Starting: %s' % (datetime.now(), msg), file=stderr, flush=True)
@@ -29,15 +31,15 @@ def main():
 
         assert(len(paths) % 2 == 0)
 
-        rail_estimate = which('rail-estimate')
+        rail_estimate = which(RAIL_ESTIMATE)
         if not rail_estimate:
-            raise RuntimeError('Program rail-estimate not found.')
+            raise RuntimeError('Program %s not found.' % RAIL_ESTIMATE)
 
         for input, output in pairwise(paths):
             with now('create output directory id=%d' % procid):
                 makedirs(dirname(output), exist_ok=True)
 
-            with now('run rail-estimate %s %s id=%d' % (input, output, procid)):
+            with now('run %s %s %s id=%d' % (RAIL_ESTIMATE, input, output, procid)):
                 run([rail_estimate, '--bins=301', input, output], check=True)
 
 if __name__ == '__main__': main()
