@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+#SBATCH --time=1:00:00
+#SBATCH -p cpu_small
+#SBATCH -J dispatch
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=24
+#SBATCH --mem-per-cpu=2000
+#SBATCH --exclude=sdumont5041
+
+# This script allows running parallel commands on the cluster with varying
+# arguments. It's more or less equivalent to calling "srun -n", while
+# accepting parameters varying with each allocated task.
+#
+# Usage:
+#     $ sbatch [<sbatch_options>...] slurm-dispatch.batch \
+#             <num_tasks> <cmd> [<args>...]
+#
+# The program arguments accept the {task_id} template that is replaced by
+# a unique value per task.
+#
+# Example usage:
+#
+#     # Create 40 copies of the dataset/ref directory.
+#     $ sbatch -N10 --ntasks-per-node=4 slurm-dispatch.batch 40 \
+#             cp -R dataset/ref dataset/{task_id}
+#
+# This script is somewhat "Unix intensive" because it tries to exploit support
+# for dynamic scheduling on slurm. It calls "srun" in parallel and keeps calling
+# it while previous "srun" executions finish, keeping the cluster's task slots
+# fully allocated until all files are processed.
+
+from contextlib import contextmanager
+from datetime import datetime
+from glob import glob
+from os import P_NOWAIT, WNOHANG, environ, kill, makedirs, spawnv, waitpid
+from os.path import dirname, getsize, isfile, join, relpath
+from shutil import which
+from signal import SIGHUP
+from sys import argv, stderr
+from time import sleep
+
+SRUN = 'srun'
+ARGS = [SRUN, '-n1', '-N1', '--exact']
+PROG = 'slurm-dispatch'
+
+def srun(cmd):
+    args = ARGS + list(cmd)
+
+    return spawnv(P_NOWAIT, SRUN_PATH, args)
+
+# Best effort cleanup on abnormal program termination
+def try_kill_children(children):
+    for pid in children:
+        kill(pid, SIGHUP)
+
+    sleep(1)
+
+    for _ in children:
+        waitpid(-1, WNOHANG)
+
+@contextmanager
+def now(msg):
+    print ('%s: Starting: %s' % (datetime.now(), msg), file=stderr, flush=True)
+    yield
+    print ('%s: Finished: %s' % (datetime.now(), msg), file=stderr, flush=True)
+
+def parallel(tasks, slots, args):
+    children = {}
+    task_id = 0
+
+    while len(children) > 0 or task_id < tasks:
+        while len(children) < slots and task_id < tasks:
+            formatted_args = [a.format(task_id=task_id) for a in args]
+            cmd_text = ' '.join(formatted_args)
+
+            print ('%s: Starting: %s id=%d' % (datetime.now(), cmd_text,
+                   task_id), file=stderr, flush=True)
+
+            pid = srun(formatted_args)
+            children[pid] = (cmd_text, task_id)
+            task_id += 1
+
+        if len(children) > 0:
+            pid, ret = waitpid(-1, 0)
+            cmd_text, child_task_id = children.pop(pid)
+
+            if ret != 0:
+                try_kill_children(children)
+                raise RuntimeError('Error: child process returned failure (%d).'
+                        % ret)
+
+            print ('%s: Finished: %s id=%d' % (datetime.now(), cmd_text,
+                   child_task_id), file=stderr, flush=True)
+
+def main():
+    with now(PROG):
+        slots = int(environ['SLURM_NTASKS'])
+        print('Number of slots: %d' % (slots), file=stderr, flush=True)
+        tasks = int(argv[1])
+        args = argv[2:]
+
+        with now('finding program paths'):
+            srun = which(SRUN)
+            if not srun:
+                raise RuntimeError('Unable to find %s program.' % SRUN)
+            print(srun, file=stderr, flush=True)
+
+            global SRUN_PATH
+
+            SRUN_PATH = srun
+
+        parallel(tasks, slots, args)
+
+if __name__ == '__main__': main()
