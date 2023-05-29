@@ -7,7 +7,7 @@ from sys import argv
 
 from tables_io import read
 
-MAX_TASKS = 22222
+MAX_TASKS = 12000
 
 CMD_TEXT = '''$(Process) %s'''
 OUTPUT_DIR = 'output'
