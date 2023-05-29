@@ -69,7 +69,8 @@ def main():
             sleep(30)
 
         procid = int(argv[1])
-        paths = argv[2:]
+        algorithm = argv[2]
+        paths = argv[3:]
 
         assert(len(paths) % 2 == 0)
 
@@ -82,6 +83,7 @@ def main():
                 makedirs(dirname(output), exist_ok=True)
 
             with now('run %s %s %s id=%d' % (RAIL_ESTIMATE, input, output, procid)):
-                run([rail_estimate, '--bins=301', input, output], check=True)
+                run([rail_estimate, '--bins=301', '--algorithm=%s' % algorithm,
+                    input, output], check=True)
 
 if __name__ == '__main__': main()
