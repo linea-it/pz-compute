@@ -1,0 +1,5 @@
+Host sd
+        HostName <URL LOGIN SDUMONT>
+        User <YOUR USERNAME>
+        ServerAliveInterval 60
+
