@@ -29,7 +29,7 @@ HostName <URL LOGIN SDUMONT>
 User <YOUR USERNAME>
 ```
 
-Replace <GATEWAY>, <VPN ID>, <VPN SECRET>, <URL LOGIN SDUMONT> and <YOUR USERNAME> with the actual values from your LNCC VPN configuration.
+Replace `<GATEWAY>`, `<VPN ID>`, `<VPN SECRET>`, `<URL LOGIN SDUMONT>` and `<YOUR USERNAME>` with the actual values from your LNCC VPN configuration.
 
 
 ### 2. Build the Docker Image
