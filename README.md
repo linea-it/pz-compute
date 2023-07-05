@@ -63,6 +63,23 @@ utilities are available:
 - `parquet-count-rows`: count the total number of rows in a set of
   parquet files without loading all data in memory.
 
+
+## Performance analysis
+The [performance](/performance) directory contains performance analysis
+scripts for the schedulers and cluster. The available scripts are the
+following:
+
+- `condor-analyze-host-performance`: parses the HTCondor log file and
+  outputs the minimum and maximum execution time of each host in the
+  cluster.
+- `condor-analyze-host-allocation`: plots a time chart showing allocated
+  time and dead time caused by the HTCondor scheduler.
+- `rail-sum-execution-time`: calculates the total live time (excluding
+  the scheduler dead time) of the rail scripts executed on some cluster.
+- `benchmark-write-speed`: a set of scripts for HTCondor to test the
+  cluster's I/O write speed by writing random data from each condor
+  slot.
+
 ## LNCC
 The directory [LNCC](/LNCC) contains information and configuration
 necessary or useful when connecting to the LNCC supercomputer Santos

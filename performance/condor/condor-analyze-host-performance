@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+
+from collections import namedtuple
+from datetime import datetime
+from re import search
+from sys import argv, stdin
+
+JOB_EXECUTING = \
+        r'[.](\d+)[.].*(\d{2}/\d{2} \d{2}:\d{2}:\d{2}) Job executing.*<(.*):'
+
+JOB_TERMINATED = \
+    r'[.](\d+)[.].*(\d{2}/\d{2} \d{2}:\d{2}:\d{2}) Job terminated'
+
+TaskData = namedtuple('TaskData', ('task_id', 'time_begin', 'time_end',
+                                   'time_diff'))
+
+def sorted_host_key(host_data):
+    host, tasks = host_data
+    return min(tasks, key=lambda x: x.time_diff).time_diff
+
+def main():
+    if len(argv) > 1:
+        f = open(argv[1])
+    else:
+        f = stdin
+
+    task_map = {}
+    host_map = {}
+
+    for line in f:
+        m = search(JOB_EXECUTING, line)
+        if m:
+            task_id = int(m.group(1))
+            time_begin = datetime.strptime(m.group(2), '%m/%d %X')
+            host = m.group(3)
+            task_map[task_id] = (time_begin, host)
+
+        m = search(JOB_TERMINATED, line)
+        if m:
+            task_id = int(m.group(1))
+            time_end = datetime.strptime(m.group(2), '%m/%d %X')
+            time_begin = task_map[task_id][0]
+            host = task_map[task_id][1]
+            time_diff = time_end - time_begin
+
+            host_map.setdefault(host, [])
+            t = TaskData(task_id, time_begin, time_end, time_diff)
+            host_map[host].append(t)
+
+    host_list = [(k, v) for (k, v) in host_map.items()]
+    host_list.sort(key=sorted_host_key)
+
+    print('Host\t\tmin\t\tmax\t\ttasks')
+    for host, tasks in host_list:
+        print('%s \t' % host, end='')
+        max_time = max(tasks, key=lambda t: t.time_diff).time_diff
+        min_time = min(tasks, key=lambda t: t.time_diff).time_diff
+        print('%s \t%s\t\t%d' % (min_time, max_time, len(tasks)))
+
+if __name__ == '__main__': main()

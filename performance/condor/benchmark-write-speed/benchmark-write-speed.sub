@@ -1,0 +1,10 @@
+executable = benchmark-write-speed
+log = benchmark-write-speed.log
+output_dir1 = $(output_dir:speed_test)
+arguments = $(output_dir1)/$(Process)
+output = $(output_dir1)/$(Process).out
+error = $(output_dir1)/$(Process).err
+should_transfer_files = IF_NEEDED
+when_to_transfer_output = ON_EXIT
+rank = -slotid
+queue 896
