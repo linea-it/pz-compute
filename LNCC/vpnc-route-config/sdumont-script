@@ -1,0 +1,23 @@
+#!/bin/sh
+# vpnc helper script to setup routes.
+
+# Note: the 2 routes defined here supposedly represent the correct
+# routes inside the LNCC network. The routes should be reviewed from
+# time to time.
+CISCO_SPLIT_INC=2
+CISCO_SPLIT_INC_0_ADDR=146.134.0.0
+CISCO_SPLIT_INC_0_MASK=255.255.240.0
+CISCO_SPLIT_INC_0_MASKLEN=20
+CISCO_SPLIT_INC_0_PROTOCOL=0
+CISCO_SPLIT_INC_0_SPORT=0
+CISCO_SPLIT_INC_0_DPORT=0
+CISCO_SPLIT_INC_1_ADDR=146.134.128.0
+CISCO_SPLIT_INC_1_MASK=255.255.128.0
+CISCO_SPLIT_INC_1_MASKLEN=17
+CISCO_SPLIT_INC_1_PROTOCOL=0
+CISCO_SPLIT_INC_1_SPORT=0
+CISCO_SPLIT_INC_1_DPORT=0
+
+# Delegate to the built-in vpnc default script (change the path for your
+# distribution, if necessary).
+source /etc/vpnc/vpnc-script

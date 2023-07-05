@@ -63,6 +63,7 @@ utilities are available:
 - `parquet-count-rows`: count the total number of rows in a set of
   parquet files without loading all data in memory.
 
+
 ## Performance analysis
 The [performance](/performance) directory contains performance analysis
 scripts for the schedulers and cluster. The available scripts are the
@@ -78,3 +79,13 @@ following:
 - `benchmark-write-speed`: a set of scripts for HTCondor to test the
   cluster's I/O write speed by writing random data from each condor
   slot.
+
+## LNCC
+The directory [LNCC](/LNCC) contains information and configuration
+necessary or useful when connecting to the LNCC supercomputer Santos
+Dumont. Currently there are sample configuration files for configuring
+the VPN routes required when connecting to the Cisco VPN server using
+the [vpnc](https://github.com/streambinder/vpnc) client program. The
+manually specified routes can be used to avoid configuring the default
+route through the LNCC VPN, which would route all Internet traffic to
+it.
