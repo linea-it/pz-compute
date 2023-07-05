@@ -34,10 +34,20 @@ Replace `<GATEWAY>`, `<VPN ID>`, `<VPN SECRET>`, `<URL LOGIN SDUMONT>` and `<YOU
 
 ### 2. Build the Docker Image
 
-Run the following command to build the Docker image:
+If your linux User IDentifier number is the usual 1000, run the following command to build the Docker image:
 
 ```bash
 docker build -t vpn-lncc .
+```
+Else, e.g., if it is 1001, run instead: 
+
+```bash
+docker build -t vpn-lncc --build-arg="UID=1001" --build-arg="GID=1001" .
+```
+If you are not sure about your User IDentifier number, check it with: 
+
+```bash
+ls -ltra  /home/nonroot/.ssh/  
 ```
 
 ### 3. Run the VPN Container
