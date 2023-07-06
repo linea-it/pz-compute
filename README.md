@@ -28,7 +28,7 @@ with `rail-estimate` for any production data that is expected to have
 the same behavior as the reference file.
 
 ## install-pz-rail
-A trivial script to install RAIL in an environment with the conda package
+The `install-pz-rail` is a trivial script to install RAIL in an environment with the conda package
 manager. The script should be used by having an installed conda with a
 preconfigured and active environment and then calling it to install all
 the dependencies and RAIL.
@@ -39,11 +39,11 @@ in parquet format containing either flux or magnitude data and transform
 it to a standard format. It does the following preprocessing steps:
 
 - Limit number of rows per file to a maximum, splitting the file if necessary.
-- Generate files only with magnitude columns.
+- Generate files only with necessary columns (magnitudes and errors).
 - Convert infinite values to NaN.
 - Convert flux to magnitude.
 
-Note: dereddening is not implemented yet.
+Note: dereddening is not implemented yet (TDB).
 
 Preprocessing is done as efficiently as possible and memory usage is limited
 even with arbitrarily large files. The resulting output files are a set
