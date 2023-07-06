@@ -1,8 +1,12 @@
 # pz-compute (under construction)
 
-Pipeline to compute photo-zs using public codes for large volumes of data in the Brazilian's LSST IDAC infrastructure. 
+Pipeline to compute photo-zs using public codes for large volumes of data in the Brazilian LSST IDAC infrastructure. 
 
 This repository contains software developed and delivered as part of the in-kind contribution program BRA-LIN, from LIneA to the Rubin Observatory's LSST. An overview of this and other contributions is available [here](https://linea-it.github.io/pz-lsst-inkind-doc/).  
+
+### Acknowledgement
+The pipeline was built using modules from the DESC's open-source project RAIL. Please find the original code and documentation on [RAIL's GitHub repository](https://github.com/LSSTDESC/RAIL) and on [Read The Docs](https://lsstdescrail.readthedocs.io/) page.   
+
 
 ## rail-estimate
 The `rail-estimate` program is the main standalone script used to
@@ -63,6 +67,7 @@ utilities are available:
 - `parquet-count-rows`: count the total number of rows in a set of
   parquet files without loading all data in memory.
 
+
 ## Performance analysis
 The [performance](/performance) directory contains performance analysis
 scripts for the schedulers and cluster. The available scripts are the
@@ -78,3 +83,13 @@ following:
 - `benchmark-write-speed`: a set of scripts for HTCondor to test the
   cluster's I/O write speed by writing random data from each condor
   slot.
+
+## LNCC
+The directory [LNCC](/LNCC) contains information and configuration
+necessary or useful when connecting to the LNCC supercomputer Santos
+Dumont. Currently there are sample configuration files for configuring
+the VPN routes required when connecting to the Cisco VPN server using
+the [vpnc](https://github.com/streambinder/vpnc) client program. The
+manually specified routes can be used to avoid configuring the default
+route through the LNCC VPN, which would route all Internet traffic to
+it.
