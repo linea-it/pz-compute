@@ -7,11 +7,12 @@ from sys import argv
 
 from tables_io import read
 
-MAX_TASKS = 22222
+MAX_TASKS = 12000
 
 CMD_TEXT = '''$(Process) %s'''
 OUTPUT_DIR = 'output'
 INPUT_DIR = 'input'
+ALGORITHM = 'fzboost'
 
 def get_input_files(input_dir):
     cwd = getcwd()
@@ -30,13 +31,13 @@ def get_num_tasks(num_files):
 
     return num_tasks
 
-def generate_tasks(files, num_tasks, input_dir, output_dir):
+def generate_tasks(files, num_tasks, input_dir, output_dir, algorithm):
     num_files = len(files)
     for t in range(num_tasks):
         ini = t * num_files // num_tasks
         end = (t+1) * num_files // num_tasks
 
-        args = []
+        args = [algorithm]
         for path in files[ini:end]:
             args.append(join(input_dir, path))
             args.append(join(output_dir, path))
@@ -54,12 +55,17 @@ def parse_cmdline():
     else:
         output_dir = OUTPUT_DIR
 
-    return input_dir, output_dir
+    if len(argv) > 3:
+        algorithm = argv[3]
+    else:
+        algorithm = ALGORITHM
+
+    return input_dir, output_dir, algorithm
 
 def main():
-    input_dir, output_dir = parse_cmdline()
+    input_dir, output_dir, algorithm = parse_cmdline()
     files = get_input_files(input_dir)
     num_tasks = get_num_tasks(len(files))
-    generate_tasks(files, num_tasks, input_dir, output_dir)
+    generate_tasks(files, num_tasks, input_dir, output_dir, algorithm)
 
 if __name__ == '__main__': main()

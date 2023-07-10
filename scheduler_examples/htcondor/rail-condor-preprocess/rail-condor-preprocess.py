@@ -24,8 +24,8 @@ def main():
     procid = int(argv[1])
 
     with now('rail-condor-preprocess: host=%s slot=%s id=%d' % (h, s, procid)):
-        with now('sleep for 10 seconds (condor warm-up)'):
-            sleep(10)
+        with now('sleep for 30 seconds (condor warm-up)'):
+            sleep(30)
 
         input_dir = argv[2]
         output_base_dir = argv[3]
@@ -47,6 +47,6 @@ def main():
             o = output_dir
 
             with now('run %s %s %s id=%d' % (PREPROCESS, f, o, procid)):
-                run([preprocess, '--rows=200000', f, o], check=True)
+                run([preprocess, '--rows=150000', f, o], check=True)
 
 if __name__ == '__main__': main()
