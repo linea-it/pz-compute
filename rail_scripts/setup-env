@@ -1,0 +1,4 @@
+export CONDAPATH=/home/julia/miniconda3/bin/
+source $CONDAPATH/activate
+conda activate rail
+export PATH=$PATH:/home/julia/github/pz-compute/rail_scripts/ 
