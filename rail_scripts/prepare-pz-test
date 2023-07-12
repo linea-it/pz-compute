@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-'''Prepare enviroment, directories and ancillary file to run rail-estimate
+'''Prepare directories and ancillary files to run rail-estimate
    script in parallel using HTCondor. 
    Dispatch jobs to the cluster.
    Write provenance info in text file. 
@@ -46,11 +46,8 @@ def main():
                         help = "Integer or short string without blank spaces") 
     parser.add_argument("-c", "--comment", 
                         help = "Comment with process description (enclosed in quotes)") 
-    # TBD: get paths from user configuration
-    #parser.add_argument("-pd", "--pz_compute_dir", 
-    #                    help = "Full path to pz-compute repository")
-    #parser.add_argument("-cd", "--conda_dir", 
-    #                    help = "Full path to rail conda env bin directory")
+    parser.add_argument("-d", "--pz_compute_dir", 
+                        help = "Full path to pz-compute repository")
                                 
 
     # Read arguments from command line
@@ -89,25 +86,21 @@ def main():
     os.system(f'mkdir {process_dir}/output')
    
 
-    #if not args.pz_compute_dir:
-    #    args.pz_compute_dir = input("Please type the full path to the pz-compute repository:") 
-    #if not args.conda_dir:
-    #    args.conda_dir = input("Please type the full path to the bin directory of rail env in conda:") 
+    if not args.pz_compute_dir:
+        #args.pz_compute_dir = input("Please type the full path to the pz-compute repository:") 
+        pzdir = '/home/julia/github/pz-compute/'
+        args.pz_compute_dir = pzdir
 
-    #os.system(f'export CONDAPATH={args.conda_dir}') 
-    #os.system('source $CONDAPATH/activate') 
-    #os.system(f'conda activate rail')
-    #os.system(f'export PATH=$PATH:{args.pz_compute_dir}/rail_scripts/')
+    os.system(f'ln -s {pzdir}/scheduler_examples/htcondor/rail-condor/rail-condor.py ./{args.process_id}/rail-condor.py')
+    os.system(f'ln -s {pzdir}/scheduler_examples/htcondor/rail-condor/rail-condor-configure-paths.py ./{args.process_id}/rail-condor-configure-paths.py')
+    os.system(f'cp {pzdir}/scheduler_examples/htcondor/rail-condor/rail-condor.sub ./{args.process_id}/rail-condor.sub')
 
-    args.pz_compute_dir = '/home/julia/github/pz-compute/'
-
-    os.system(f'ln -s {args.pz_compute_dir}/scheduler_examples/htcondor/rail-condor/rail-condor.py ./{args.process_id}/rail-condor.py')
-    os.system(f'ln -s {args.pz_compute_dir}/scheduler_examples/htcondor/rail-condor/rail-condor-configure-paths.py ./{args.process_id}/rail-condor-configure-paths.py')
-    os.system(f'cp {args.pz_compute_dir}/scheduler_examples/htcondor/rail-condor/rail-condor.sub ./{args.process_id}/rail-condor.sub')
+    # WRITE JSON FILE   
+    # FINISH WITH INSRUCTIONS TO RUN CONDOR SUBMIT 
 
     print('Running Photo-z Compute...' )
     print()
-    
+    # RAIL-CONDOR WILL UPDATE JSON FILE 
     start = datetime.now() # t.time() 
     print(f'Started at: {start}')
 
