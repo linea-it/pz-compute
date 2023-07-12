@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+
+'''Run rail-estimate script in parallel using htcondor 
+   based on the submission file rail-condor.sub. 
+
+   A template is available in pz-compute repository, at: 
+   scheduler_examples/htcondor/rail-condor/rail-condor.sub
+   
+
+    Usage:
+    
+    run-pz-compute [options] [--] <procecc_id> <comment> 
+    run-pz-compute -h | --help
+    run-pz-compute --version
+                            
+    Options:
+    -h --help   Show help text.
+    --version   Show version.
+    -p <process id>, --process_id=<process id> Integer or short string without 
+                                               blank spaces to identify the 
+                                               process. There is no warranty of
+                                               uniqueness, only if in the same 
+                                               parent directory. If empty, 
+                                               attribute test_x where x is 
+                                               incremental integer.
+    -c <comment>, --comment=<comment> Long string (enclosed in quotes) with the 
+                                      process description. (optional) 
+
+'''
+
+
+from os.path import splitext
+from sys import argv
+from rail_scripts import info 
+
+
+
+def main(): 
+
+    process_id = 'test_0'
+    info('Running Photo-z Compute...' )
+    
+    
+    info('Done!' )
+    info(f'Provenance info saved in process_{process_id}.json' )
+
+
+
+
+
+if __name__ == '__main__': main()
+
+
