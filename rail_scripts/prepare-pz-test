@@ -2,30 +2,29 @@
 
 '''Prepare directories and ancillary files to run rail-estimate
    script in parallel using HTCondor. 
-   Dispatch jobs to the cluster.
    Write provenance info in text file. 
 
-    Usage:
-    
-    run-pz-compute [options] [--] <process_id> <comment> <pz-compute-dir>
-    run-pz-compute -h | --help
-    run-pz-compute --version
-                            
-    Options:
-    -h --help   Show help text.
-    --version   Show version.
-    -p <process id>, --process_id=<process id> Integer or short string without 
+   Usage:
+   
+   run-pz-compute [options] [--] <process_id> <comment> <pz-compute-dir>
+   run-pz-compute -h | --help
+   run-pz-compute --version
+                           
+   Options:
+   -h --help   Show help text.
+   --version   Show version.
+   -p <process id>, --process_id=<process id> Integer or short string without 
                                                blank spaces to identify the 
                                                process. There is no warranty of
                                                uniqueness, only if in the same 
                                                parent directory. If empty, 
                                                attribute test_x where x is 
                                                incremental integer.
-    -c <comment>, --comment=<comment> Long string (enclosed in quotes) with the 
-                                      process description. (optional) 
+   -c <comment>, --comment=<comment> Long string (enclosed in quotes) with the 
+                                     process description. (optional) 
 
-    -d <pz-compute directory>, --pz_compute_dir=<pz-compute directory> Full path
-                                                       to pz-compute repository.
+   -d <pz-compute directory>, --pz_compute_dir=<pz-compute directory> Full path
+                                                      to pz-compute repository.
                                       
 '''
 
@@ -59,17 +58,15 @@ def main():
             print('Aborting...')
             quit()
     else: 
-        old_process_ids = glob.glob('test_*') 
+        old_process_ids = glob.glob('test_pz_compute_*') 
         if len(old_process_ids)>0:
-            print('found duplicate') 
             old_n = []
             for old_process_id in old_process_ids:
                 old_n.append(int(old_process_id.split('_')[-1]))
             max_id = max(old_n)
-            args.process_id = 'test_'+ str(max_id+1)
+            args.process_id = 'test_pz_compute_'+ str(max_id+1)
         else:
-            print('didnt find duplicate')
-            args.process_id = 'test_0'
+            args.process_id = 'test_pz_compute_0'
 
 
     print('---------------------------------------')
@@ -98,6 +95,7 @@ def main():
     # WRITE JSON FILE   
     # FINISH WITH INSRUCTIONS TO RUN CONDOR SUBMIT 
 
+    print(f'Process info saved in process_{args.process_id}.json' )
     print('Running Photo-z Compute...' )
     print()
     # RAIL-CONDOR WILL UPDATE JSON FILE 
@@ -125,7 +123,6 @@ def main():
     print('')
     print(f'Total duration: {duration}')
     print('')
-    print(f'Process info saved in process_{args.process_id}.json' )
 
 
 
