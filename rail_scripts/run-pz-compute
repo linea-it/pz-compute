@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 
-'''Run rail-estimate script in parallel using htcondor 
-   based on the submission file rail-condor.sub. 
-
-   A template is available in pz-compute repository, at: 
-   scheduler_examples/htcondor/rail-condor/rail-condor.sub
-   
+'''Prepare enviroment, directories and ancillary file to run rail-estimate
+   script in parallel using HTCondor. 
+   Dispatch jobs to the cluster.
+   Write provenance info in text file. 
 
     Usage:
     
-    run-pz-compute [options] [--] <process_id> <comment> 
+    run-pz-compute [options] [--] <process_id> <comment> <pz-compute-dir>
     run-pz-compute -h | --help
     run-pz-compute --version
                             
@@ -26,31 +24,21 @@
     -c <comment>, --comment=<comment> Long string (enclosed in quotes) with the 
                                       process description. (optional) 
 
+    -d <pz-compute directory>, --pz_compute_dir=<pz-compute directory> Full path
+                                                       to pz-compute repository.
+                                      
 '''
 
 import os
 import sys
-from datetime import datetime
 import argparse
 import glob
-from rail.core.utils import RAILDIR
-#from os.path import splitext
-#from rail_scripts import print 
+from datetime import datetime
 
 
 def main(): 
     
 
-    # run setup env 
-    # create process dir 
-    # create process subdir: input, output, log 
-    # call condor_submit (run in background!)
-    # get finish time
-    # save provenance file 
-    # compute total duration 
-    # get individual machines times from log file
-    # print stats 
-    start = datetime.now() # t.time() 
     # Initialize parser
     parser = argparse.ArgumentParser()
     # Adding optional argument
@@ -58,19 +46,22 @@ def main():
                         help = "Integer or short string without blank spaces") 
     parser.add_argument("-c", "--comment", 
                         help = "Comment with process description (enclosed in quotes)") 
+    # TBD: get paths from user configuration
+    #parser.add_argument("-pd", "--pz_compute_dir", 
+    #                    help = "Full path to pz-compute repository")
+    #parser.add_argument("-cd", "--conda_dir", 
+    #                    help = "Full path to rail conda env bin directory")
+                                
 
     # Read arguments from command line
     args = parser.parse_args()
-    print('here0')
     if args.process_id:
-        print('here1')
         duplicate_id = os.path.isdir(args.process_id)
         if duplicate_id:
             print(f'Process {args.process_id} already exists!')
             print('Aborting...')
             quit()
     else: 
-        print('here2')
         old_process_ids = glob.glob('test_*') 
         if len(old_process_ids)>0:
             print('found duplicate') 
@@ -82,9 +73,10 @@ def main():
         else:
             print('didnt find duplicate')
             args.process_id = 'test_0'
+
+
     print('---------------------------------------')
     print(f'Process ID: {args.process_id}')
-    print(f'Started at: {start}')
     if not args.comment:
         args.comment = ' --- ' 
     print(f'Description: {args.comment}')
@@ -95,13 +87,43 @@ def main():
     os.system(f'mkdir {process_dir}/log')
     os.system(f'mkdir {process_dir}/input')
     os.system(f'mkdir {process_dir}/output')
-       
+   
+
+    #if not args.pz_compute_dir:
+    #    args.pz_compute_dir = input("Please type the full path to the pz-compute repository:") 
+    #if not args.conda_dir:
+    #    args.conda_dir = input("Please type the full path to the bin directory of rail env in conda:") 
+
+    #os.system(f'export CONDAPATH={args.conda_dir}') 
+    #os.system('source $CONDAPATH/activate') 
+    #os.system(f'conda activate rail')
+    #os.system(f'export PATH=$PATH:{args.pz_compute_dir}/rail_scripts/')
+
+    args.pz_compute_dir = '/home/julia/github/pz-compute/'
+
+    os.system(f'ln -s {args.pz_compute_dir}/scheduler_examples/htcondor/rail-condor/rail-condor.py ./{args.process_id}/rail-condor.py')
+    os.system(f'ln -s {args.pz_compute_dir}/scheduler_examples/htcondor/rail-condor/rail-condor-configure-paths.py ./{args.process_id}/rail-condor-configure-paths.py')
+    os.system(f'cp {args.pz_compute_dir}/scheduler_examples/htcondor/rail-condor/rail-condor.sub ./{args.process_id}/rail-condor.sub')
+
     print('Running Photo-z Compute...' )
-    os.system('source setup-env')
-    #rail_dir = os.getenv('RAILDIR')
-    print(RAILDIR) #rail_dir)
+    print()
+    
+    start = datetime.now() # t.time() 
+    print(f'Started at: {start}')
 
-
+    quit()
+    
+    
+    # TBD
+    # call condor_submit (run in background!)
+    
+    # get finish time
+    # save provenance file 
+    # compute total duration 
+    # get individual machines times from log file
+    # print stats 
+    # send notification email 
+    
 
     print('Done!' )
     finish = datetime.now() # t.time() 
