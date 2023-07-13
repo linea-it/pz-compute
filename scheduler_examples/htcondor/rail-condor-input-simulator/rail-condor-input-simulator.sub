@@ -1,0 +1,11 @@
+executable = rail-condor-input-simulator.py
+log = rail-condor.log
+input_dir1 = $(input_dir:input)
+output_dir1 = $(output_dir:output)
+output = log/rail-condor-$(Process).out
+error = log/rail-condor-$(Process).err
+should_transfer_files = IF_NEEDED
+when_to_transfer_output = ON_EXIT
+getenv = True
+rank = -slotid
+queue arguments from ./rail-condor-simulate-paths.py $(input_dir1) $(output_dir1) $(algorithm:fzboost) $(loop:3) |
