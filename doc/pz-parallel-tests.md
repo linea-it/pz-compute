@@ -5,12 +5,15 @@ The `rail-condor` is a simple command-line script to submit `rail-estimate` proc
 ## Setup environment
 
 ``` bash
-export CONDAPATH=<full path to conda bin directory> 
+export CONDAPATH=<path> # full path to conda bin directory 
 source $CONDAPATH/activate 
 conda activate [rail env]  
-export RAILPATH=<full path to RAIL repository clone directory>
-export PZPATH=<full path to pz-compute repository clone directory>
-export PATH=$PATH:$PZPATH
+export RAILPATH=<path> # full path to RAIL repository clone directory
+export RAILSCRIPTS=<path> # <full path to rail_scrips in pz-compute repository
+export HTCONDOR=<path> # <full path to scheduler_examples/htcondor in pz-compute repository
+export PATH=$PATH:$RAILPATH
+export PATH=$PATH:$RAILSCRIPTS
+export PATH=$PATH:$HTCONDOR
 ```
 
 ## Prepare process directory
@@ -19,9 +22,9 @@ The command `prepare-pz-test` creates and fills in the subdirectories tree neces
 
 Usage:
 ``` bash
-   run-pz-compute [options] [--] <process_id> <comment> 
-   run-pz-compute -h | --help
-   run-pz-compute --version
+   prepare-pz-test [options] [--] <process_id> <comment> 
+   prepare-pz-test -h | --help
+   prepare-pz-test --version
                            
    Options:
    -h --help   Show help text.

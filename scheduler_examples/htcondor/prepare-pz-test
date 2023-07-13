@@ -27,6 +27,7 @@
 
 import os
 import sys
+import shutil 
 import argparse
 import glob
 import yaml
@@ -76,31 +77,50 @@ def main():
     print('---------------------------------------')
     print()
     process_dir = f'./{args.process_id}' 
-    os.system(f'mkdir {process_dir}')
-    os.system(f'mkdir {process_dir}/log')
-    os.system(f'mkdir {process_dir}/input')
-    os.system(f'mkdir {process_dir}/output')
-   
+    try:
+        os.makedirs(f'{process_dir}', exist_ok = True)
+        os.makedirs(f'{process_dir}/log', exist_ok = True)
+        os.makedirs(f'{process_dir}/input', exist_ok = True)
+        os.makedirs(f'{process_dir}/output', exist_ok = True)
+    except OSError as error:
+        print('Failed to create directories')
 
-    pz_dir = os.environ['PZPATH']
-    os.system(f'ln -s {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor.py ./{args.process_id}/rail-condor.py')
-    os.system(f'ln -s {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor-configure-paths.py ./{args.process_id}/rail-condor-configure-paths.py')
-    os.system(f'cp {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor.sub ./{args.process_id}/rail-condor.sub')
-
+    htcondor_dir = os.environ['HTCONDOR']
+    # os.symlink(src, dst, target_is_directory = False, *, dir_fd = None)
+    os.symlink(f'{htcondor_dir}/rail-condor/rail-condor.py', 
+               f'./{args.process_id}/rail-condor.py')
+    os.symlink(f'{htcondor_dir}/rail-condor/rail-condor-configure-paths.py',
+               f'./{args.process_id}/rail-condor-configure-paths.py')
+    os.symlink(f'{htcondor_dir}/rail-condor-input-simulator/rail-condor-input-simulator.py', 
+               f'./{args.process_id}/rail-condor-input-simulator.py')
+    os.symlink(f'{htcondor_dir}/rail-condor-input-simulator/rail-condor-simulate-paths.py', 
+               f'./{args.process_id}/rail-condor-simulate-paths.py')
+    #shutil.copy(source_path, destination_path)
+    shutil.copy(f'{htcondor_dir}/rail-condor/rail-condor.sub', 
+                f'./{args.process_id}/rail-condor.sub')
+    shutil.copy(f'{htcondor_dir}/rail-condor-input-simulator/rail-condor-input-simulator.sub', 
+                f'./{args.process_id}/rail-condor-input-simulator.sub')
     
-    # WRITE info FILE  
+    # Write info file  
     yaml_file = f'./{args.process_id}/process_info.yaml'
-    with open(yaml_file, 'w') as file:
-        file.write(yaml.dump(vars(args)))
+    
+    with open(yaml_file, 'w') as outfile:
+        yaml.dump(vars(args), outfile, default_flow_style=False)
+    
+    #with open(yaml_file, 'w') as file:
+    #    file.write(yaml.dump(vars(args)))
     print(f'Process info saved in {yaml_file}')    
     print() 
     print() 
-    print('Now, to run the photo-z estimator, excecute: ' )
+    print('Now, from inside the just created precess direcroty, run the photo-z estimator: ' )
     print() 
-    print('condor_submit rail-condor.sub ' )
+    print(f'cd ./{args.process_id}')
+    print('condor_submit rail-condor.sub') 
     print()
-    print('See the complete tutorial in doc/prepare-parallel-tests.md')
- 
+    print('Or, alternativelly: ' )
+    print() 
+    print('condor_submit rail-condor-input-simulator.sub') 
+    print()
     
 
 if __name__ == '__main__': main()
