@@ -112,7 +112,7 @@ def main():
     print(f'Process info saved in {yaml_file}')    
     print() 
     print() 
-    print('Now, from inside the just created precess direcroty, run the photo-z estimator: ' )
+    print(f'Now, from inside the process directoy {args.process_id}, run the photo-z estimator: ' )
     print() 
     print(f'cd ./{args.process_id}')
     print('condor_submit rail-condor.sub') 
