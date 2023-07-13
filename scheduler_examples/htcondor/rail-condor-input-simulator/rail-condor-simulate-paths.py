@@ -12,6 +12,7 @@ MAX_TASKS = 22222
 CMD_TEXT = '''$(Process) %s'''
 OUTPUT_DIR = 'output'
 INPUT_DIR = 'input'
+ALGORITHM = 'fzboost'
 LOOP = 3
 
 def get_input_files(input_dir):
@@ -31,13 +32,13 @@ def get_num_tasks(num_files):
 
     return num_tasks
 
-def generate_tasks(files, num_tasks, input_dir, output_dir):
+def generate_tasks(files, num_tasks, input_dir, output_dir, algorithm):
     num_files = len(files)
     for t in range(num_tasks):
         ini = t * num_files // num_tasks
         end = (t+1) * num_files // num_tasks
 
-        args = []
+        args = [algorithm]
         for path in files[ini:end]:
             args.append(join(input_dir, path))
             args.append(join(output_dir, path))
@@ -56,14 +57,20 @@ def parse_cmdline():
         output_dir = OUTPUT_DIR
 
     if len(argv) > 3:
-        loop = int(argv[3])
+        algorithm = argv[3]
+    else:
+        algorithm = ALGORITHM
+
+    if len(argv) > 4:
+        loop = int(argv[4])
     else:
         loop = LOOP
 
-    return input_dir, output_dir, loop
+    return input_dir, output_dir, algorithm, loop
+
 
 def main():
-    input_dir, output_dir, loop = parse_cmdline()
+    input_dir, output_dir, algorithm, loop = parse_cmdline()
     makedirs("syminputs", exist_ok=True)
 
     for dirsim in range(loop):
@@ -73,6 +80,7 @@ def main():
         num_tasks = get_num_tasks(len(files))
         sym_output_dir = "%s/%s" % (output_dir, str(dirsim))
         makedirs(sym_output_dir, exist_ok=True)
-        generate_tasks(files, num_tasks, sym_input_dir, sym_output_dir)
+        generate_tasks(files, num_tasks, sym_input_dir, sym_output_dir, algorithm)
+
 
 if __name__ == '__main__': main()
