@@ -18,7 +18,7 @@ export PATH=$PATH:$HTCONDOR
 
 ## Prepare process directory
 
-The command `prepare-pz-test` creates and fills in the subdirectories tree necessary to run repeated tests using `rail-condor`. It attributes a Process ID to each test and copies the template of the submission file **rail-condor.sub** to the test directory. 
+The command `prepare-pz-test` creates and fills in the subdirectories tree necessary to run repeated tests using `rail-condor`. It attributes a Process ID to each test, creates the **process_info.yaml** with initial metadata, copies the template of the submission file **rail-condor.sub** to the test directory and create symbolic links to the relevant executables. 
 
 Usage:
 ``` bash
@@ -40,7 +40,7 @@ Usage:
                                      process description. (optional) 
 ``` 
 
-After running the `prepare-pz-test`, populate the **input** directory with input data files (ideally, the outputs of the pre-processing step). Alternatively, add symbolic links to files (or replace the **input** directory with a link to another directory containing the input files, keeping its name as **input**. If not using all files inside the directory, adding the link to files individually is recommended. 
+After running the `prepare-pz-test`, you have to populate the **input** directory with input data files (ideally, the outputs of the pre-processing step). Alternatively, add symbolic links to files (or replace the **input** directory with a link to another directory containing the input files, keeping its name as **input**. If not using all files inside the directory, adding the link to files individually is recommended. 
 
 
 ## Run Photo-z Training procedure
@@ -123,11 +123,11 @@ should_transfer_files = IF_NEEDED
 when_to_transfer_output = ON_EXIT
 getenv = True
 rank = -slotid
-# Requirements = (Machine == "apl11.ib0.cm.linea.gov.br")
-+RequiresWholeMachine = False
+# Requirements = (Machine == "apl11.ib0.cm.linea.gov.br") # optional, to choose the node where to run 
 queue arguments from ./rail-condor-configure-paths.py $(input_dir1) $(output_dir1) $(algorithm:fzboost) |
 ```
 
+    
 **WARNING:** Do not replace the value of "Process". It will be generated automatically by the parallelization script (not to be confused with the process ID).  
 
     
@@ -143,17 +143,26 @@ condor_submit rail-condor.sub
 Or, alternativelly: 
 
 ```bash
-condor_submit rail-condor-input-simulator.sub    
+condor_submit rail-condor-input-simulator.sub loop=n   
 ```       
     
+where n is the number of times the estimator will run for the same input data, therefore simulating a larger dataset. 
     
-## Get results and provenance info from the **process_info.txt** file 
+    
+## Get results and provenance info from the **process_info.yaml** file 
 
-After all the subprocesses are finished, the runtime statistics and relevant metadata will be available in file <process_id>_process_info.txt inside the process directory. From inside the process directory, run:
+After all the subprocesses are finished, the runtime statistics and relevant metadata will be calculated by the script `condor-analyze-host-performance`: 
+    
+```bash
+./condor-analyze-host-performance rail-condor.log
+```
+
+The results are appended in the **process_info.yaml** inside the process directory. Check it out with:
 
 ```bash
-cat process_info.txt
+cat process_info.yaml
 ``` 
+    
     
     
  
