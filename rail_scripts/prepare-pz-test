@@ -79,16 +79,13 @@ def main():
    
 
     pz_dir = os.getenv('PZPATH')
-    args.pz_compute_dir = pz_dir
-
     os.system(f'ln -s {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor.py ./{args.process_id}/rail-condor.py')
     os.system(f'ln -s {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor-configure-paths.py ./{args.process_id}/rail-condor-configure-paths.py')
     os.system(f'cp {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor.sub ./{args.process_id}/rail-condor.sub')
 
     
     # WRITE info FILE  
-    yaml_file = f'./{args.process_id}/{args.process_id}_process_info.txt'
-
+    yaml_file = f'./{args.process_id}/{args.process_id}_process_info.yaml'
     with open(yaml_file, 'w') as file:
         file.write(yaml.dump(vars(args)))
     print(f'Process info saved in {yaml_file}')    
