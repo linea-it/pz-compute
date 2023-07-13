@@ -56,6 +56,8 @@ def limit_cpus(start):
 
 def main():
     start_time = datetime.now()
+    
+    """
     slot = environ.get('_CONDOR_SLOT')
     with now('rail-condor: slot=%s' % slot):
 
@@ -88,18 +90,31 @@ def main():
             with now('run %s %s %s id=%d' % (RAIL_ESTIMATE, input, output, procid)):
                 run([rail_estimate, '--bins=301', '--algorithm=%s' % algorithm,
                     input, output], check=True)
-              
+    """          
     end_time = datetime.now()
     duration = end_time - start_time
+    
     if len(glob.glob('process_info.yaml')) > 0:    
+        
         # Open the file in append & read mode ('a+')
-        with open('process_info.yaml', "a+") as file_object:
-            file_object.write(f'start_time:{start_time}')
-            file_object.write("\n")
-            file_object.write(f'end_time:{end_time}')
-            file_object.write("\n")
-            file_object.write(f'duration:{duration}')
-            file_object.write("\n")
+        with open('process_info.yaml', "r") as old_file_object:
+            #contents = yaml.safe_load_all(file_object)
+            contents = yaml.load(old_file_object, Loader=yaml.loader.SafeLoader)
+            
+            contents['start_time'] = start_time
+            contents['end_time'] = end_time
+            contents['duration'] = duration
+        with open('process_info.yaml', "w") as new_file_object:
+            yaml.dump(contents, new_file_object)
+
+                            
+            
+            #file_object.write(f'start_time:{start_time}')
+            #file_object.write("\n")
+            #file_object.write(f'end_time:{end_time}')
+            #file_object.write("\n")
+            #file_object.write(f'duration:{duration}')
+            #file_object.write("\n")
             # TBD: 
             # get configs from submission file 
             # get individual machines times from performance script that reads log file
