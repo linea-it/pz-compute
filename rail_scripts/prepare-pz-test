@@ -30,6 +30,7 @@ import sys
 import argparse
 import glob
 import yaml
+import getpass
 from datetime import datetime
 
 
@@ -64,10 +65,13 @@ def main():
             args.process_id = 'test_pz_compute_0'
 
 
+    args.user = getpass.getuser()
+    
     print('---------------------------------------')
     print(f'Process ID: {args.process_id}')
     if not args.comment:
         args.comment = ' --- ' 
+    print(f'User: {args.user}')
     print(f'Description: {args.comment}')
     print('---------------------------------------')
     print()
@@ -78,53 +82,26 @@ def main():
     os.system(f'mkdir {process_dir}/output')
    
 
-    pz_dir = os.getenv('PZPATH')
+    pz_dir = os.environ['PZPATH']
     os.system(f'ln -s {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor.py ./{args.process_id}/rail-condor.py')
     os.system(f'ln -s {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor-configure-paths.py ./{args.process_id}/rail-condor-configure-paths.py')
     os.system(f'cp {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor.sub ./{args.process_id}/rail-condor.sub')
 
     
     # WRITE info FILE  
-    yaml_file = f'./{args.process_id}/{args.process_id}_process_info.yaml'
+    yaml_file = f'./{args.process_id}/process_info.yaml'
     with open(yaml_file, 'w') as file:
         file.write(yaml.dump(vars(args)))
     print(f'Process info saved in {yaml_file}')    
     print() 
     print() 
-    print('Now run the photo-z estimator as: ' )
+    print('Now, to run the photo-z estimator, excecute: ' )
+    print() 
     print('condor_submit rail-condor.sub ' )
     print()
     print('See the complete tutorial in doc/prepare-parallel-tests.md')
+ 
     
-    
-    
-    
-    # RAIL-CONDOR WILL UPDATE info txt FILE 
-    #start = datetime.now() # t.time() 
-    #print(f'Started at: {start}')
-
-    #quit()
-    
-   
-    # get finish time
-    # save provenance file 
-    # compute total duration 
-    # get individual machines times from log file
-    # print stats 
-    # send notification email 
-    
-
-    #print('Done!' )
-    #finish = datetime.now() # t.time() 
-    #print(f'Process finished at: {finish}')
-    #duration = finish - start 
-    #print('')
-    #print(f'Total duration: {duration}')
-    #print('')
-
-
-
-
 
 if __name__ == '__main__': main()
 
