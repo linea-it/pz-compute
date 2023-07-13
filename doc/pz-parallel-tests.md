@@ -133,18 +133,26 @@ queue arguments from ./rail-condor-configure-paths.py $(input_dir1) $(output_dir
     
 ## Run the Photo-z Estimator 
 
-After setting up the inputs and submission file, submit the process to the cluster. From inside the process directory, run:
+After setting up the inputs and submission file, from inside the process directory submit the process to the cluster. From inside the process directory, run:
     
 ```bash
+cd  <process_id>
 condor_submit rail-condor.sub 
 ``` 
 
+Or, alternativelly: 
+
+```bash
+condor_submit rail-condor-input-simulator.sub    
+```       
+    
+    
 ## Get results and provenance info from the **process_info.txt** file 
 
 After all the subprocesses are finished, the runtime statistics and relevant metadata will be available in file <process_id>_process_info.txt inside the process directory. From inside the process directory, run:
 
 ```bash
-cat <process_id>_process_info.txt
+cat process_info.txt
 ``` 
     
     
