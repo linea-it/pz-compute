@@ -29,11 +29,11 @@ import os
 import sys
 import argparse
 import glob
+import yaml
 from datetime import datetime
 
 
-def main(): 
-    
+def main():  
 
     # Initialize parser
     parser = argparse.ArgumentParser()
@@ -79,28 +79,36 @@ def main():
    
 
     pz_dir = os.getenv('PZPATH')
-    #args.pz_compute_dir = pz_dir
+    args.pz_compute_dir = pz_dir
 
     os.system(f'ln -s {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor.py ./{args.process_id}/rail-condor.py')
     os.system(f'ln -s {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor-configure-paths.py ./{args.process_id}/rail-condor-configure-paths.py')
     os.system(f'cp {pz_dir}/../scheduler_examples/htcondor/rail-condor/rail-condor.sub ./{args.process_id}/rail-condor.sub')
 
-    # WRITE info FILE   
-    # FINISH WITH INSRUCTIONS TO RUN CONDOR SUBMIT 
+    
+    # WRITE info FILE  
+    yaml_file = f'./{args.process_id}/{args.process_id}_process_info.txt'
 
-    print(f'Process info saved in {args.process_id}_process_info.txt' )
-    print('Running Photo-z Compute...' )
+    with open(yaml_file, 'w') as file:
+        file.write(yaml.dump(vars(args)))
+    print(f'Process info saved in {yaml_file}')    
+    print() 
+    print() 
+    print('Now run the photo-z estimator as: ' )
+    print('condor_submit rail-condor.sub ' )
     print()
+    print('See the complete tutorial in doc/prepare-parallel-tests.md')
+    
+    
+    
+    
     # RAIL-CONDOR WILL UPDATE info txt FILE 
-    start = datetime.now() # t.time() 
-    print(f'Started at: {start}')
+    #start = datetime.now() # t.time() 
+    #print(f'Started at: {start}')
 
-    quit()
+    #quit()
     
-    
-    # TBD
-    # call condor_submit (run in background!)
-    
+   
     # get finish time
     # save provenance file 
     # compute total duration 
@@ -109,13 +117,13 @@ def main():
     # send notification email 
     
 
-    print('Done!' )
-    finish = datetime.now() # t.time() 
-    print(f'Process finished at: {finish}')
-    duration = finish - start 
-    print('')
-    print(f'Total duration: {duration}')
-    print('')
+    #print('Done!' )
+    #finish = datetime.now() # t.time() 
+    #print(f'Process finished at: {finish}')
+    #duration = finish - start 
+    #print('')
+    #print(f'Total duration: {duration}')
+    #print('')
 
 
 
