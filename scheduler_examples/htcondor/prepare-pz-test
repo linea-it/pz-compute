@@ -95,6 +95,10 @@ def main():
                f'./{args.process_id}/rail-condor-input-simulator.py')
     os.symlink(f'{htcondor_dir}/rail-condor-input-simulator/rail-condor-simulate-paths.py', 
                f'./{args.process_id}/rail-condor-simulate-paths.py')
+    os.symlink(f'{htcondor_dir}/../../performance/condor/condor-analyze-host-performance', 
+               f'./{args.process_id}/condor-analyze-host-performance')
+    
+    
     #shutil.copy(source_path, destination_path)
     shutil.copy(f'{htcondor_dir}/rail-condor/rail-condor.sub', 
                 f'./{args.process_id}/rail-condor.sub')
