@@ -136,12 +136,12 @@ After setting up the inputs and submission file, submit the process to the clust
 condor_submit rail-condor.sub 
 ``` 
 
-## Get results and provenance info from the **process_info.json** file 
+## Get results and provenance info from the **process_info.txt** file 
 
-After all the subprocesses are finished, the runtime statistics and relevant metadata will be available in file <process_id>_process_info.json inside the process directory. From inside the process directory, run:
+After all the subprocesses are finished, the runtime statistics and relevant metadata will be available in file <process_id>_process_info.txt inside the process directory. From inside the process directory, run:
 
 ```bash
-cat <process_id>_process_info.json
+cat <process_id>_process_info.txt
 ``` 
     
     
