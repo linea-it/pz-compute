@@ -1,4 +1,4 @@
-executable = rail-condor.py
+executable = rail-condor-input-simulator.py
 log = rail-condor.log
 input_dir1 = $(input_dir:input)
 output_dir1 = $(output_dir:output)
