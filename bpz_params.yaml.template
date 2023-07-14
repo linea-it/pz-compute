@@ -1,0 +1,5 @@
+spectra_file: 'test.list'
+nt_array:
+  - 2
+  - 4
+  - 6
