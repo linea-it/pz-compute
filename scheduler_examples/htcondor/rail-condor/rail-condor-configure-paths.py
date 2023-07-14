@@ -13,6 +13,7 @@ CMD_TEXT = '''$(Process) %s'''
 OUTPUT_DIR = 'output'
 INPUT_DIR = 'input'
 ALGORITHM = 'fzboost'
+BINS = '301'
 
 def get_input_files(input_dir):
     cwd = getcwd()
@@ -31,13 +32,13 @@ def get_num_tasks(num_files):
 
     return num_tasks
 
-def generate_tasks(files, num_tasks, input_dir, output_dir, algorithm):
+def generate_tasks(files, num_tasks, input_dir, output_dir, algorithm, bins):
     num_files = len(files)
     for t in range(num_tasks):
         ini = t * num_files // num_tasks
         end = (t+1) * num_files // num_tasks
 
-        args = [algorithm]
+        args = [algorithm, bins]
         for path in files[ini:end]:
             args.append(join(input_dir, path))
             args.append(join(output_dir, path))
@@ -60,12 +61,17 @@ def parse_cmdline():
     else:
         algorithm = ALGORITHM
 
-    return input_dir, output_dir, algorithm
+    if len(argv) > 4:
+        bins = argv[4]
+    else:
+        bins = BINS
+
+    return input_dir, output_dir, algorithm, bins
 
 def main():
-    input_dir, output_dir, algorithm = parse_cmdline()
+    input_dir, output_dir, algorithm, bins = parse_cmdline()
     files = get_input_files(input_dir)
     num_tasks = get_num_tasks(len(files))
-    generate_tasks(files, num_tasks, input_dir, output_dir, algorithm)
+    generate_tasks(files, num_tasks, input_dir, output_dir, algorithm, bins)
 
 if __name__ == '__main__': main()
