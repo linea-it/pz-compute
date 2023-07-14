@@ -23,7 +23,8 @@ def main():
     if len(argv) > 1:
         f = open(argv[1])
     else:
-        f = stdin
+        f = open('rail-condor.log')
+        #f = stdin
 
     task_map = {}
     host_map = {}
