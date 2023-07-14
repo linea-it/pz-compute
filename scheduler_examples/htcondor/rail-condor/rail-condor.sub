@@ -8,5 +8,5 @@ should_transfer_files = IF_NEEDED
 when_to_transfer_output = ON_EXIT
 getenv = True
 rank = -slotid
-# Requirements = (Machine == "apl11.ib0.cm.linea.gov.br") # (optional) choose the node where to run 
-queue arguments from ./rail-condor-configure-paths.py $(input_dir1) $(output_dir1) $(algorithm:fzboost) |
+# Requirements = (Machine == "apl11.ib0.cm.linea.gov.br") # (optional) choose the node where to run
+queue arguments from ./rail-condor-configure-paths.py $(input_dir1) $(output_dir1) $(algorithm:fzboost) $(bins:301) |
