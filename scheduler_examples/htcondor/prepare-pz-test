@@ -97,6 +97,8 @@ def main():
                f'./{args.process_id}/rail-condor-simulate-paths.py')
     os.symlink(f'{htcondor_dir}/../../performance/condor/condor-analyze-host-performance', 
                f'./{args.process_id}/condor-analyze-host-performance')
+    os.symlink(f'{htcondor_dir}/../../utils/parquet-count-rows', 
+               f'./{args.process_id}/parquet-count-rows')
     
     
     #shutil.copy(source_path, destination_path)
