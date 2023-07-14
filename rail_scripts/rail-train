@@ -34,6 +34,10 @@ from docopt import docopt
 from rail_scripts import ESTIMATOR_CONFIGURATION_TEMPLATE, VERSION_TEXT, \
         abort, error, create_column_mapping_dict, info
 
+from datetime import datetime 
+
+
+
 DEFAULT_ESTIMATOR = 'fzboost'
 
 Configuration = namedtuple('Configuration', ('input', 'output', 'estimator',
@@ -151,9 +155,17 @@ def cleanup(cfg, ctx):
     pass
 
 def main():
+    start_time = datetime.now()
+    print(f'Start: {start_time}')
     cfg = parse_cmdline()
     ctx = setup(cfg)
     train(cfg, ctx)
     cleanup(cfg, ctx)
+    end_time = datetime.now()
+    print(f'Finish: {end_time}')
+    duration = end_time - start_time
+    print(f'Total duration: {duration}')
+
+
 
 if __name__ == '__main__': main()
