@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+
+'''Prepare directories and ancillary files to run 
+   rail-estimate script in parallel using HTCondor. 
+   Write provenance info in text file. 
+
+   Usage:
+   
+   prepare-pz-test [options] [--] <process_id> <comment> 
+   prepare-pz-test -h | --help
+   prepare-pz-test --version
+                           
+   Options:
+   -h --help   Show help text.
+   --version   Show version.
+   -p <process id>, --process_id=<process id> Integer or short string without 
+                                               blank spaces to identify the 
+                                               process. There is no warranty of
+                                               uniqueness, only if in the same 
+                                               parent directory. If empty, 
+                                               attribute test_pz_compute_x where
+                                               x is incremental integer.
+   -c <comment>, --comment=<comment> Long string (enclosed in quotes) with the 
+                                     process description. (optional) 
+                                      
+'''
+
+import os
+import sys
+import shutil 
+import argparse
+import glob
+import yaml
+import getpass
+from datetime import datetime
+
+
+def main():  
+
+    # Initialize parser
+    parser = argparse.ArgumentParser()
+    # Adding optional argument
+    parser.add_argument("-p", "--process_id", 
+                        help = "Integer or short string without blank spaces") 
+    parser.add_argument("-c", "--comment", 
+                        help = "Comment with process description (enclosed in quotes)") 
+                                
+
+    # Read arguments from command line
+    args = parser.parse_args()
+    if args.process_id:
+        duplicate_id = os.path.isdir(args.process_id)
+        if duplicate_id:
+            print(f'Process {args.process_id} already exists!')
+            print('Aborting...')
+            quit()
+    else: 
+        old_process_ids = glob.glob('test_pz_compute_*') 
+        if len(old_process_ids)>0:
+            old_n = []
+            for old_process_id in old_process_ids:
+                old_n.append(int(old_process_id.split('_')[-1]))
+            max_id = max(old_n)
+            args.process_id = 'test_pz_compute_'+ str(max_id+1)
+        else:
+            args.process_id = 'test_pz_compute_0'
+
+
+    args.user = getpass.getuser()
+    
+    print('---------------------------------------')
+    print(f'Process ID: {args.process_id}')
+    if not args.comment:
+        args.comment = ' --- ' 
+    print(f'User: {args.user}')
+    print(f'Description: {args.comment}')
+    print('---------------------------------------')
+    print()
+    process_dir = f'./{args.process_id}' 
+    try:
+        os.makedirs(f'{process_dir}', exist_ok = True)
+        os.makedirs(f'{process_dir}/log', exist_ok = True)
+        os.makedirs(f'{process_dir}/input', exist_ok = True)
+        os.makedirs(f'{process_dir}/output', exist_ok = True)
+    except OSError as error:
+        print('Failed to create directories')
+
+    htcondor_dir = os.environ['HTCONDOR']
+    # os.symlink(src, dst, target_is_directory = False, *, dir_fd = None)
+    os.symlink(f'{htcondor_dir}/rail-condor/rail-condor.py', 
+               f'./{args.process_id}/rail-condor.py')
+    os.symlink(f'{htcondor_dir}/rail-condor/rail-condor-configure-paths.py',
+               f'./{args.process_id}/rail-condor-configure-paths.py')
+    os.symlink(f'{htcondor_dir}/rail-condor-input-simulator/rail-condor-input-simulator.py', 
+               f'./{args.process_id}/rail-condor-input-simulator.py')
+    os.symlink(f'{htcondor_dir}/rail-condor-input-simulator/rail-condor-simulate-paths.py', 
+               f'./{args.process_id}/rail-condor-simulate-paths.py')
+    os.symlink(f'{htcondor_dir}/../../performance/condor/condor-analyze-host-performance', 
+               f'./{args.process_id}/condor-analyze-host-performance')
+    
+    
+    #shutil.copy(source_path, destination_path)
+    shutil.copy(f'{htcondor_dir}/rail-condor/rail-condor.sub', 
+                f'./{args.process_id}/rail-condor.sub')
+    shutil.copy(f'{htcondor_dir}/rail-condor-input-simulator/rail-condor-input-simulator.sub', 
+                f'./{args.process_id}/rail-condor-input-simulator.sub')
+    
+    # Write info file  
+    yaml_file = f'./{args.process_id}/process_info.yaml'
+    
+    with open(yaml_file, 'w') as outfile:
+        yaml.dump(vars(args), outfile, default_flow_style=False)
+    
+    #with open(yaml_file, 'w') as file:
+    #    file.write(yaml.dump(vars(args)))
+    print(f'Process info saved in {yaml_file}')    
+    print() 
+    print() 
+    
+    
+
+if __name__ == '__main__': main()
+
+

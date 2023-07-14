@@ -4,6 +4,7 @@ from collections import namedtuple
 from datetime import datetime
 from re import search
 from sys import argv, stdin
+import yaml
 
 JOB_EXECUTING = \
         r'[.](\d+)[.].*(\d{2}/\d{2} \d{2}:\d{2}:\d{2}) Job executing.*<(.*):'
@@ -26,12 +27,15 @@ def main():
 
     task_map = {}
     host_map = {}
-
+    begins = []
+    ends = []
     for line in f:
         m = search(JOB_EXECUTING, line)
         if m:
             task_id = int(m.group(1))
             time_begin = datetime.strptime(m.group(2), '%m/%d %X')
+            t0 = datetime.strptime(m.group(2), '%m/%d %H:%M:%S')
+            begins.append(t0)
             host = m.group(3)
             task_map[task_id] = (time_begin, host)
 
@@ -39,6 +43,8 @@ def main():
         if m:
             task_id = int(m.group(1))
             time_end = datetime.strptime(m.group(2), '%m/%d %X')
+            t1 = datetime.strptime(m.group(2), '%m/%d %H:%M:%S')
+            ends.append(t1)
             time_begin = task_map[task_id][0]
             host = task_map[task_id][1]
             time_diff = time_end - time_begin
@@ -56,5 +62,26 @@ def main():
         max_time = max(tasks, key=lambda t: t.time_diff).time_diff
         min_time = min(tasks, key=lambda t: t.time_diff).time_diff
         print('%s \t%s\t\t%d' % (min_time, max_time, len(tasks)))
+
+    print()
+    proc_start = str(min(begins))
+    proc_end = str(min(ends))
+    print(f'Process started: {proc_start} ')
+    print(f'Process finished: {proc_end} ')
+    print()
+    duration = max(ends) - min(begins)
+    print(f'Total duration: {duration}')
+    print()
+    
+    time_dict = {'Process started': str(proc_start),
+                 'Process finished': str(proc_end),
+                 'Total duration': str(duration)}
+
+    with open('process_info.yaml','r') as yamlfile:
+        cur_yaml = yaml.safe_load(yamlfile)
+        cur_yaml['time stats'] = time_dict
+    with open('process_info.yaml','w') as yamlfile:
+        yaml.safe_dump(cur_yaml, yamlfile)
+    
 
 if __name__ == '__main__': main()
