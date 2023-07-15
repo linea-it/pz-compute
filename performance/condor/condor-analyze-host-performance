@@ -66,7 +66,7 @@ def main():
 
     print()
     proc_start = str(min(begins))
-    proc_end = str(min(ends))
+    proc_end = str(max(ends))
     print(f'Process started: {proc_start} ')
     print(f'Process finished: {proc_end} ')
     print()
