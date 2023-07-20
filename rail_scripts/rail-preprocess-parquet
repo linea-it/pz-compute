@@ -13,6 +13,8 @@ Options:
                               magnitude ones.
     -r <rows>, --rows=<rows>  Maximum number of rows per output file
                               [default: 200000].
+    -d <decimals>, --decimals=<decimals> Number of decimal places for rounding
+                                         magnitudes [default: None]
     --output-template=<template>      Set the names of the output files
                                       [default: {fname}-part{idx}{ext}].
     --flux-template=<template>        Set the names of the flux columns
@@ -54,11 +56,14 @@ DEFAULT_EXT = '.pq'
 Configuration = namedtuple('Configuration',
                            ('input', 'output_dir', 'flux_template',
                             'flux_error_template', 'mag_template',
-                            'mag_error_template', 'rows', 'flux',
-                            'output_template'))
+                            'mag_error_template', 'rows', 'decimals',
+                            'flux', 'output_template'))
 
 def parse_cmdline():
-    args = docopt(__doc__, version=VERSION_TEXT)
+    args = docopt(__doc__, version=VERSION_TEXT) 
+    print(args) 
+    print(type(args)) 
+    quit()
 
     try:
         rows = args['--rows']
@@ -66,13 +71,19 @@ def parse_cmdline():
     except ValueError:
         error('Invalid number of rows: %s' % rows)
         abort()
+    try:
+        decimals = args['--decimals']
+        decimals = int(decimals)
+    except ValueError:
+        error('Invalid number of decimal places for rounding magnitudes: %s' % decimals)
+        abort()
 
     return Configuration(input=args['<input>'], output_dir=args['<output_dir>'],
                          flux_template=args['--flux-template'],
                          flux_error_template=args['--flux-error-template'],
                          mag_template=args['--mag-template'],
                          mag_error_template=args['--mag-error-template'],
-                         rows=rows, flux=args['--flux'],
+                         rows=rows, decimals=decimals, flux=args['--flux'],
                          output_template=args['--output-template'])
 
 def build_output_name(file_name, index, template, extension=DEFAULT_EXT):
@@ -139,7 +150,7 @@ def preprocess(cfg):
     flux_error_columns = map_bands(cfg.flux_error_template, bands)
     mag_columns = map_bands(cfg.mag_template, bands)
     mag_error_columns = map_bands(cfg.mag_error_template, bands)
-
+    
     try:
         # Note: specifying a buffer size seems to be necessary for
         # iter_batches() to efficiently deal with allocations smaller than 1 row
@@ -175,6 +186,11 @@ def preprocess(cfg):
                     convert_to_magnitude(table, flux_columns,
                                          flux_error_columns, mag_columns,
                                          mag_error_columns)
+
+                if decimals is not None:
+                    for mag, err in zip(mag_columns, mag_error_columns):
+                        table[mag] = table[mag].round(decimals=decimals)
+                        table[err] = table[err].round(decimals=decimals)
 
                 output_name = build_output_name(cfg.input, i,
                                                 cfg.output_template)
