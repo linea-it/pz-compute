@@ -26,6 +26,11 @@ the requirements file and can be installed with the following command:
 
     pip install -r requirements.txt
 
+
+> **Warning**  
+> To run on a cluster where $HOME is not shared, you need to be careful which packages will be shared from $HOME. These packages should be reinstalled with the option of not using cache, in the case of pip you can use the **'--no-cache-dir'** option.
+
+
 Both the "flexzboost" and "bpz" estimation algorithms are supported and
 require pre-trained data. Pre-trained data must be stored in files
 called `estimator_fzboost.pkl` and `estimator_bpz.pkl`. The program will
