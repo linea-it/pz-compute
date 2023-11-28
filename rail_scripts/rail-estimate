@@ -91,7 +91,7 @@ def parse_cmdline():
 
 
 def load_slow_modules(estimator):
-    global DEF_MAGLIMS, DS, Estimator, TableHandle, RailStage
+    global DEF_MAGLIMS, DS, ParquetEstimator, ParquetTableHandle, RailStage
 
     from rail.core.common_params import lsst_def_maglims as DEF_MAGLIMS
     from rail.core.data import TableHandle
@@ -112,6 +112,45 @@ def load_slow_modules(estimator):
 
     DS = RailStage.data_store
 
+    # Work around RAIL bugs
+    from pyarrow.parquet import ParquetFile
+    from math import ceil
+
+    class ParquetTableHandle(TableHandle):
+        @classmethod
+        def _size(cls, path, **kwargs):
+            with ParquetFile(path) as f:
+                return f.metadata.num_rows
+
+    class ParquetEstimator(Estimator):
+        name = "ParquetEstimator"
+
+        def input_iterator(self, tag, **kwargs):
+            """Iterate the input assocated to a particular tag
+
+            Parameters
+            ----------
+            tag : str
+                The tag (from cls.inputs or cls.outputs) for this data
+
+            kwargs : dict[str, Any]
+                These will be passed to the Handle's iterator method
+            """
+            handle = self.get_handle(tag, allow_missing=True)
+
+            # If data is in memory and not in a file, it means is small enough to process it
+            # in a single chunk.
+            if self.config.hdf5_groupname:
+                test_data = self.get_data('input')[self.config.hdf5_groupname]
+            else:
+                test_data = self.get_data('input')
+            max_l = 0
+            for k, v in test_data.items():
+                max_l = max(max_l, len(v))
+            self._input_length = max_l
+            s = 0
+            iterator=[[s, self._input_length, test_data]]
+            return iterator
 
 def setup_estimator(
     output,
@@ -126,10 +165,10 @@ def setup_estimator(
         column_template, column_template_error, DEF_MAGLIMS
     )
 
-    user_params = load_user_params(Estimator, estimator)
+    user_params = load_user_params(ParquetEstimator, estimator)
     user_params.update(column_info)
 
-    estimator = Estimator.make_stage(
+    estimator = ParquetEstimator.make_stage(
         name="estimate",
         model=estimator_config,
         output=output,
@@ -149,7 +188,7 @@ def load_input(file_name):
             "Input file name extension is required but missing: " '"%s"' % file_name
         )
 
-    input = DS.read_file("input", TableHandle, file_name)
+    input = DS.read_file("input", ParquetTableHandle, file_name)
     return input
 
 
