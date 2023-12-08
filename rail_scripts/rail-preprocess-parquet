@@ -12,7 +12,7 @@ Options:
     -f, --flux                Force using the flux columns instead of the
                               magnitude ones.
     -r <rows>, --rows=<rows>  Maximum number of rows per output file
-                              [default: 200000].
+                              [default: 150000].
     --output-template=<template>      Set the names of the output files
                                       [default: {fname}-part{idx}{ext}].
     --flux-template=<template>        Set the names of the flux columns
@@ -23,11 +23,17 @@ Options:
                                       [default: mag_{band}].
     --mag-error-template=<template>   Set the names of the magnitude error
                                       columns [default: magerr_{band}].
+    --obj-id=<obj_id>                 Set the name of the object identification
+                                      unique number [default: objectId]    
+    --ra=<ra>                         Set the name of equatorial coordinate
+                                      Right Ascension [default: coord_ra]
+    --dec=<dec>                       Set the name of equatorial coordinate
+                                      Declination [default: coord_dec]
 
 
 The following preprocessing steps are currently implemented:
 - Limit number of rows per file to a maximum, splitting the file if necessary.
-- Generate files only with magnitude columns.
+- Generate files only with id, coordinates, magnitudes and error columns.
 - Convert infinite values to NaN.
 - Convert flux to magnitude.
 
@@ -55,7 +61,7 @@ Configuration = namedtuple('Configuration',
                            ('input', 'output_dir', 'flux_template',
                             'flux_error_template', 'mag_template',
                             'mag_error_template', 'rows', 'flux',
-                            'output_template'))
+                            'output_template', 'obj_id', 'ra','dec'))
 
 def parse_cmdline():
     args = docopt(__doc__, version=VERSION_TEXT)
@@ -73,7 +79,10 @@ def parse_cmdline():
                          mag_template=args['--mag-template'],
                          mag_error_template=args['--mag-error-template'],
                          rows=rows, flux=args['--flux'],
-                         output_template=args['--output-template'])
+                         output_template=args['--output-template'],
+                         obj_id=args['--obj-id'],
+                         ra=args['--ra'], 
+                         dec=args['--dec'])
 
 def build_output_name(file_name, index, template, extension=DEFAULT_EXT):
     file_name = basename(file_name)
@@ -82,15 +91,25 @@ def build_output_name(file_name, index, template, extension=DEFAULT_EXT):
 
     return template.format(fname=split[0], idx=index, ext=ext)
 
-def parquet_check_column_presence(parquet, flux, mag):
+def parquet_check_column_presence(parquet, flux, mag, obj_id, coords):
     columns = frozenset(parquet.schema.names)
     has_magnitude = all(col in columns for col in mag)
     has_flux = all(col in columns for col in flux)
+    has_id = all(col in columns for col in [obj_id])  # to test
+    has_coords = all(col in columns for col in coords) # to test
 
-    return has_magnitude, has_flux
+    return has_magnitude, has_flux, has_id, has_coords
 
-def choose_columns(has_magnitude, has_flux, flux, flux_columns,
+def choose_columns(has_id, has_coords, has_magnitude, has_flux, flux, flux_columns,
                    flux_error_columns, mag_columns, mag_error_columns):
+    if not has_id:
+        error('Error: object id not found.')
+        abort()
+
+    if not has_coords:
+        error('Error: coordinates not found.')
+        abort()
+
     if not has_magnitude and not has_flux:
         error('Error: magnitude or flux columns not found.')
         abort()
@@ -139,6 +158,8 @@ def preprocess(cfg):
     flux_error_columns = map_bands(cfg.flux_error_template, bands)
     mag_columns = map_bands(cfg.mag_template, bands)
     mag_error_columns = map_bands(cfg.mag_error_template, bands)
+    obj_id_column = cfg.obj_id
+    coords_columns = cfg.coords 
 
     try:
         # Note: specifying a buffer size seems to be necessary for
@@ -151,10 +172,10 @@ def preprocess(cfg):
                 print(input_)
                 return
 
-            has_magnitude, has_flux = parquet_check_column_presence(
+            has_magnitude, has_flux, has_id, has_coords = parquet_check_column_presence(
                     f, flux_columns + flux_error_columns,
-                    mag_columns + mag_error_columns)
-            use_flux, value_columns, error_columns = choose_columns(
+                    mag_columns + mag_error_columns, obj_id_column, coords_columns)
+            use_flux, value_columns, error_columns = choose_columns(has_id, has_coords,
                     has_magnitude, has_flux, cfg.flux, flux_columns,
                     flux_error_columns, mag_columns, mag_error_columns)
             all_columns = value_columns + error_columns
@@ -192,6 +213,7 @@ def preprocess(cfg):
 
 def main():
     cfg = parse_cmdline()
-    preprocess(cfg)
+    print(cfg)
+    #preprocess(cfg)
 
 if __name__ == '__main__': main()
