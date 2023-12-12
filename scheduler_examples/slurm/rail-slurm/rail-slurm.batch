@@ -35,6 +35,7 @@
 # it while previous "srun" executions finish, keeping the cluster's task slots
 # fully allocated until all files are processed.
 
+from collections import deque, namedtuple
 from contextlib import contextmanager
 from datetime import datetime
 from glob import glob
@@ -57,11 +58,14 @@ OUTPUT_DIR = 'output'
 INPUT_DIR = 'input'
 ALGORITHM = 'fzboost'
 HELPER = 'rail-slurm.py'
+MAX_ATTEMPTS = 3
+
+Mask = namedtuple('Mask', ('host', 'slot'))
 
 # Spawns a single task to a single cluster slot
 def srun(cmd, stdout, stderr, mask):
-    args = SRUN_ARGS + ['--output', stdout, '--error', stderr, '-w', mask[0],
-            'rail-slurm.py', str(mask[1])] + list(cmd)
+    args = SRUN_ARGS + ['--output', stdout, '--error', stderr, '-w', mask.host,
+            'rail-slurm.py', str(mask.slot)] + list(cmd)
 
     return spawnv(P_NOWAIT, SRUN_PATH, args)
 
@@ -93,6 +97,9 @@ def now(msg):
 def parallel(files, slots, input_dir, output_base_dir, algorithm, masks):
     children = {}
     task_id = 0
+    attempt = { file: 0 for file in files }
+    files = deque(files)
+    masks = deque(masks)
 
     while len(children) > 0 or len(files) > 0:
         # Keep all cluster slots full by spawning each task
@@ -121,19 +128,29 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks):
         if len(children) > 0:
             pid, ret = waitpid(-1, 0)
             prev_relative_path, prev_task_id, mask = children.pop(pid)
-            masks.add(mask)
+            masks.appendleft(mask)
+
+            attempt[prev_relative_path] += 1
 
             if ret != 0:
-                try_kill_children(children)
-                raise RuntimeError('Error: child process returned failure (%d).'
-                        % ret)
+                info('Error: child process returned failure: ret=%d, '
+                     'signal=%d, id=%d, host=%s, slot=%d.' % (ret//256, ret%256,
+                     prev_task_id, mask.host, mask.slot))
+                if attempt[prev_relative_path] > MAX_ATTEMPTS:
+                    info('Error: too many failed attempts.')
+                    try_kill_children(children)
+                    raise RuntimeError('Error: too many failed attempts.')
+                else:
+                    info('Will retry again later.')
+                    files.appendleft(relative_path)
+                    sleep(1)
+            else:
+                info('%s: Finished: %s %s id=%d' % (datetime.now(), ESTIMATE,
+                    prev_relative_path, prev_task_id))
 
-            info('%s: Finished: %s %s id=%d' % (datetime.now(), ESTIMATE,
-                prev_relative_path, prev_task_id))
-
-            # Best effort delay to avoid srun's "node is busy" messages, give a
-            # little breathing room to the nodes.
-            sleep(0.005)
+                # Best effort delay to avoid srun's "node is busy" messages,
+                # give a little breathing room to the nodes.
+                sleep(0.005)
 
 def get_input_files(input_dir):
     with now('searching input files'):
@@ -214,7 +231,7 @@ def build_cpu_mask_set(node_list, task_list):
 
     for n, t in zip(node_list, task_list):
         for i in range(t):
-            masks.add((n, i))
+            masks.add(Mask(host=n, slot=i))
 
     return masks
 
