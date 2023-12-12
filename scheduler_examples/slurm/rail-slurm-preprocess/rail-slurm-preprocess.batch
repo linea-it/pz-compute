@@ -50,7 +50,7 @@ SRUN_ARGS = [SRUN, '-n1', '-N1']
 LOG = 'log'
 PROG = 'rail-slurm-preprocess'
 PREPROCESS = 'rail-preprocess-parquet'
-PREPROCESS_ARGS = ['--rows=150000']
+PREPROCESS_ARGS = ['--rows=130000']
 
 # Spawns a single task to a single cluster slot
 def srun(cmd, stdout, stderr):
