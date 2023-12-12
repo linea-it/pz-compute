@@ -33,7 +33,8 @@ The following preprocessing steps are currently implemented:
 - Limit number of rows per file to a maximum, splitting the file if necessary.
 - Generate files only with object id, coordinates (optional, if available), 
   magnitudes and error columns.
-- Object must be part of input files as indexes.
+- ObjectId column is not mandatory. It is preserved if provided as indexes in 
+  the input files. 
 - Convert infinite values to NaN.
 - Convert flux to magnitude.
 
@@ -94,8 +95,8 @@ def parquet_check_column_presence(parquet, flux, mag, ra, dec):
     columns = frozenset(parquet.schema.names)
     has_magnitude = all(col in columns for col in mag)
     has_flux = all(col in columns for col in flux)
-    has_ra = any(col in columns for col in [ra]) 
-    has_dec = any(col in columns for col in [dec]) 
+    has_ra = ra in columns
+    has_dec = dec in columns
 
     return has_magnitude, has_flux, has_ra, has_dec
 
@@ -107,13 +108,11 @@ def choose_columns(has_ra, has_dec, has_magnitude, has_flux,
 
     if not has_ra:
         error('Warning: coordinate R.A. not found.')
-        pass
     else:
         coord_columns.append(ra)
         
     if not has_dec:
         error('Warning: coordinate Dec. not found.')
-        pass 
     else:
         coord_columns.append(dec)
 
