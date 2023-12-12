@@ -5,6 +5,17 @@ from sys import argv, stderr
 THREAD_SIBLINGS_LIST = \
         '/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list'
 
+OOM_ADJUST = '/proc/self/oom_score_adj'
+
+def increase_oom_score():
+    with open(OOM_ADJUST) as f:
+        score = int(f.read())
+
+    score = min(1000, score + 500)
+
+    with open(OOM_ADJUST, 'w') as f:
+        print('%d' % (score), file=f)
+
 def bind(my_id):
     curr_mask = list(sorted(sched_getaffinity(0)))
     my_hart = curr_mask[my_id % len(curr_mask)]
@@ -23,6 +34,7 @@ def main():
         raise SystemExit(1)
 
     bind(my_id)
+    increase_oom_score()
     execvp(argv[2], argv[2:])
 
 if __name__ == '__main__': main()
