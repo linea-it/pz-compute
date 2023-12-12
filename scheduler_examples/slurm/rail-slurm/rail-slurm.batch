@@ -136,12 +136,14 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks):
             sleep(0.005)
 
 def get_input_files(input_dir):
-    cwd = getcwd()
-    chdir(input_dir)
-    try:
-        return [path for path in glob('**/*', recursive=True) if isfile(path)]
-    finally:
-        chdir(cwd)
+    with now('searching input files'):
+        cwd = getcwd()
+        chdir(input_dir)
+        try:
+            return [path for path in glob('**/*', recursive=True) if
+                    isfile(path)]
+        finally:
+            chdir(cwd)
 
 def parse_cmdline():
     if len(argv) > 1:
