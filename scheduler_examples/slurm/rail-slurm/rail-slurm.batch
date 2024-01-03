@@ -65,7 +65,7 @@ Mask = namedtuple('Mask', ('host', 'slot'))
 # Spawns a single task to a single cluster slot
 def srun(cmd, stdout, stderr, mask):
     args = SRUN_ARGS + ['--output', stdout, '--error', stderr, '-w', mask.host,
-            'rail-slurm.py', str(mask.slot)] + list(cmd)
+            './slurm-shield', './rail-slurm.py', str(mask.slot)] + list(cmd)
 
     return spawnv(P_NOWAIT, SRUN_PATH, args)
 
