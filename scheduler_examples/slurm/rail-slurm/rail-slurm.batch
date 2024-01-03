@@ -70,10 +70,12 @@ def srun(cmd, stdout, stderr, mask):
     return spawnv(P_NOWAIT, SRUN_PATH, args)
 
 def stdout_name(task_id):
-    return join(LOG, '%s-%d.out' % (PROG, task_id))
+    subdir = '%05d' % (task_id // 10000 * 10000)
+    return join(LOG, subdir, '%s-%d.out' % (PROG, task_id))
 
 def stderr_name(task_id):
-    return join(LOG, '%s-%d.err' % (PROG, task_id))
+    subdir = '%05d' % (task_id // 10000 * 10000)
+    return join(LOG, subdir, '%s-%d.err' % (PROG, task_id))
 
 # Best effort cleanup on abnormal program termination
 def try_kill_children(children):
