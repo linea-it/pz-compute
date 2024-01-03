@@ -113,6 +113,8 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks):
             args = [ESTIMATE_PATH] + ESTIMATE_ARGS + ['-a', algorithm] + \
                     [input_file, output_file]
 
+            makedirs(dirname(stdout_file), exist_ok=True)
+            makedirs(dirname(stderr_file), exist_ok=True)
             makedirs(output_dir, exist_ok=True)
 
             info('%s: Starting: %s %s id=%d' % (datetime.now(), ESTIMATE,
