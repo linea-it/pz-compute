@@ -27,6 +27,7 @@ from collections import namedtuple
 from os.path import splitext
 
 from docopt import docopt
+from joblib import parallel_config
 
 from rail_scripts import (
     VERSION_TEXT,
@@ -238,7 +239,10 @@ def setup(cfg):
 
 def estimate(cfg, ctx):
     info("Starting estimate.")
-    ctx.estimator.estimate(ctx.input)
+
+    with parallel_config(backend='threading', n_jobs=1):
+        ctx.estimator.estimate(ctx.input)
+
     info("Estimate done.")
 
 
