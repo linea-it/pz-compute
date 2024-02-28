@@ -80,9 +80,16 @@ def load_slow_modules(estimator):
     from rail.core.stage import RailStage
 
     if estimator == 'bpz':
-        from rail.estimation.algos.bpz_lite import Inform_BPZ_lite as Trainer
+        try:
+            from rail.estimation.algos.bpz_lite import Inform_BPZ_lite as Trainer
+        except ImportError:
+            from rail.estimation.algos.bpz_lite import BPZliteInformer as Trainer
+
     elif estimator == 'fzboost':
-        from rail.estimation.algos.flexzboost import Inform_FZBoost as Trainer
+        try:
+            from rail.estimation.algos.flexzboost import Inform_FZBoost as Trainer
+        except ImportError:
+            from rail.estimation.algos.flexzboost import FlexZBoostInformer as Trainer
     else:
         raise ValueError('Invalid estimator identifier: %s' % estimator)
 

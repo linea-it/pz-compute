@@ -17,17 +17,15 @@ set -xe
 # These packages should pull many important dependencies, like BLAS,
 # numpy, Pillow and MPI.
 conda install -y h5py
-conda install -y scikit-learn
-conda install -y scikit-learn-intelex
 conda install -y pyyaml
 conda install -y pandas
 conda install -y matplotlib
 conda install -y psutil
 conda install -y cython
 
-# Deprecated sklearn package is required for pz-rail 0.98.2, remove it
-# for later versions.
-SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True pip install sklearn || true
+pip install joblib
+pip install scikit-learn
+pip install scikit-learn-intelex
 CFLAGS="-L $CONDA_PREFIX/lib -I $CONDA_PREFIX/include" pip install fitsio
 pip install flexcode
 
