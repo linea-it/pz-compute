@@ -4,7 +4,12 @@ Step by step of running Pz Compute in LIneA Slurm
 Installation
 ------------
 
-***It is a requirement to have conda or miniconda loaded on the system.*
+Access the HPC environment via ssh (on Jupyter Hub Terminal or from a Linux Terminal, via srvlogin).
+```
+ssh loginapl01 
+```
+
+***It is a requirement to have conda or [miniconda](https://docs.anaconda.com/free/miniconda/#quick-command-line-install) loaded on the system.*
 
 
 #### Add the code below to your `~/.bashrc`:
