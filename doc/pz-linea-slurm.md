@@ -15,8 +15,8 @@ ssh loginapl01
 #### Add the code below to your `~/.bashrc`:
 
 ```bash
-if [ -d /lustre/t1/scratch/users/`whoami` ]; then
-  export ALTHOME=/lustre/t1/scratch/users/`whoami`/slurm-home
+if [ -d /lustre/t0/scratch/users/`whoami` ]; then
+  export ALTHOME=/lustre/t0/scratch/users/`whoami`/slurm-home
   export PATH=$PATH:${ALTHOME}/bin
   export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+${LD_LIBRARY_PATH}:}${ALTHOME}/lib
   export XDG_DATA_HOME=${ALTHOME}/share
