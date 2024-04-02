@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-#SBATCH --spread-job
 #SBATCH --time=2:00:00
-#SBATCH -p sequana_cpu
+#SBATCH -p cpu
 #SBATCH -J rail-slurm-preprocess
 #SBATCH --mem-per-cpu=2G
 #SBATCH -N 4-50
-#SBATCH --ntasks-per-node=24
 
 # Usage:
 #
@@ -48,11 +46,11 @@ from sys import argv, stderr
 from time import sleep
 
 SRUN = 'srun'
-SRUN_ARGS = [SRUN, '-n1', '-N1', '--exact']
+SRUN_ARGS = [SRUN, '-n1', '-N1']
 LOG = 'log'
 PROG = 'rail-slurm-preprocess'
 PREPROCESS = 'rail-preprocess-parquet'
-PREPROCESS_ARGS = ['--rows=150000']
+PREPROCESS_ARGS = ['--rows=130000']
 
 # Spawns a single task to a single cluster slot
 def srun(cmd, stdout, stderr):
@@ -129,7 +127,7 @@ def get_input_files(patterns):
     for pattern in patterns:
         files += [f for f in glob(pattern, recursive=True) if isfile(f)]
 
-   return files
+    return files
 
 def schedule_by_size(files):
     sizes = [(getsize(file), file) for file in files]
