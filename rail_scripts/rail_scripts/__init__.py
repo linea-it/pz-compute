@@ -51,6 +51,8 @@ def create_column_mapping_dict(column_template, column_template_error, def_magli
 
     band_names = map_bands(column_template, bands)
     band_err_names = map_bands(column_template_error, bands)
+    band_to_error_dict = dict(zip(band_names, band_err_names))
+    band_to_error_dict['redshift'] = None
     ref_band = column_template.format(band="i")
 
     mag_limits = {
@@ -61,11 +63,14 @@ def create_column_mapping_dict(column_template, column_template_error, def_magli
     return {
         "bands": band_names,
         "band_names": band_names,
+        "use_atts": band_names,
         "err_bands": band_err_names,
         "band_err_names": band_err_names,
         "ref_band": ref_band,
         "prior_band": ref_band,
         "mag_limits": mag_limits,
+        "err_dict": band_to_error_dict,
+        "test_err_dict": band_to_error_dict,
     }
 
 
