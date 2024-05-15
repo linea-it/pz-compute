@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+
+from sys import argv
+from collections import namedtuple
+
+from pyarrow.parquet import ParquetFile
+from h5py import File, Group
+
+class State:
+    def __init__(self, rows=0):
+        self.rows = rows
+
+def on_visit(name, obj, state):
+    if isinstance(obj, Group):
+        return
+
+    state.rows = max(state.rows, len(obj))
+
+def main():
+    sum = 0
+
+    for i in argv[1:]:
+        with File(i) as f:
+            state = State()
+            f.visititems(lambda *a: on_visit(*a, state))
+            print(i, state.rows)
+            sum += state.rows
+
+    print(sum)
+
+if __name__ == '__main__': main()
