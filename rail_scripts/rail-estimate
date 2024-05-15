@@ -21,7 +21,7 @@ Options:
                                               columns [default: magerr_{band}]
 
 
-Available algorithms: bpz, fzboost"""
+Available algorithms: bpz, fzboost, tpz"""
 
 from collections import namedtuple
 from os.path import splitext
@@ -108,6 +108,8 @@ def load_slow_modules(estimator):
             from rail.estimation.algos.flexzboost import FZBoost as Estimator
         except ImportError:
             from rail.estimation.algos.flexzboost import FlexZBoostEstimator as Estimator
+    elif estimator == 'tpz':
+        from rail.estimation.algos.tpz_lite import TPZliteEstimator as Estimator
     else:
         raise ValueError("Invalid estimator identifier: %s" % estimator)
 

@@ -21,7 +21,7 @@ Options:
                                               columns [default: magerr_{band}]
 
 
-Available algorithms: bpz, fzboost
+Available algorithms: bpz, fzboost, tpz
 
 The generated output file contains the resulting trained state and is in Python
 pickle format. The default output name is "estimator_<algorithm>.pkl".'''
@@ -90,6 +90,10 @@ def load_slow_modules(estimator):
             from rail.estimation.algos.flexzboost import Inform_FZBoost as Trainer
         except ImportError:
             from rail.estimation.algos.flexzboost import FlexZBoostInformer as Trainer
+
+    elif estimator == 'tpz':
+        from rail.estimation.algos.tpz_lite import TPZliteInformer as Trainer
+
     else:
         raise ValueError('Invalid estimator identifier: %s' % estimator)
 
