@@ -65,7 +65,7 @@ Mask = namedtuple('Mask', ('host', 'slot'))
 # Spawns a single task to a single cluster slot
 def srun(cmd, stdout, stderr, mask):
     args = SRUN_ARGS + ['--output', stdout, '--error', stderr, '-w', mask.host,
-            './slurm-shield', './rail-slurm.py', str(mask.slot)] + list(cmd)
+            HELPER, str(mask.slot)] + list(cmd)
 
     return spawnv(P_NOWAIT, SRUN_PATH, args)
 
@@ -112,7 +112,7 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks):
             output_dir = dirname(output_file)
             stdout_file = stdout_name(task_id)
             stderr_file = stderr_name(task_id)
-            args = [ESTIMATE_PATH] + ESTIMATE_ARGS + ['-a', algorithm] + \
+            args = [ESTIMATE] + ESTIMATE_ARGS + ['-a', algorithm] + \
                     [input_file, output_file]
 
             makedirs(dirname(stdout_file), exist_ok=True)
@@ -201,11 +201,9 @@ def find_program_paths():
             raise RuntimeError('Unable to find %s program.' % HELPER)
         info(helper)
 
-        global SRUN_PATH, ESTIMATE_PATH, HELPER_PATH
+        global SRUN_PATH
 
         SRUN_PATH = srun
-        ESTIMATE_PATH = estimate
-        HELPER_PATH = helper
 
 def parse_slurm_tasks_per_node(tasks_per_node):
     task_list = []

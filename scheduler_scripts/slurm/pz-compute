@@ -1,0 +1,12 @@
+#!/bin/sh
+PROGSYMLINK="$0"
+PROG=$(realpath "$PROGSYMLINK")
+PROGDIR=$(dirname "$PROG")
+DATADIR="$PROGDIR"/../../share
+CONFIGDIR="$PROGDIR"/../../etc
+PYTHONPROG="$PROG".py
+
+export PATH="$PROGDIR":"$PATH"
+export XDG_DATA_DIRS="$DATADIR":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}
+export XDG_CONFIG_DIRS="$CONFIGDIR":${XDG_CONFIG_DIRS:-/etc/xdg}
+exec "$PYTHONPROG"
