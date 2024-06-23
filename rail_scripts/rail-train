@@ -27,6 +27,7 @@ The generated output file contains the resulting trained state and is in Python
 pickle format. The default output name is "estimator_<algorithm>.pkl".'''
 
 from collections import namedtuple
+from math import nan
 from os.path import splitext
 
 from docopt import docopt
@@ -35,7 +36,6 @@ from rail_scripts import ESTIMATOR_CONFIGURATION_TEMPLATE, VERSION_TEXT, \
         abort, error, create_column_mapping_dict, info
 
 from datetime import datetime 
-
 
 
 DEFAULT_ESTIMATOR = 'fzboost'
@@ -99,14 +99,20 @@ def load_slow_modules(estimator):
 
     DS = RailStage.data_store
 
-def setup_trainer(output, column_template, column_template_error, hdf5_group='',
-                  num_bins=301):
-    column_info = create_column_mapping_dict(
-            column_template, column_template_error, DEF_MAGLIMS)
+def setup_trainer(estimator, output, column_template, column_template_error,
+                  hdf5_group='', num_bins=301):
+    extra_info = {}
+
+    if estimator == 'tpz':
+        extra_info['nondetect_val'] = nan
+
+    extra_info.update(create_column_mapping_dict(
+            column_template, column_template_error, DEF_MAGLIMS))
+
 
     trainer = Trainer.make_stage(
             name='train', model=output, hdf5_groupname=hdf5_group,
-            nzbins=num_bins, **column_info)
+            nzbins=num_bins, **extra_info)
 
     return trainer
 
@@ -133,7 +139,7 @@ def setup(cfg):
 
     try:
         info('Configuring trainer...')
-        trainer = setup_trainer(cfg.output, cfg.column_template,
+        trainer = setup_trainer(cfg.estimator, cfg.output, cfg.column_template,
                                 cfg.column_template_error, cfg.hdf5_group,
                                 cfg.num_bins)
     except OSError as e:
