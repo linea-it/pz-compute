@@ -147,7 +147,7 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks):
                 else:
                     info('Will retry again later.')
                     files.appendleft(relative_path)
-                    sleep(1)
+                    sleep(0.2)
             else:
                 info('%s: Finished: %s %s id=%d' % (datetime.now(), ESTIMATE,
                     prev_relative_path, prev_task_id))
