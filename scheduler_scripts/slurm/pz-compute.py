@@ -19,6 +19,7 @@ class Configuration:
     sbatch_args: list[str] = field(default_factory=lambda: split(SBATCH_ARGS))
     rail_slurm_batch: str = 'pz-compute.batch'
     rail_slurm_py: str = 'pz-compute.run'
+    param_file: str = None
 
 def parse_cmdline():
     try:
@@ -46,6 +47,9 @@ def load_configuration(conffile):
     config.inputdir = to_path(config.inputdir)
     config.outputdir = to_path(config.outputdir)
 
+    if config.param_file:
+        config.param_file = to_path(config.param_file)
+
     print(config)
 
     return config
@@ -69,6 +73,10 @@ def setup(config):
 def run(config):
     cmd = [config.sbatch] + config.sbatch_args + [config.rail_slurm_batch,
             config.inputdir, config.outputdir, config.algorithm]
+
+    if config.param_file:
+        cmd.append(config.param_file)
+
     print(' '.join(str(x) for x in cmd))
     execv(config.sbatch, cmd)
     raise RuntimeError('error executing slurm')
