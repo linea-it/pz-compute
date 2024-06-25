@@ -96,7 +96,8 @@ def now(msg):
     yield
     info('%s: Finished: %s' % (datetime.now(), msg))
 
-def parallel(files, slots, input_dir, output_base_dir, algorithm, masks):
+def parallel(files, slots, input_dir, output_base_dir, algorithm, masks,
+             param_file):
     children = {}
     task_id = 0
     attempt = { file: 0 for file in files }
@@ -114,6 +115,9 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks):
             stderr_file = stderr_name(task_id)
             args = [ESTIMATE] + ESTIMATE_ARGS + ['-a', algorithm] + \
                     [input_file, output_file]
+
+            if param_file:
+                args += ['-p', param_file]
 
             makedirs(dirname(stdout_file), exist_ok=True)
             makedirs(dirname(stderr_file), exist_ok=True)
@@ -182,7 +186,12 @@ def parse_cmdline():
     else:
         algorithm = ALGORITHM
 
-    return input_dir, output_dir, algorithm
+    if len(argv) > 4:
+        param_file = argv[4]
+    else:
+        param_file = None
+
+    return input_dir, output_dir, algorithm, param_file
 
 def find_program_paths():
     with now('finding program paths'):
@@ -248,11 +257,12 @@ def configure_threads(slots, node_list, task_list):
 
 def main():
     with now(PROG):
-        input_dir, output_dir, algorithm = parse_cmdline()
+        input_dir, output_dir, algorithm, param_file = parse_cmdline()
         slots, node_list, task_list = parse_slurm_variables()
         files = get_input_files(input_dir)
         find_program_paths()
         masks = configure_threads(slots, node_list, task_list)
-        parallel(files, slots, input_dir, output_dir, algorithm, masks)
+        parallel(files, slots, input_dir, output_dir, algorithm, masks,
+                 param_file)
 
 if __name__ == '__main__': main()

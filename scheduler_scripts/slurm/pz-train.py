@@ -20,6 +20,7 @@ class Configuration:
     sbatch: str = 'sbatch'
     sbatch_args: list[str] = field(default_factory=lambda: split(SBATCH_ARGS))
     prog_batch: str = '%s.batch' % PROG
+    param_file: str = None
 
 def parse_cmdline():
     try:
@@ -50,6 +51,9 @@ def load_configuration(conffile):
     config.inputfile = to_path(config.inputfile)
     config.outputfile = to_path(config.outputfile)
 
+    if config.param_file:
+        config.param_file = to_path(config.param_file)
+
     print(config)
 
     return config
@@ -69,6 +73,10 @@ def setup(config):
 def run(config):
     cmd = [config.sbatch] + config.sbatch_args + [config.prog_batch,
             config.inputfile, config.outputfile, '-a', config.algorithm]
+
+    if config.param_file:
+        cmd += ['-p', config.param_file]
+
     print(' '.join(str(x) for x in cmd))
     execv(config.sbatch, cmd)
     raise RuntimeError('error executing slurm')

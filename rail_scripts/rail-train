@@ -15,6 +15,8 @@ Options:
                                    tables [default: 301].
     -g <group>, --group=<group>    For HDF5 input, sets the group name (section)
                                    where input data is stored [default: ]
+    -p <file>, --param-file=<file> Extra parameter file for the training
+                                   algorithm.
     --column-template=<template>   Set the names of the input columns
                                    [default: mag_{band}]
     --column-template-error=<template-error>  Set the names of the input error
@@ -31,6 +33,7 @@ from math import nan
 from os.path import splitext
 
 from docopt import docopt
+from yaml import YAMLError, safe_load
 
 from rail_scripts import ESTIMATOR_CONFIGURATION_TEMPLATE, VERSION_TEXT, \
         abort, error, create_column_mapping_dict, info
@@ -43,7 +46,8 @@ DEFAULT_ESTIMATOR = 'fzboost'
 Configuration = namedtuple('Configuration', ('input', 'output', 'estimator',
                                              'num_bins', 'hdf5_group',
                                              'column_template',
-                                             'column_template_error'))
+                                             'column_template_error',
+                                             'extra_args'))
 Context = namedtuple('Context', ('input', 'trainer'))
 
 def parse_cmdline():
@@ -54,6 +58,7 @@ def parse_cmdline():
     column_template = args['--column-template']
     column_template_error = args['--column-template-error']
     output = args['<output>'] or ESTIMATOR_CONFIGURATION_TEMPLATE % estimator
+    param_file = args['--param-file']
 
     try:
         num_bins = int(args['--bins'])
@@ -61,16 +66,27 @@ def parse_cmdline():
         error('Invalid number of bins: %s' % args['--bins'])
         abort()
 
+    extra_args = {}
+    if param_file:
+        try:
+            with open(param_file) as f:
+                extra_args = safe_load(f)
+        except (OSError, YAMLError) as e:
+            error('Error loading parameter file: %s' % e)
+            abort()
+
     info('Estimator algorithm: %s' % estimator)
     info('Bins: %d' % num_bins)
     info('HDF5 group name: \"%s\"' % hdf5_group)
     info('Column template for magnitude data: \"%s\"' % column_template)
     info('Column template for error data: \"%s\"' % column_template_error)
+    info('Extra parameter file: "%s"' % param_file)
 
     return Configuration(input=args['<input>'], output=output,
                          estimator=estimator, num_bins=num_bins,
                          hdf5_group=hdf5_group, column_template=column_template,
-                         column_template_error=column_template_error)
+                         column_template_error=column_template_error,
+                         extra_args=extra_args)
 
 def load_slow_modules(estimator):
     global DEF_MAGLIMS, DS, TableHandle, Trainer, RailStage
@@ -100,19 +116,23 @@ def load_slow_modules(estimator):
     DS = RailStage.data_store
 
 def setup_trainer(estimator, output, column_template, column_template_error,
-                  hdf5_group='', num_bins=301):
-    extra_info = {}
+                  extra_args, hdf5_group='', num_bins=301):
+    all_args = {
+            'name': 'train',
+            'model': output,
+            'hdf5_groupname': hdf5_group,
+            'nzbins': num_bins,
+    }
 
     if estimator == 'tpz':
-        extra_info['nondetect_val'] = nan
+        all_args['nondetect_val'] = nan
 
-    extra_info.update(create_column_mapping_dict(
+    all_args.update(create_column_mapping_dict(
             column_template, column_template_error, DEF_MAGLIMS))
 
+    all_args.update(extra_args)
 
-    trainer = Trainer.make_stage(
-            name='train', model=output, hdf5_groupname=hdf5_group,
-            nzbins=num_bins, **extra_info)
+    trainer = Trainer.make_stage(**all_args)
 
     return trainer
 
@@ -140,8 +160,8 @@ def setup(cfg):
     try:
         info('Configuring trainer...')
         trainer = setup_trainer(cfg.estimator, cfg.output, cfg.column_template,
-                                cfg.column_template_error, cfg.hdf5_group,
-                                cfg.num_bins)
+                                cfg.column_template_error, cfg.extra_args,
+                                cfg.hdf5_group, cfg.num_bins)
     except OSError as e:
         error('Error: unable to load trainer configuration file.')
         error(e)
