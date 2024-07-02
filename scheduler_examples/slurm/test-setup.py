@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 '''Prepare directories and ancillary files to run 
-   rail-estimate script in parallel using HTCondor. 
+   rail-estimate script in parallel using Slurm. 
    Write provenance info in text file. 
 
    Usage:
@@ -85,13 +85,13 @@ def main():
     except OSError as error:
         print('Failed to create directories')
 
-    htcondor_dir = os.environ['REPO_DIR']
-    slurm_batch_path = f"{htcondor_dir}/scheduler_examples/slurm/rail-slurm/rail-slurm.batch"
-    slurm_py_path = f"{htcondor_dir}/scheduler_examples/slurm/rail-slurm/rail-slurm.py"
-    slurm_shield_path = f"{htcondor_dir}/utils/slurm/slurm-shield.c"
+    repo_dir = os.environ['REPO_DIR']
+    slurm_batch_path = f"{repo_dir}/scheduler_examples/slurm/rail-slurm/rail-slurm.batch"
+    slurm_py_path = f"{repo_dir}/scheduler_examples/slurm/rail-slurm/rail-slurm.py"
+    slurm_shield_path = f"{repo_dir}/utils/slurm/slurm-shield.c"
     
     if not os.path.isfile(slurm_shield_path) or not os.path.isfile(slurm_py_path) or not os.path.isfile(slurm_shield_path):
-        print(f"REPO_DIR NOT FOUND > {htcondor_dir} error creatind important links")
+        print(f"REPO_DIR NOT FOUND > {repo_dir} error creatind important links")
     
     os.symlink(f'{slurm_batch_path}', f'./{args.process_id}/rail-slurm.batch')
     os.symlink(f'{slurm_py_path}', f'./{args.process_id}/rail-slurm.py')
