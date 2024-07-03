@@ -10,12 +10,13 @@ from yaml import safe_load
 
 SBATCH_ARGS = '-N 1 --ntasks-per-node=1'
 PROG = 'pz-train'
+OUTPUT_TEMPLATE = 'estimator_%s.pkl'
 
 @dataclass
 class Configuration:
     inputfile: str = 'input.hdf5'
     algorithm: str = 'fzboost'
-    outputfile: str = 'estimator_%s.pkl' % algorithm
+    outputfile: str = OUTPUT_TEMPLATE % algorithm
     sbatch: str = 'sbatch'
     sbatch_args: list[str] = field(default_factory=lambda: split(SBATCH_ARGS))
     prog_batch: str = '%s.batch' % PROG
@@ -42,6 +43,9 @@ def load_configuration(conffile):
         tmp = None
 
     if tmp:
+        if 'algorithm' in tmp and not 'outputfile' in tmp:
+            tmp['outputfile'] = OUTPUT_TEMPLATE % tmp['algorithm']
+
         config = replace(config, **tmp)
 
     config.inputfile = to_path(config.inputfile)
