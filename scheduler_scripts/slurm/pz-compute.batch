@@ -51,13 +51,13 @@ from time import sleep
 SRUN = 'srun'
 SRUN_ARGS = [SRUN, '-n1', '-N1']
 LOG = 'log'
-PROG = 'rail-slurm'
+PROG = 'pz-compute'
 ESTIMATE = 'rail-estimate'
 ESTIMATE_ARGS = ['--bins=301']
 OUTPUT_DIR = 'output'
 INPUT_DIR = 'input'
 ALGORITHM = 'fzboost'
-HELPER = 'rail-slurm.py'
+HELPER = 'pz-compute.run'
 MAX_ATTEMPTS = 3
 
 Mask = namedtuple('Mask', ('host', 'slot'))
