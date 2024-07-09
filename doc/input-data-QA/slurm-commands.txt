@@ -1,0 +1,4 @@
+sbatch submit_job.sbatch
+scontrol show job númerodojob
+squeue -u nomedeusuário
+sacct --starttime 2024-05-29
