@@ -135,6 +135,7 @@ dmypy.json
 *.h5
 *.hdf5
 *.fits
+*.csv 
 
 # logs
 *.log
