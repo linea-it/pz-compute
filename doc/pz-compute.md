@@ -95,7 +95,8 @@ ssh loginapl01
     $SCRATCH
     mkdir bin
     cd bin
-    ln -s $SCRATCH/pz-compute/scheduler_scripts/slurm/pz-compute ./pz-compute-dev 
+    ln -s $SCRATCH/pz-compute/scheduler_scripts/slurm/pz-compute ./pz-compute-dev
+    chmod +x pz-compute-dev
     ```
 
 5. Add the directory with the link to executable file to your environment variable `$PATH` by adding the line below to your `~/.bashrc` file:
