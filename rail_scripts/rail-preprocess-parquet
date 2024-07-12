@@ -63,7 +63,7 @@ Configuration = namedtuple('Configuration',
                            ('input', 'output_dir', 'flux_template',
                             'flux_error_template', 'mag_template',
                             'mag_error_template', 'rows', 'flux',
-                            'output_template', 'ra','dec'))
+                            'output_template', 'ra', 'dec', 'objectId'))
 
 def parse_cmdline():
     args = docopt(__doc__, version=VERSION_TEXT)
@@ -83,7 +83,8 @@ def parse_cmdline():
                          rows=rows, flux=args['--flux'],
                          output_template=args['--output-template'],
                          ra=args['--ra'], 
-                         dec=args['--dec'])
+                         dec=args['--dec'],
+                         objectId=args['--objectId'])
 
 def build_output_name(file_name, index, template, extension=DEFAULT_EXT):
     file_name = basename(file_name)
@@ -92,31 +93,36 @@ def build_output_name(file_name, index, template, extension=DEFAULT_EXT):
 
     return template.format(fname=split[0], idx=index, ext=ext)
 
-def parquet_check_column_presence(parquet, flux, mag, ra, dec):
+def parquet_check_column_presence(parquet, flux, mag, ra, dec, objectId):
     columns = frozenset(parquet.schema.names)
     has_magnitude = all(col in columns for col in mag)
     has_flux = all(col in columns for col in flux)
     has_ra = ra in columns
     has_dec = dec in columns
+    has_objectId = objectId in columns
 
-    return has_magnitude, has_flux, has_ra, has_dec
+    return has_magnitude, has_flux, has_ra, has_dec, has_objectId
 
-def choose_columns(has_ra, has_dec, has_magnitude, has_flux, 
-                    ra, dec, flux, flux_columns, flux_error_columns, 
+def choose_columns(has_ra, has_dec, has_objectId, has_magnitude, has_flux, 
+                    ra, dec, objectId, flux, flux_columns, flux_error_columns, 
                    mag_columns, mag_error_columns):
     
     coord_columns = [] 
+       
+    if not has_objectId:
+        error('Warning: objectId not found.')
+    else:
+        coord_columns.append(objectId)
 
     if not has_ra:
         error('Warning: coordinate R.A. not found.')
     else:
         coord_columns.append(ra)
-        
+         
     if not has_dec:
         error('Warning: coordinate Dec. not found.')
     else:
         coord_columns.append(dec)
-
     if not has_magnitude and not has_flux:
         error('Error: magnitude or flux columns not found.')
         abort()
@@ -181,14 +187,15 @@ def preprocess(cfg):
                 print(input_)
                 return
 
-            has_magnitude, has_flux, has_ra, has_dec = parquet_check_column_presence(
+            has_magnitude, has_flux, has_ra, \
+            has_dec, has_objectId = parquet_check_column_presence(
                     f, flux_columns + flux_error_columns,
                     mag_columns + mag_error_columns, 
-                    ra_column, dec_column)
+                    ra_column, dec_column, objectId_column)
             
             use_flux, coord_columns, value_columns, error_columns = choose_columns(
-                    has_ra, has_dec, has_magnitude, has_flux, 
-                    cfg.ra, cfg.dec, cfg.flux, flux_columns, 
+                    has_ra, has_dec, has_objectId, has_magnitude, has_flux, 
+                    cfg.ra, cfg.dec, cfg.objectId, cfg.flux, flux_columns, 
                     flux_error_columns, mag_columns, mag_error_columns)
             
             all_columns = coord_columns + value_columns + error_columns
@@ -223,6 +230,7 @@ def preprocess(cfg):
         raise SystemExit(1)
 
 def main():
+    print('debug')
     cfg = parse_cmdline()
     preprocess(cfg)
 
