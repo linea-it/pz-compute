@@ -112,6 +112,7 @@ ssh loginapl01
 5. Install the pipeline: 
 
     ```shell
+    conda activate pz_compute
     cd $SCRATCH/pz-compute/rail_scripts 
     ./install-pz-rail  # for now, it is mandatory to execute this script from inside the rail_scripts dir 
     ```
