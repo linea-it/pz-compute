@@ -31,6 +31,15 @@ CFLAGS="-L $CONDA_PREFIX/lib -I $CONDA_PREFIX/include" pip install fitsio
 CFLAGS="-O2 -DNDEBUG -std=gnu99" pip install pytdigest
 pip install flexcode
 
+# copied from the old requirements.txt 
+pip install docopt
+pip install pyxdg
+pip install dustmaps
+
+# dustmap lib requires extra config to download the dust maps 
+python dustmaps_setup.py  # fetch --map-name=sfd (to do: implement other maps) 
+
+
 # Install RAIL after all dependencies are installed
 pip install pz-rail
 pip install pz-rail-bpz
