@@ -62,14 +62,14 @@ ssh loginapl01
 1. Create a new development environment:  
     
     ```shell
-    conda create -n pz_compute
+    conda create --name pz_compute
     conda activate pz_compute
     ```
 
 2. In your scracth area, clone the `pz-compute` repository and checkout to your development branch: 
 
     ```shell
-    $SCRATCH
+    cd $SCRATCH
     git clone https://github.com/linea-it/pz-compute.git # for HTTPS clone
     ```
     or
@@ -84,14 +84,9 @@ ssh loginapl01
     git checkout <dev-branch-name>
     ```
 
-3. Install the pipeline: 
 
-    ```shell
-    cd rail_scripts 
-    ./install-pz-rail
-    ```
 
-4. Still in your scracth area, create a directory (e.g., "bin") to host a symbolic link to the pipeline executable file and name it as `pz-compute-dev`: 
+3. Still in your scracth area, create a directory (e.g., "bin") to host a symbolic link to the pipeline executable file and name it as `pz-compute-dev`: 
     
     ```shell
     cd $SCRATCH
@@ -101,16 +96,24 @@ ssh loginapl01
     chmod +x pz-compute-dev
     ```
 
-5. Add the directory with the link to executable file to your environment variable `$PATH` by adding the line below to your `~/.bashrc` file:
+4. Add two environment variables to your `~/.bashrc` file: (i) add the directory with the link to executable file to your environment variable `$PATH`; (ii) add the directory to save the dust maps files to `DUSTMAPS_CONFIG_FNAME` :
     
     ```shell
     export PATH=$PATH:$SCRATCH/bin
+    export DUSTMAPS_CONFIG_FNAME=$SCRATCH/pz-compute/rail_scripts/dustmaps_config.json
     ```
 
-6. Logout and login again to **loginapl01**, or execute: 
+5. Logout and login again to **loginapl01**, or execute: 
     
     ```shell
     source ~/.bashrc
+    ```
+
+5. Install the pipeline: 
+
+    ```shell
+    cd $SCRATCH/pz-compute/rail_scripts 
+    ./install-pz-rail  # for now, it is mandatory to execute this script from inside the rail_scripts dir 
     ```
 
 ### Execution  
