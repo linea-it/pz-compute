@@ -58,20 +58,15 @@ ssh loginapl01
 
 ### Quick setup 
 
-(steps 1 and 2 are identical to _production mode_)
 
-1. Add the following block to your `~/.bashrc` file:
+1. Create a new development environment:  
     
     ```shell
-    if [[ -d ~app.photoz ]]
-    then
-        source ~app.photoz/conf-pz-compute-user.sh
-    fi
+    conda create -n pz_compute
+    conda activate pz_compute
     ```
 
-2. Logout and login again to **loginapl01**. 
-
-3. In your scracth area, clone the `pz-compute` repository and checkout to your development branch: 
+2. In your scracth area, clone the `pz-compute` repository and checkout to your development branch: 
 
     ```shell
     $SCRATCH
@@ -89,10 +84,17 @@ ssh loginapl01
     git checkout <dev-branch-name>
     ```
 
+3. Install the pipeline: 
+
+    ```shell
+    cd rail_scripts 
+    ./install-pz-rail
+    ```
+
 4. Still in your scracth area, create a directory (e.g., "bin") to host a symbolic link to the pipeline executable file and name it as `pz-compute-dev`: 
     
     ```shell
-    $SCRATCH
+    cd $SCRATCH
     mkdir bin
     cd bin
     ln -s $SCRATCH/pz-compute/scheduler_scripts/slurm/pz-compute ./pz-compute-dev
