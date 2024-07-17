@@ -23,6 +23,7 @@ conda install -y matplotlib
 conda install -y psutil
 conda install -y cython
 conda install -y mpi4py
+conda install dask distributed
 
 pip install joblib
 pip install scikit-learn
@@ -30,6 +31,9 @@ pip install scikit-learn-intelex
 CFLAGS="-L $CONDA_PREFIX/lib -I $CONDA_PREFIX/include" pip install fitsio
 CFLAGS="-O2 -DNDEBUG -std=gnu99" pip install pytdigest
 pip install flexcode
+pip install dask[dataframe]
+pip install dask_jobqueue
+pip install bokeh
 
 # Install RAIL after all dependencies are installed
 pip install pz-rail
