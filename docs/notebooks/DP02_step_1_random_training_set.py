@@ -1,66 +1,84 @@
-from dask.distributed import Client
+import dask
+from dask import dataframe as dd
+from dask import delayed
+from dask.distributed import Client, performance_report
 from dask_jobqueue import SLURMCluster
-import dask.dataframe as dd
-import dask.array as da
 import numpy as np
 import pandas as pd
-import os
 import glob
-import time
 import psutil
+import time
+import tables_io
 
+# Configuração do SLURMCluster para usar 12 nós com 56 núcleos lógicos e 128GB de RAM cada
 cluster = SLURMCluster(
-    interface="ib0",    
-    queue='cpu_small',  
-    cores=56,           
-    processes=28,       
-    memory='128GB',      
-    walltime='01:00:00',  
-    job_extra_directives=['--propagate']
+    interface="ib0",    # Interface do Lustre
+    queue='cpu_small',  # Substitua pelo nome da sua fila
+    cores=56,           # Número de núcleos lógicos por nó
+    processes=56,       # Número de processos por nó (um processo por núcleo)
+    memory='128GB',     # Memória por nó
+    walltime='01:00:00',  # Tempo máximo de execução
+    job_extra_directives=['--propagate'],  # Argumentos adicionais para o SLURM
 )
 
-cluster.scale(jobs=4)
+# Escalando o cluster para usar 6 nós
+cluster.scale(jobs=6)  # Defina para usar 6 nós
 
-# Client Dask
-client = Client(cluster)
+# Definindo o client do Dask
+client = Client(cluster)  
 
-def select_data(filename, fraction=0.001): 
-    """ Read table, load as dataframe, trim columns, remove low s/n objects, then select random fraction. """
-    
-    
-def prepare_data(dataframe):
-    """ Apply extiction correction, remove extreme color outliers."""
-    
-def save_partial_tmp_files(): 
-    
-        
-    
-
-# Measure execution time 
+# Medir o tempo de execução - START
 start_wall_time = time.time()
 start_cpu_time = psutil.cpu_times()
 
-# Get list of parquet files in the  folder 
-file_list = glob.glob('/lustre/t1/cl/lsst/dp0.2/*.parq')
+# Definição das variáveis pelo usuário
+band_for_cut = 'i' 
+mag_cut = 25.2  
+fraction = 0.002  
 
-# Ler e concatenar todos os arquivos Parquet
-df = dd.read_parquet(file_list)
+# Caminho para o relatório de desempenho do Dask
+performance_report_path = f'/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/output/performance_report_{band_for_cut}_{mag_cut}_{fraction}.html'
 
-# Inicializar a lista para armazenar todos os dados
-all_data = []
+with performance_report(filename=performance_report_path):
+    # Obter lista de arquivos HDF5 na pasta
+    file_list = glob.glob('/lustre/t1/cl/lsst/dp0.2/secondary/catalogs/skinny/*.hdf5')
+    
+    # Ler todos os arquivos HDF5 com dask delayed.
+    def read_hdf5(file):
+        x = tables_io.read(file)
+        return pd.DataFrame(x)
+    # Ler os arquivos usando dask.delayed
+    dfs = [delayed(read_hdf5)(file) for file in file_list]
+    ddf = dd.from_delayed(dfs)
+    
+    # Remover valores NaN nas colunas de magnitude
+    ddf = ddf.dropna(subset=[f'mag_{band_for_cut}'])
+    
+    # Aplicar corte baseado na banda e magnitude fornecidas
+    ddf_filtered = ddf[ddf[f'mag_{band_for_cut}'] <= mag_cut]
+    
+    # Fazer uma seleção aleatória.
+    ddf_sampled = ddf_filtered.sample(frac=fraction)
 
-# Computar e salvar histogramas e bins para cada banda
-for band in bins.keys():
-    total_histogram = compute_total_histogram(df, band)
-    all_data.append({'band': band, 'type': 'histogram', 'values': total_histogram.tolist()})
-    all_data.append({'band': band, 'type': 'bins', 'values': {'mag_bins': bins[band][0].tolist(), 'magerr_bins': bins[band][1].tolist()}})
+    # Caminhos de saída
+    output_path_parquet = f'/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/output/random_sample_{band_for_cut}_{mag_cut}_{fraction}.parquet'
+    output_path_csv = f'/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/output/random_sample_{band_for_cut}_{mag_cut}_{fraction}.csv'
+    output_path_hdf5 = f'/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/output/random_sample_{band_for_cut}_{mag_cut}_{fraction}.hdf5'
 
-# Criar dataframe único e salvar em arquivo Parquet
-all_data_df = pd.DataFrame(all_data)
-output_path = '/lustre/t0/scratch/users/luigi.silva/lsst/combined-graphs-QA-notebook/output/histo_2d_mag_magerr_all_bands.parquet'
-all_data_df.to_parquet(output_path, engine='fastparquet')
+    # Computando o dataframe.
+    ddf_computed = ddf_sampled.compute()
+    ddf_computed = ddf_computed.reset_index(drop=True)
+    
+    # Salvar os dados em Parquet
+    ddf_computed.to_parquet(output_path_parquet, index=False)
 
-# Medir o tempo de execução
+    # Salvar os dados em CSV
+    ddf_computed.to_csv(output_path_csv, index=False)
+
+    # Salvar os dados em HDF5
+    tables_io.write(ddf_computed, output_path_hdf5)
+
+# Medir o tempo de execução - END
 end_wall_time = time.time()
 end_cpu_time = psutil.cpu_times()
 
@@ -70,7 +88,7 @@ total_cpu_time_user = end_cpu_time.user - start_cpu_time.user
 total_cpu_time_system = end_cpu_time.system - start_cpu_time.system
 
 # Salvar os tempos de execução em um arquivo de texto
-output_time_path = '/lustre/t0/scratch/users/luigi.silva/lsst/combined-graphs-QA-notebook/logs/histo_2d_mag_magerr_execution_times.txt'
+output_time_path = f'/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/output/execution_times_{band_for_cut}_{mag_cut}_{fraction}.txt'
 with open(output_time_path, 'w') as f:
     f.write(f'Total Wall Time: {total_wall_time} seconds\n')
     f.write(f'Total CPU Time (User): {total_cpu_time_user} seconds\n')

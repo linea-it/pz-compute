@@ -1,25 +1,25 @@
 #!/bin/bash
-#SBATCH --job-name=dask_make_random_train     # job name
-#SBATCH --output=/lustre/t0/scratch/users/gschwend/github/pz-compute/docs/notebooks/slurm_%j.out # slurm log output name (%j replaced by job ID)
-#SBATCH --error=/lustre/t0/scratch/users/gschwend/github/pz-compute/docs/notebooks/slurm_%j.err # slurm raise error output name (%j replaced by job ID)
-#SBATCH --partition=cpu_small  # slurm queue 
-#SBATCH --nodes=4              # number of nodes 
-#SBATCH --ntasks-per-node=28   # equivalent to number of Dask processes 
-#SBATCH --cpus-per-task=2      # threads per task (2 threads per physical core) 
-#SBATCH --mem=128GB            # memory per node 
-#SBATCH --time=01:00:00        # timeout limit  
+#SBATCH --job-name=dask_make_random_train     # Nome do job
+#SBATCH --output=/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/logs/output_%j.log    # Nome do arquivo de saída (%j será substituído pelo ID do job)
+#SBATCH --error=/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/logs/error_%j.log           # Nome do arquivo de erro (%j será substituído pelo ID do job)
+#SBATCH --partition=cpu_small  # Substitua pelo nome da sua fila
+#SBATCH --nodes=6              # Número de nós
+#SBATCH --ntasks-per-node=56   # Número de tarefas por nó (equivalente ao número de processos Dask)
+#SBATCH --cpus-per-task=1      # Número de threads por tarefa (1 thread por núcleo)
+#SBATCH --mem=128GB            # Memória por nó
+#SBATCH --time=01:00:00        # Tempo máximo de execução
 #SBATCH --propagate
 
-# Initialize Conda e activate environment pz_compute
-export PATH="/lustre/t0/scratch/users/gschwend/miniconda3/bin:$PATH"
+# Inicializar o Conda e ativar o ambiente pz_compute
+export PATH="/lustre/t0/scratch/users/<your-user>/miniconda3/bin:$PATH"
 eval "$(conda shell.bash hook)"
 conda activate pz_compute
 
-# Verify if env is activated correctly 
-echo "Python from: $(which python)"
-echo "Python version: $(python --version)"
-echo "Installed packages:"
+# Verificar se o ambiente foi ativado corretamente
+echo "Usando Python de: $(which python)"
+echo "Versão do Python: $(python --version)"
+echo "Pacotes instalados:"
 pip list
 
-# Execute Python script 
-python /lustre/t0/scratch/users/gschwend/github/pz-compute/docs/notebooks/DP02_step_1_random_training_set.py 
+# Executar o script Python
+python /lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/DP02_step_1_random_training_set.py
