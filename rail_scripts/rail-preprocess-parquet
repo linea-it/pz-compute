@@ -23,8 +23,8 @@ Options:
                                       [default: mag_{band}].
     --mag-error-template=<template>   Set the names of the magnitude error
                                       columns [default: magerr_{band}].
-    --apply-dered=<yes/no>            Apply dereddening to magnitudes or fluxes 
-                                      [default: yes].
+    --apply-dered=<sfd/None>          Apply dereddening to magnitudes or fluxes 
+                                      [default: sfd].
     --ra=<ra>                         Set the name of equatorial coordinate
                                       Right Ascension [default: coord_ra].
     --dec=<dec>                       Set the name of equatorial coordinate
@@ -58,17 +58,12 @@ from pyarrow.parquet import ParquetFile, write_table
 from astropy.coordinates import SkyCoord
 
 from dustmaps.sfd import SFDQuery
-from dustmaps.config import config
-config['data_dir'] = '.'
-import dustmaps.sfd
-dustmaps.sfd.fetch()
 
 from rail_scripts import DEFAULT_BANDS, VERSION_TEXT, abort, error, info, \
         map_bands
 
 BUFFER_SIZE = 1<<20
 DEFAULT_EXT = '.hdf5'
-bands = DEFAULT_BANDS
 
 Configuration = namedtuple('Configuration',
                            ('input', 'output_dir', 'flux_template',
@@ -164,17 +159,23 @@ def flux_to_mag(table, values, errors, apply_dered, coord_columns):
     for val in values:
         table[val] = -2.5*log10(table[val]) + MAG_OFFSET
     
-    if apply_dered == 'yes':  
-        band_a_ebv_values = [4.81, 3.64, 2.70, 2.06, 1.58, 1.31]
-        band_a_ebv = dict(zip(bands, band_a_ebv_values))
-        #print(band_a_ebv)
-        coords = c = SkyCoord(table[coord_columns[0]],  
-                              table[coord_columns[1]], 
-                              unit = 'deg',frame='icrs')
-        sfd = SFDQuery()
-        ebv = sfd(coords)
-        for val, band in zip(values, bands):
-            table[val] = table[val] - ebv*band_a_ebv[band]
+    if apply_dered is not None: 
+        if apply_dered == 'sfd':  
+            band_a_ebv_values = [4.81, 3.64, 2.70, 2.06, 1.58, 1.31]
+            band_a_ebv = dict(zip(DEFAULT_BANDS, band_a_ebv_values))
+            #print(band_a_ebv)
+            coords = c = SkyCoord(table[coord_columns[0]],  
+                                  table[coord_columns[1]], 
+                                  unit = 'deg',frame='icrs')
+            sfd = SFDQuery()
+            ebv = sfd(coords)
+            for val, band in zip(values, DEFAULT_BANDS):
+                table[val] = table[val] - ebv*band_a_ebv[band]
+        else:
+            print('This dust is not available yet')
+            print('Dust maps available: sfd ')
+            print('Aborting...  ')
+            quit()
 
 
 def convert_to_magnitude(table, flux_columns, flux_error_columns, mag_columns,
@@ -187,10 +188,10 @@ def convert_to_magnitude(table, flux_columns, flux_error_columns, mag_columns,
 
 
 def preprocess(cfg):
-    flux_columns = map_bands(cfg.flux_template, bands)
-    flux_error_columns = map_bands(cfg.flux_error_template, bands)
-    mag_columns = map_bands(cfg.mag_template, bands)
-    mag_error_columns = map_bands(cfg.mag_error_template, bands)
+    flux_columns = map_bands(cfg.flux_template, DEFAULT_BANDS)
+    flux_error_columns = map_bands(cfg.flux_error_template, DEFAULT_BANDS)
+    mag_columns = map_bands(cfg.mag_template, DEFAULT_BANDS)
+    mag_error_columns = map_bands(cfg.mag_error_template, DEFAULT_BANDS)
     ra_column = cfg.ra 
     dec_column = cfg.dec 
     apply_dered = cfg.apply_dered 
@@ -247,9 +248,10 @@ def preprocess(cfg):
                                                 cfg.output_template)
                 output_path = join(cfg.output_dir, output_name)
                 #print(cols_in_order)
+                #print()
                 #tables_io.write(table[cols_in_order], output_path) # to do (debug)
                 tables_io.write(table, output_path)
-                print(output_path)
+                #print(output_path)
 
     except ArrowInvalid as e:
         print('Error: parquet library returned error.', file=stderr)
