@@ -113,6 +113,7 @@ ssh loginapl01
 
     ```shell
     conda activate pz_compute
+    mkdir -p $ALTHOME/data
     cd $SCRATCH/pz-compute/rail_scripts 
     ./install-pz-rail  # for now, it is mandatory to execute this script from inside the rail_scripts dir 
     ```
