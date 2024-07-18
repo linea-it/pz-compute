@@ -15,9 +15,9 @@ Or do it specifying the -a|--algorithm, -c|--comment and -p|process_id being you
 
 After that you can put the files to be used in the input
 
-then it will be necessary to copy or create a symbolic link for the file `slurm-analyze-host-performance.py` with the folowing command. This will be contaplated in the setup-script in the future. 
+then it will be necessary to copy or create a symbolic link for the file `slurm-analyze-host-performance.py` with the folowing command in the test repository. This will be contemplated in the setup-script in the future. 
 
-> `ln -s ~/software/Setups/slurm-analyze-host-performance.py`
+> `ln -s <pz-compute-path>/performance/slurm/slurm-analyze-host-performance.py`
 
 Then you can execute the pz-compute to your run
 
