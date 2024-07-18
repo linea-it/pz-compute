@@ -32,23 +32,53 @@ import argparse
 import glob
 import yaml
 import getpass
-import subprocess
 from datetime import datetime
 
+def represent_list(dumper, data):
+    return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
 
-def main():  
+def print_output(args, yaml_file):
+    print('---------------------------------------')
+    print(f'Process ID: {args.process_id}')
+    if not args.comment:
+        args.comment = ' --- ' 
+    print(f'User: {args.user}')
+    print(f'Algorithm: {args.algorithm}')
+    print(f'Description: {args.comment}')
+    print('---------------------------------------')
+    print()
+    
+    print(f'Process info saved in {yaml_file}')    
+    print() 
+    print() 
 
-    # Initialize parser
-    parser = argparse.ArgumentParser()
-    # Adding optional argument
-    parser.add_argument("-p", "--process_id", 
-                        help = "Integer or short string without blank spaces") 
-    parser.add_argument("-c", "--comment", 
-                        help = "Comment with process description (enclosed in quotes)") 
-                                
+def create_yaml_process_file(args):
+    yaml_file = f'./{args.process_id}/process_info.yaml'
 
-    # Read arguments from command line
-    args = parser.parse_args()
+    with open(yaml_file, 'w') as outfile:
+        yaml.dump(vars(args), outfile, default_flow_style=False)
+    
+    return yaml_file
+
+def create_yaml_pz_compute(args):
+    yaml_file_config = f'./{args.process_id}/pz_compute.yaml'
+    
+    yaml.add_representer(list, represent_list)
+    
+    configs_pz_compute = {'algorithm': args.algorithm, 'sbatch_args': ["-N5", "-n140"]}
+    
+    with open(yaml_file_config, 'w') as outfile:
+        yaml.dump(configs_pz_compute, outfile, default_flow_style=False)
+
+def create_required_dirs(args):
+    process_dir = f'./{args.process_id}' 
+    try:
+        os.makedirs(f'{process_dir}', exist_ok = True)
+        os.makedirs(f'{process_dir}/input', exist_ok = True)
+    except OSError as error:
+        print('Failed to create directories')
+
+def create_test_dir(args):
     if args.process_id:
         duplicate_id = os.path.isdir(args.process_id)
         if duplicate_id:
@@ -65,64 +95,67 @@ def main():
             args.process_id = 'test_pz_compute_'+ str(max_id+1)
         else:
             args.process_id = 'test_pz_compute_0'
+            
+def parse_cmd():
+    parser = argparse.ArgumentParser()
 
-
+    parser.add_argument("-p", "--process_id", help = "Integer or short string without blank spaces") 
+    parser.add_argument("-c", "--comment", help = "Comment with process description (enclosed in quotes)") 
+    parser.add_argument("-a", "--algorithm", help = "specify the algorithm to run") 
+    
+    args = parser.parse_args()
     args.user = getpass.getuser()
-    
-    print('---------------------------------------')
-    print(f'Process ID: {args.process_id}')
-    if not args.comment:
-        args.comment = ' --- ' 
-    print(f'User: {args.user}')
-    print(f'Description: {args.comment}')
-    print('---------------------------------------')
-    print()
-    process_dir = f'./{args.process_id}' 
-    try:
-        os.makedirs(f'{process_dir}', exist_ok = True)
-        os.makedirs(f'{process_dir}/input', exist_ok = True)
-        os.makedirs(f'{process_dir}/output', exist_ok = True)
-    except OSError as error:
-        print('Failed to create directories')
-
-    repo_dir = os.environ['REPO_DIR']
-    slurm_batch_path = f"{repo_dir}/scheduler_examples/slurm/rail-slurm/rail-slurm.batch"
-    slurm_py_path = f"{repo_dir}/scheduler_examples/slurm/rail-slurm/rail-slurm.py"
-    slurm_shield_path = f"{repo_dir}/utils/slurm/slurm-shield.c"
-    
-    if not os.path.isfile(slurm_shield_path) or not os.path.isfile(slurm_py_path) or not os.path.isfile(slurm_shield_path):
-        print(f"REPO_DIR NOT FOUND > {repo_dir} error creatind important links")
-    
-    os.symlink(f'{slurm_batch_path}', f'./{args.process_id}/rail-slurm.batch')
-    os.symlink(f'{slurm_py_path}', f'./{args.process_id}/rail-slurm.py')
-    
-    command = ['cc', '-o', f'{args.process_id}/slurm-shield', slurm_shield_path]
-    process = subprocess.run(command, capture_output=True, text=True)
-    
-    if process.returncode == 0:
-        print("Compilação bem-sucedida.")
-        print("Saída:", process.stdout)
+    if args.algorithm == None:
+        args.algorithm = 'to-be-defined'
         
-        if os.path.exists(f'{args.process_id}/slurm-shield'):
-            print(f"Arquivo slurm-shield criado com sucesso")
-        else:
-            print(f"Falha ao criar o arquivo slurm-shield")
+    return args
+
+def check_bashcrc():
+    print("OPENING BACH")
+    bashrc_path = os.path.expanduser('~/.bashrc')
+    print("OPENING BACH", bashrc_path)
+
+    code_block = [
+        "if [[ -d ~app.photoz ]]\n",
+        "then\n",
+        "    source ~app.photoz/conf-pz-compute-user.sh\n",
+        "fi\n"
+    ]
+    
+
+    add = False
+    
+    with open(bashrc_path, 'r') as file:
+        print("OPENING BACH", "   ABRIU")
+        lines = file.readlines()
+        print("OPENING BACH", lines)
+        block_present = any(code_block[0] in line for line in lines)
+        for i in range(len(lines) - len(code_block) + 1):
+            if lines[i:i+len(code_block)] == code_block:
+                block_present = True
+                break
+
+    if add is True:
+        with open(bashrc_path, 'a') as file:
+            file.write(new_line)
+        print(f"Already has the block code in {bashrc_path}")
     else:
-        print("Erro na compilação.")
-        print("Erro:", process.stderr)
+        print(f"It doesn't has the block code in {bashrc_path}")
     
-    # Write info file  
-    yaml_file = f'./{args.process_id}/process_info.yaml'
+def main():
+    #check_bashcrc()
     
-    with open(yaml_file, 'w') as outfile:
-        yaml.dump(vars(args), outfile, default_flow_style=False)
+    args = parse_cmd()
     
-    #with open(yaml_file, 'w') as file:
-    #    file.write(yaml.dump(vars(args)))
-    print(f'Process info saved in {yaml_file}')    
-    print() 
-    print() 
+    create_test_dir(args)
+    create_required_dirs(args)
     
+    create_yaml_pz_compute(args)
+    yaml_file = create_yaml_process_file(args)
     
+    print_output(args, yaml_file)
+    
+    #rail_production_path = '/lustre/t0/scratch/users/app.photoz/pz-compute/performance'
+    #os.symlink(f'{rail_production_path}/slurm/slurm-analyze-host-performance.py', f'./{args.process_id}/slurm-analyze-host-performance.py')
 
 if __name__ == '__main__': main()
