@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=dask_xmatching     # Nome do job
+#SBATCH --job-name=dask_make_hipscat    # Nome do job
 #SBATCH --output=/lustre/t0/scratch/users/luigi.silva/lsst/dp0.2-xmatching-tests/logs/output_%j.log    # Nome do arquivo de saída (%j será substituído pelo ID do job)
 #SBATCH --error=/lustre/t0/scratch/users/luigi.silva/lsst/dp0.2-xmatching-tests/logs/error_%j.log           # Nome do arquivo de erro (%j será substituído pelo ID do job)
 #SBATCH --partition=cpu_small  # Substitua pelo nome da sua fila
@@ -23,4 +23,4 @@ echo "Pacotes instalados:"
 pip list
 
 # Executar o script Python
-python /lustre/t0/scratch/users/luigi.silva/lsst/dp0.2-xmatching-tests/DP02_step_1_xmatching.py
+python /lustre/t0/scratch/users/luigi.silva/lsst/dp0.2-xmatching-tests/DP02_step_1_make_hipscat.py
