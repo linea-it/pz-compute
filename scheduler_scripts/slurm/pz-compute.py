@@ -76,10 +76,10 @@ def setup(config):
 
 def run(config):
     cmd = [config.sbatch] + config.sbatch_args + [config.rail_slurm_batch,
-            config.inputdir, config.outputdir, config.algorithm]
+            config.inputdir, config.outputdir, '-a', config.algorithm]
 
     if config.param_file:
-        cmd.append(config.param_file)
+        cmd += ['-p', config.param_file]
 
     print(' '.join(str(x) for x in cmd))
     execv(config.sbatch, cmd)
