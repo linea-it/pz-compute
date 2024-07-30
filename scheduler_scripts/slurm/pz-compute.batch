@@ -10,25 +10,25 @@
 # Usage:
 #
 #     $ sbatch [<sbatch_options>...] rail-slurm.batch \
-#             [<input_dir> [<output_dir> [<algorithm>]]]
+#             [<input_dir> [<output_dir> [<args>...]]]
 #
 # - input_dir: Input directory with pre-processed input data
 # - output_dir: Target output directory for the estimations
-# - algorithm: The estimation algorithm (fzboost or BPZ)
+# - args: Extra parameters passed to rail-estimate
 #
-# The rail-estimate program also requires an estimator_<algorithm>.pkl
-# file available in the current directory or in a standard data directory.
-# In case of BPZ algorithm, the BPZ cache files (AB directory) must have
-# been previously generated.
+# The rail-estimate program also requires by default an
+# estimator_<algorithm>.pkl file available in the current directory or in a
+# standard data directory.  In case of BPZ algorithm, the BPZ cache files (AB
+# directory) must have been previously generated.
 #
 # Example usage:
 #
-#     # Defaults: input_dir=input, output_dir=output, algorithm=fzboost
+#     # Defaults: input_dir=input, output_dir=output
 #     $ sbatch rail_slurm.batch
 #
-#     # Change the slurm queue
+#     # Change the slurm queue, change estimation algorithm to BPZ
 #     $ sbatch -p cpu_long -t 8:00:00 -N20 --ntasks-per-node=40 \
-#             input1 output1 bpz
+#             input1 output1 -a bpz
 #
 # This script is somewhat "Unix intensive" because it tries to exploit support
 # for dynamic scheduling on slurm. It calls "srun" in parallel and keeps calling
@@ -55,7 +55,6 @@ PROG = 'pz-compute'
 ESTIMATE = 'rail-estimate'
 OUTPUT_DIR = 'output'
 INPUT_DIR = 'input'
-ALGORITHM = 'fzboost'
 HELPER = 'pz-compute.run'
 MAX_ATTEMPTS = 3
 
@@ -95,8 +94,7 @@ def now(msg):
     yield
     info('%s: Finished: %s' % (datetime.now(), msg))
 
-def parallel(files, slots, input_dir, output_base_dir, algorithm, masks,
-             param_file):
+def parallel(files, slots, input_dir, output_base_dir, extra_args, masks):
     children = {}
     task_id = 0
     attempt = { file: 0 for file in files }
@@ -112,10 +110,7 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks,
             output_dir = dirname(output_file)
             stdout_file = stdout_name(task_id)
             stderr_file = stderr_name(task_id)
-            args = [ESTIMATE, '-a', algorithm, input_file, output_file]
-
-            if param_file:
-                args += ['-p', param_file]
+            args = [ESTIMATE, input_file, output_file] + extra_args
 
             makedirs(dirname(stdout_file), exist_ok=True)
             makedirs(dirname(stderr_file), exist_ok=True)
@@ -179,17 +174,8 @@ def parse_cmdline():
     else:
         output_dir = OUTPUT_DIR
 
-    if len(argv) > 3:
-        algorithm = argv[3]
-    else:
-        algorithm = ALGORITHM
-
-    if len(argv) > 4:
-        param_file = argv[4]
-    else:
-        param_file = None
-
-    return input_dir, output_dir, algorithm, param_file
+    extra_args = argv[3:]
+    return input_dir, output_dir, extra_args
 
 def find_program_paths():
     with now('finding program paths'):
@@ -255,12 +241,11 @@ def configure_threads(slots, node_list, task_list):
 
 def main():
     with now(PROG):
-        input_dir, output_dir, algorithm, param_file = parse_cmdline()
+        input_dir, output_dir, extra_args = parse_cmdline()
         slots, node_list, task_list = parse_slurm_variables()
         files = get_input_files(input_dir)
         find_program_paths()
         masks = configure_threads(slots, node_list, task_list)
-        parallel(files, slots, input_dir, output_dir, algorithm, masks,
-                 param_file)
+        parallel(files, slots, input_dir, output_dir, extra_args, masks)
 
 if __name__ == '__main__': main()
