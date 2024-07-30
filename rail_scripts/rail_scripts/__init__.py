@@ -36,12 +36,6 @@ def find_data_file(file_name):
     return file_name
 
 
-def find_estimator_configuration(model_name):
-    model_file = ESTIMATOR_CONFIGURATION_TEMPLATE % model_name
-
-    return find_data_file(model_file)
-
-
 def map_bands(template, bands):
     return [template.format(band=band) for band in bands]
 
