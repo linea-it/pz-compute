@@ -53,7 +53,6 @@ SRUN_ARGS = [SRUN, '-n1', '-N1']
 LOG = 'log'
 PROG = 'pz-compute'
 ESTIMATE = 'rail-estimate'
-ESTIMATE_ARGS = ['--bins=301']
 OUTPUT_DIR = 'output'
 INPUT_DIR = 'input'
 ALGORITHM = 'fzboost'
@@ -113,8 +112,7 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks,
             output_dir = dirname(output_file)
             stdout_file = stdout_name(task_id)
             stderr_file = stderr_name(task_id)
-            args = [ESTIMATE] + ESTIMATE_ARGS + ['-a', algorithm] + \
-                    [input_file, output_file]
+            args = [ESTIMATE, '-a', algorithm, input_file, output_file]
 
             if param_file:
                 args += ['-p', param_file]
