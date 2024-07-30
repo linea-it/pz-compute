@@ -150,7 +150,7 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks,
                     raise RuntimeError('Error: too many failed attempts.')
                 else:
                     info('Will retry again later.')
-                    files.appendleft(relative_path)
+                    files.appendleft(prev_relative_path)
                     sleep(0.2)
             else:
                 info('%s: Finished: %s %s id=%d' % (datetime.now(), ESTIMATE,
