@@ -70,6 +70,9 @@ def setup(config):
     config.sbatch = find_prog(config.sbatch)
     find_prog(config.prog_batch)
 
+    if not config.inputfile.is_file():
+        raise RuntimeError('input file not found: %s' % config.inputfile)
+
 def run(config):
     cmd = [config.sbatch] + config.sbatch_args + [config.prog_batch,
             config.inputfile, config.outputfile, '-a', config.algorithm]
