@@ -88,7 +88,7 @@ def parse_cmdline():
             abort()
 
     info("Estimator algorithm: %s" % estimator)
-    info("Configuration file: %s" % config)
+    info("Estimator calibration file: %s" % config)
     info("Bins: %d" % num_bins)
     info('HDF5 group name: "%s"' % hdf5_group)
     info('Column template for magnitude data: "%s"' % column_template)
@@ -203,7 +203,7 @@ def setup(cfg):
             cfg.num_bins,
         )
     except OSError as err:
-        error("Error: unable to load estimator configuration file.")
+        error("Error: unable to load estimator calibration file.")
         error(err)
         abort()
 
