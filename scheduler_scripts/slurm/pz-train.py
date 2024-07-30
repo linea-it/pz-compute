@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from dataclasses import dataclass, field, replace
 from os import execv
+from os.path import expandvars
 from pathlib import Path
 from shlex import split
 from shutil import which
@@ -31,7 +32,7 @@ def parse_cmdline():
     return conffile
 
 def to_path(text):
-    return Path(text).expanduser()
+    return Path(expandvars(text)).expanduser()
 
 def load_configuration(conffile):
     config = Configuration()
