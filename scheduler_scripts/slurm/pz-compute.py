@@ -21,6 +21,7 @@ class Configuration:
     rail_slurm_batch: str = 'pz-compute.batch'
     rail_slurm_py: str = 'pz-compute.run'
     param_file: str = None
+    calib_file: str = None
 
 def parse_cmdline():
     try:
@@ -54,6 +55,9 @@ def load_configuration(conffile):
     if config.param_file:
         config.param_file = to_path(config.param_file)
 
+    if config.calib_file:
+        config.calib_file = to_path(config.calib_file)
+
     print(config)
 
     return config
@@ -80,6 +84,9 @@ def run(config):
 
     if config.param_file:
         cmd += ['-p', config.param_file]
+
+    if config.calib_file:
+        cmd += ['-c', config.calib_file]
 
     print(' '.join(str(x) for x in cmd))
     execv(config.sbatch, cmd)
