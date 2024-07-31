@@ -9,7 +9,7 @@ from sys import argv, executable
 
 from yaml import safe_load
 
-SBATCH_ARGS = '-N 1 --ntasks-per-node=1'
+SBATCH_ARGS = '-N 1 --exclusive --ntasks-per-node=1 --mem=0'
 PROG = 'pz-train'
 OUTPUT_TEMPLATE = 'estimator_%s.pkl'
 
