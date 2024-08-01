@@ -13,8 +13,12 @@ Options:
                                    [default: fzboost].
     -b <bins>, --bins=<bins>       Set number of bins (columns) in the resulting
                                    tables [default: 301].
+    -c <file>, --calibration-file=<file>  Set the name of the calibration file
+                                          [default: estimator_{algorithm}.pkl]
     -g <group>, --group=<group>    For HDF5 input, sets the group name (section)
                                    where input data is stored [default: ]
+    -p <file>, --param-file=<file> Extra parameter file for the estimation
+                                   algorithm.
     --column-template=<template>   Set the names of the input columns
                                    [default: mag_{band}]
     --column-template-error=<template-error>  Set the names of the input error
@@ -29,13 +33,14 @@ from os.path import splitext
 
 from docopt import docopt
 from joblib import parallel_config
+from yaml import YAMLError, safe_load
 
 from rail_scripts import (
     VERSION_TEXT,
     abort,
     create_column_mapping_dict,
     error,
-    find_estimator_configuration,
+    find_data_file,
     info,
     load_user_params,
 )
@@ -53,6 +58,7 @@ Configuration = namedtuple(
         "hdf5_group",
         "column_template",
         "column_template_error",
+        "extra_args",
     ),
 )
 Context = namedtuple("Context", ("input", "estimator"))
@@ -62,10 +68,12 @@ def parse_cmdline():
     args = docopt(__doc__, version=VERSION_TEXT)
 
     estimator = args["--algorithm"]
-    config = find_estimator_configuration(args["--algorithm"])
+    calibration_file = args["--calibration-file"].format(algorithm=estimator)
+    calibration_file = find_data_file(calibration_file)
     hdf5_group = args["--group"]
     column_template = args["--column-template"]
     column_template_error = args["--column-template-error"]
+    param_file = args['--param-file']
 
     try:
         num_bins = int(args["--bins"])
@@ -73,22 +81,33 @@ def parse_cmdline():
         error("Invalid number of bins: %s" % args["--bins"])
         abort()
 
+    extra_args = {}
+    if param_file:
+        try:
+            with open(param_file) as f:
+                extra_args = safe_load(f)
+        except (OSError, YAMLError) as e:
+            error('Error loading parameter file: %s' % e)
+            abort()
+
     info("Estimator algorithm: %s" % estimator)
-    info("Configuration file: %s" % config)
+    info("Estimator calibration file: %s" % calibration_file)
     info("Bins: %d" % num_bins)
     info('HDF5 group name: "%s"' % hdf5_group)
     info('Column template for magnitude data: "%s"' % column_template)
     info('Column template for error data: "%s"' % column_template_error)
+    info('Extra parameter file: "%s"' % param_file)
 
     return Configuration(
         input=args["<input>"],
         output=args["<output>"],
         estimator=estimator,
-        estimator_config=config,
+        estimator_config=calibration_file,
         num_bins=num_bins,
         hdf5_group=hdf5_group,
         column_template=column_template,
         column_template_error=column_template_error,
+        extra_args=extra_args,
     )
 
 
@@ -123,28 +142,30 @@ def setup_estimator(
     estimator_config,
     column_template,
     column_template_error,
+    extra_args,
     hdf5_group="",
     num_bins=301,
 ):
-    extra_params = {}
+    all_args = {
+            'name': 'estimate',
+            'model': estimator_config,
+            'output': output,
+            'hdf5_groupname': hdf5_group,
+            'nzbins': num_bins,
+    }
 
     if estimator == 'tpz':
-        extra_params['nondetect_val'] = nan
+        all_args['nondetect_val'] = nan
 
-    extra_params.update(create_column_mapping_dict(
+    all_args.update(create_column_mapping_dict(
         column_template, column_template_error, DEF_MAGLIMS
     ))
 
-    extra_params.update(load_user_params(Estimator, estimator))
+    all_args.update(load_user_params(Estimator, estimator))
 
-    estimator = Estimator.make_stage(
-        name="estimate",
-        model=estimator_config,
-        output=output,
-        hdf5_groupname=hdf5_group,
-        nzbins=num_bins,
-        **extra_params
-    )
+    all_args.update(extra_args)
+
+    estimator = Estimator.make_stage(**all_args)
 
     return estimator
 
@@ -180,11 +201,12 @@ def setup(cfg):
             cfg.estimator_config,
             cfg.column_template,
             cfg.column_template_error,
+            cfg.extra_args,
             cfg.hdf5_group,
             cfg.num_bins,
         )
     except OSError as err:
-        error("Error: unable to load estimator configuration file.")
+        error("Error: unable to load estimator calibration file.")
         error(err)
         abort()
 
