@@ -109,8 +109,52 @@ def parse_cmd():
         args.algorithm = 'to-be-defined'
         
     return args
+        
+def create_link_to_host_performance(args):
+    rail_path = ""
 
-def check_bashcrc():
+    if 'ENVIRONMENT' in os.environ:
+        env = os.environ.get('ENVIRONMENT')
+        if env == "prod":
+            rail_path = '/lustre/t0/scratch/users/app.photoz/pz-compute/performance'
+        elif env == "dev":
+            scratch = os.environ.get('SCRATCH')
+            rail_path = f'{scratch}/pz-compute/performance'
+    else:
+        print("Env not defined, not linking the performance script")
+        return
+          
+    os.symlink(f'{rail_path}/slurm/slurm-analyze-host-performance.py', f'./{args.process_id}/slurm-analyze-host-performance.py')
+
+def add_input_data(args):
+    user_input = input("Do you want to use the complete LSST DP0.2 dataset? (yes/no): ").strip().lower()
+    
+    if user_input == 'yes' or user_input == 'y':
+        if os.path.exists(f'{args.process_id}/input'):
+            source_dir = '/lustre/t1/cl/lsst/dp0.2/secondary/catalogs/skinny/'
+            pattern = '*.hdf5'
+            target_dir = f'./{args.process_id}/input/'
+            
+            for file_path in glob.glob(os.path.join(source_dir, pattern)):
+                filename = os.path.basename(file_path)
+                target_file = os.path.join(target_dir, filename)
+
+                try:
+                    os.symlink(file_path, target_file)
+                except FileExistsError:
+                    print(f"File {target_file} already exists.")
+                except Exception as e:
+                    print(f"Error creating symbolic link to {file_path}: {e}")
+            
+            print("\nUsing the skinny tables for the complete LSST DP0.2\n")
+        else:
+            print("The input dir does not exists.")
+    else:
+        print("\nNot using the complete LSST DP0.2 dataset.")
+        print(f'Please add manually the data in the input dir with the folowing command:\n ln -s origin_path/*.hdf5 {args.process_id}/input/')
+        print()
+
+def check_bashcrc(args):
     print("OPENING BACH")
     bashrc_path = os.path.expanduser('~/.bashrc')
     print("OPENING BACH", bashrc_path)
@@ -121,10 +165,8 @@ def check_bashcrc():
         "    source ~app.photoz/conf-pz-compute-user.sh\n",
         "fi\n"
     ]
-    
 
     add = False
-    
     with open(bashrc_path, 'r') as file:
         print("OPENING BACH", "   ABRIU")
         lines = file.readlines()
@@ -141,21 +183,23 @@ def check_bashcrc():
         print(f"Already has the block code in {bashrc_path}")
     else:
         print(f"It doesn't has the block code in {bashrc_path}")
-    
+        
 def main():
-    #check_bashcrc()
-    
     args = parse_cmd()
+    
+    #check_bashcrc(args)
+    #return
     
     create_test_dir(args)
     create_required_dirs(args)
+    
+    add_input_data(args)
     
     create_yaml_pz_compute(args)
     yaml_file = create_yaml_process_file(args)
     
     print_output(args, yaml_file)
     
-    #rail_production_path = '/lustre/t0/scratch/users/app.photoz/pz-compute/performance'
-    #os.symlink(f'{rail_production_path}/slurm/slurm-analyze-host-performance.py', f'./{args.process_id}/slurm-analyze-host-performance.py')
-
+    create_link_to_host_performance(args)
+    
 if __name__ == '__main__': main()

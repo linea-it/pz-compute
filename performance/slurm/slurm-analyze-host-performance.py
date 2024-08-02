@@ -31,7 +31,7 @@ def save_info_yaml_process_info(begins, ends, duration):
     with open(process_info_file,'r') as yamlfile:
         cur_yaml = yaml.safe_load(yamlfile)
         cur_yaml['time stats'] = time_dict
-    with open(process_info_file','a') as yamlfto:
+    with open('process_info_file','a') as yamlfto:
         yaml.safe_dump(cur_yaml, yamlfto)
         
     print(f'Information saved in {process_info_file}')
