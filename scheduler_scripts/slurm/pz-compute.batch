@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+#SBATCH --time=16:00:00
+#SBATCH -J rail-slurm
+#SBATCH --mem-per-cpu=2140M
+#SBATCH -p cpu
+#SBATCH --propagate=NPROC
+
+# This script calls rail-estimate on the cluster.
+#
+# Usage:
+#
+#     $ sbatch [<sbatch_options>...] rail-slurm.batch \
+#             [<input_dir> [<output_dir> [<algorithm>]]]
+#
+# - input_dir: Input directory with pre-processed input data
+# - output_dir: Target output directory for the estimations
+# - algorithm: The estimation algorithm (fzboost or BPZ)
+#
+# The rail-estimate program also requires an estimator_<algorithm>.pkl
+# file available in the current directory or in a standard data directory.
+# In case of BPZ algorithm, the BPZ cache files (AB directory) must have
+# been previously generated.
+#
+# Example usage:
+#
+#     # Defaults: input_dir=input, output_dir=output, algorithm=fzboost
+#     $ sbatch rail_slurm.batch
+#
+#     # Change the slurm queue
+#     $ sbatch -p cpu_long -t 8:00:00 -N20 --ntasks-per-node=40 \
+#             input1 output1 bpz
+#
+# This script is somewhat "Unix intensive" because it tries to exploit support
+# for dynamic scheduling on slurm. It calls "srun" in parallel and keeps calling
+# it while previous "srun" executions finish, keeping the cluster's task slots
+# fully allocated until all files are processed.
+
+from collections import deque, namedtuple
+from contextlib import contextmanager
+from datetime import datetime
+from glob import glob
+from os import P_NOWAIT, WNOHANG, chdir, environ, getcwd, kill, makedirs, \
+        spawnv, waitpid, sched_getaffinity
+from os.path import dirname, getsize, isfile, join, relpath
+from shutil import which
+from signal import SIGHUP
+from subprocess import run
+from sys import argv, stderr
+from time import sleep
+
+SRUN = 'srun'
+SRUN_ARGS = [SRUN, '-n1', '-N1']
+LOG = 'log'
+PROG = 'pz-compute'
+ESTIMATE = 'rail-estimate'
+ESTIMATE_ARGS = ['--bins=301']
+OUTPUT_DIR = 'output'
+INPUT_DIR = 'input'
+ALGORITHM = 'fzboost'
+HELPER = 'pz-compute.run'
+MAX_ATTEMPTS = 3
+
+Mask = namedtuple('Mask', ('host', 'slot'))
+
+# Spawns a single task to a single cluster slot
+def srun(cmd, stdout, stderr, mask):
+    args = SRUN_ARGS + ['--output', stdout, '--error', stderr, '-w', mask.host,
+            HELPER, str(mask.slot)] + list(cmd)
+
+    return spawnv(P_NOWAIT, SRUN_PATH, args)
+
+def stdout_name(task_id):
+    subdir = '%05d' % (task_id // 10000 * 10000)
+    return join(LOG, subdir, '%s-%d.out' % (PROG, task_id))
+
+def stderr_name(task_id):
+    subdir = '%05d' % (task_id // 10000 * 10000)
+    return join(LOG, subdir, '%s-%d.err' % (PROG, task_id))
+
+# Best effort cleanup on abnormal program termination
+def try_kill_children(children):
+    for pid in children:
+        kill(pid, SIGHUP)
+
+    sleep(1)
+
+    for _ in children:
+        waitpid(-1, WNOHANG)
+
+def info(msg):
+    print(msg, file=stderr, flush=True)
+
+@contextmanager
+def now(msg):
+    info('%s: Starting: %s' % (datetime.now(), msg))
+    yield
+    info('%s: Finished: %s' % (datetime.now(), msg))
+
+def parallel(files, slots, input_dir, output_base_dir, algorithm, masks,
+             param_file):
+    children = {}
+    task_id = 0
+    attempt = { file: 0 for file in files }
+    files = deque(files)
+    masks = deque(masks)
+
+    while len(children) > 0 or len(files) > 0:
+        # Keep all cluster slots full by spawning each task
+        while len(children) < slots and len(files) > 0:
+            relative_path = files.pop()
+            input_file = join(input_dir, relative_path)
+            output_file = join(output_base_dir, relative_path)
+            output_dir = dirname(output_file)
+            stdout_file = stdout_name(task_id)
+            stderr_file = stderr_name(task_id)
+            args = [ESTIMATE] + ESTIMATE_ARGS + ['-a', algorithm] + \
+                    [input_file, output_file]
+
+            if param_file:
+                args += ['-p', param_file]
+
+            makedirs(dirname(stdout_file), exist_ok=True)
+            makedirs(dirname(stderr_file), exist_ok=True)
+            makedirs(output_dir, exist_ok=True)
+
+            info('%s: Starting: %s %s id=%d' % (datetime.now(), ESTIMATE,
+                relative_path, task_id))
+
+            mask = masks.pop()
+
+            pid = srun(args, stdout_file, stderr_file, mask)
+            children[pid] = (relative_path, task_id, mask)
+            task_id += 1
+
+        # Wait for tasks to finish
+        if len(children) > 0:
+            pid, ret = waitpid(-1, 0)
+            prev_relative_path, prev_task_id, mask = children.pop(pid)
+            masks.appendleft(mask)
+
+            attempt[prev_relative_path] += 1
+
+            if ret != 0:
+                info('Error: child process returned failure: ret=%d, '
+                     'signal=%d, id=%d, host=%s, slot=%d.' % (ret//256, ret%256,
+                     prev_task_id, mask.host, mask.slot))
+                if attempt[prev_relative_path] > MAX_ATTEMPTS:
+                    info('Error: too many failed attempts.')
+                    try_kill_children(children)
+                    raise RuntimeError('Error: too many failed attempts.')
+                else:
+                    info('Will retry again later.')
+                    files.appendleft(relative_path)
+                    sleep(0.2)
+            else:
+                info('%s: Finished: %s %s id=%d' % (datetime.now(), ESTIMATE,
+                    prev_relative_path, prev_task_id))
+
+                # Best effort delay to avoid srun's "node is busy" messages,
+                # give a little breathing room to the nodes.
+                sleep(0.005)
+
+def get_input_files(input_dir):
+    with now('searching input files'):
+        cwd = getcwd()
+        chdir(input_dir)
+        try:
+            return [path for path in glob('**/*', recursive=True) if
+                    isfile(path)]
+        finally:
+            chdir(cwd)
+
+def parse_cmdline():
+    if len(argv) > 1:
+        input_dir = argv[1]
+    else:
+        input_dir = INPUT_DIR
+
+    if len(argv) > 2:
+        output_dir = argv[2]
+    else:
+        output_dir = OUTPUT_DIR
+
+    if len(argv) > 3:
+        algorithm = argv[3]
+    else:
+        algorithm = ALGORITHM
+
+    if len(argv) > 4:
+        param_file = argv[4]
+    else:
+        param_file = None
+
+    return input_dir, output_dir, algorithm, param_file
+
+def find_program_paths():
+    with now('finding program paths'):
+        srun = which(SRUN)
+        if not srun:
+            raise RuntimeError('Unable to find %s program.' % SRUN)
+        info(srun)
+        estimate = which(ESTIMATE)
+        if not estimate:
+            raise RuntimeError('Unable to find %s program.' % ESTIMATE)
+        info(estimate)
+        helper = which(HELPER)
+        if not helper:
+            helper = which(join('.', HELPER))
+        if not helper:
+            raise RuntimeError('Unable to find %s program.' % HELPER)
+        info(helper)
+
+        global SRUN_PATH
+
+        SRUN_PATH = srun
+
+def parse_slurm_tasks_per_node(tasks_per_node):
+    task_list = []
+    for t in tasks_per_node.split(','):
+        l = t.split('(x')
+        v = int(l[0])
+        if len(l) > 1:
+            m = int(l[1].strip(')'))
+        else:
+            m = 1
+        for i in range(m):
+            task_list.append(v)
+
+    return task_list
+
+def parse_slurm_variables():
+    slots = int(environ['SLURM_NTASKS'])
+    tasks_per_node = environ['SLURM_TASKS_PER_NODE']
+    node_list = run('scontrol show hostnames', check=True, capture_output=True,
+                    shell=True).stdout.decode('utf-8').split()
+    task_list = parse_slurm_tasks_per_node(tasks_per_node)
+
+    return slots, node_list, task_list
+
+def build_cpu_mask_set(node_list, task_list):
+    masks = set()
+
+    for n, t in zip(node_list, task_list):
+        for i in range(t):
+            masks.add(Mask(host=n, slot=i))
+
+    return masks
+
+def configure_threads(slots, node_list, task_list):
+    # Work around libraries starting a large amount of auxiliary threads.
+    environ['OMP_NUM_THREADS'] = '2'
+    environ['ARROW_IO_THREADS'] = '2'
+    environ['ARROW_DEFAULT_MEMORY_POOL'] = 'system'
+    masks = build_cpu_mask_set(node_list, task_list)
+    assert(len(masks) == slots)
+    return masks
+
+def main():
+    with now(PROG):
+        input_dir, output_dir, algorithm, param_file = parse_cmdline()
+        slots, node_list, task_list = parse_slurm_variables()
+        files = get_input_files(input_dir)
+        find_program_paths()
+        masks = configure_threads(slots, node_list, task_list)
+        parallel(files, slots, input_dir, output_dir, algorithm, masks,
+                 param_file)
+
+if __name__ == '__main__': main()
