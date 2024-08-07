@@ -35,6 +35,7 @@
 # it while previous "srun" executions finish, keeping the cluster's task slots
 # fully allocated until all files are processed.
 
+import shlex
 from collections import deque, namedtuple
 from contextlib import contextmanager
 from datetime import datetime
@@ -47,6 +48,8 @@ from signal import SIGHUP
 from subprocess import run
 from sys import argv, stderr
 from time import sleep
+
+from yaml import YAMLError, safe_dump, safe_load
 
 SRUN = 'srun'
 SRUN_ARGS = [SRUN, '-n1', '-N1']
@@ -74,6 +77,9 @@ def stdout_name(task_id):
 def stderr_name(task_id):
     subdir = '%05d' % (task_id // 10000 * 10000)
     return join(LOG, subdir, '%s-%d.err' % (PROG, task_id))
+
+def cmdline_name():
+    return join(LOG, '%s.cmdline.yaml' % PROG)
 
 # Best effort cleanup on abnormal program termination
 def try_kill_children(children):
@@ -239,11 +245,44 @@ def configure_threads(slots, node_list, task_list):
     assert(len(masks) == slots)
     return masks
 
+def log_cmdline(args):
+    fname = cmdline_name()
+    dname = dirname(fname)
+
+    try:
+        makedirs(dname, exist_ok=True)
+    except OSError as e:
+        info('Warning: unable to create directory for loggin the command line: %s' % e)
+
+    try:
+        with open(fname, 'r') as f:
+                old = safe_load(f)
+    except (OSError, YAMLError) as e:
+        old = None
+
+    info('Current command line: %s' % shlex.join(args))
+
+    if old is not None:
+        info('Old command line from log file: %s' % shlex.join(old))
+
+    if args != old:
+        info('Assuming new execution from start.')
+
+        try:
+            with open(fname, 'w') as f:
+                safe_dump(args, f)
+        except (OSError, YAMLError) as e:
+            info('Warning: unable to log the command line parameters to file: '
+                    '%s' % e)
+
+    return args == old
+
 def main():
     with now(PROG):
         input_dir, output_dir, extra_args = parse_cmdline()
         slots, node_list, task_list = parse_slurm_variables()
         files = get_input_files(input_dir)
+        maybe_reexecution = log_cmdline(argv[1:])
         find_program_paths()
         masks = configure_threads(slots, node_list, task_list)
         parallel(files, slots, input_dir, output_dir, extra_args, masks)
