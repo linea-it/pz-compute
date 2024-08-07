@@ -16,17 +16,19 @@ Options:
     --output-template=<template>      Set the names of the output files
                                       [default: {fname}-part{idx}{ext}].
     --flux-template=<template>        Set the names of the flux columns
-                                      [default: {band}_gaap1p0Flux].
+                                      [default: {band}_cModelFlux].
     --flux-error-template=<template>  Set the names of the flux error columns
-                                      [default: {band}_gaap1p0FluxErr].
+                                      [default: {band}_cModelFluxErr].
     --mag-template=<template>         Set the names of the magnitude columns
                                       [default: mag_{band}].
     --mag-error-template=<template>   Set the names of the magnitude error
                                       columns [default: magerr_{band}].
+    --apply-dered=<sfd/None>          Apply dereddening to magnitudes or fluxes 
+                                      [default: sfd].
     --ra=<ra>                         Set the name of equatorial coordinate
-                                      Right Ascension [default: coord_ra]
+                                      Right Ascension [default: coord_ra].
     --dec=<dec>                       Set the name of equatorial coordinate
-                                      Declination [default: coord_dec]
+                                      Declination [default: coord_dec].
 
 
 The following preprocessing steps are currently implemented:
@@ -49,9 +51,13 @@ from sys import argv, stderr
 
 import tables_io
 from docopt import docopt
+import numpy as np
 from numpy import log, log10, multiply, nan_to_num, nan
 from pyarrow import ArrowInvalid
 from pyarrow.parquet import ParquetFile, write_table
+from astropy.coordinates import SkyCoord
+
+from dustmaps.sfd import SFDQuery
 
 from rail_scripts import DEFAULT_BANDS, VERSION_TEXT, abort, error, info, \
         map_bands
@@ -63,7 +69,7 @@ Configuration = namedtuple('Configuration',
                            ('input', 'output_dir', 'flux_template',
                             'flux_error_template', 'mag_template',
                             'mag_error_template', 'rows', 'flux',
-                            'output_template', 'ra','dec'))
+                            'output_template', 'apply_dered', 'ra','dec'))
 
 def parse_cmdline():
     args = docopt(__doc__, version=VERSION_TEXT)
@@ -82,6 +88,7 @@ def parse_cmdline():
                          mag_error_template=args['--mag-error-template'],
                          rows=rows, flux=args['--flux'],
                          output_template=args['--output-template'],
+                         apply_dered=args['--apply-dered'], 
                          ra=args['--ra'], 
                          dec=args['--dec'])
 
@@ -142,7 +149,7 @@ def choose_columns(has_ra, has_dec, has_magnitude, has_flux,
     
     return True, coord_columns, flux_columns, flux_error_columns
 
-def flux_to_mag(table, values, errors):
+def flux_to_mag(table, values, errors, apply_dered, coord_columns):
     MAG_CONV = log(10)*0.4
     MAG_OFFSET = 31.4
 
@@ -151,24 +158,43 @@ def flux_to_mag(table, values, errors):
 
     for val in values:
         table[val] = -2.5*log10(table[val]) + MAG_OFFSET
+    
+    if apply_dered is not None: 
+        if apply_dered == 'sfd':  
+            band_a_ebv_values = [4.81, 3.64, 2.70, 2.06, 1.58, 1.31]
+            band_a_ebv = dict(zip(DEFAULT_BANDS, band_a_ebv_values))
+            #print(band_a_ebv)
+            coords = c = SkyCoord(table[coord_columns[0]],  
+                                  table[coord_columns[1]], 
+                                  unit = 'deg',frame='icrs')
+            sfd = SFDQuery()
+            ebv = sfd(coords)
+            for val, band in zip(values, DEFAULT_BANDS):
+                table[val] = table[val] - ebv*band_a_ebv[band]
+        else:
+            print('This dust is not available yet')
+            print('Dust maps available: sfd ')
+            print('Aborting...  ')
+            quit()
+
 
 def convert_to_magnitude(table, flux_columns, flux_error_columns, mag_columns,
-                         mag_error_columns):
+                         mag_error_columns, apply_dered, coord_columns):
     all_flux = flux_columns + flux_error_columns
     all_mag = mag_columns + mag_error_columns
     flux_mag_map = {flux: mag for (flux, mag) in zip(all_flux, all_mag)}
     table.rename(flux_mag_map, axis=1, inplace=True, errors='raise')
-    flux_to_mag(table, mag_columns, mag_error_columns)
+    flux_to_mag(table, mag_columns, mag_error_columns, apply_dered, coord_columns)
 
 
 def preprocess(cfg):
-    bands = DEFAULT_BANDS
-    flux_columns = map_bands(cfg.flux_template, bands)
-    flux_error_columns = map_bands(cfg.flux_error_template, bands)
-    mag_columns = map_bands(cfg.mag_template, bands)
-    mag_error_columns = map_bands(cfg.mag_error_template, bands)
+    flux_columns = map_bands(cfg.flux_template, DEFAULT_BANDS)
+    flux_error_columns = map_bands(cfg.flux_error_template, DEFAULT_BANDS)
+    mag_columns = map_bands(cfg.mag_template, DEFAULT_BANDS)
+    mag_error_columns = map_bands(cfg.mag_error_template, DEFAULT_BANDS)
     ra_column = cfg.ra 
     dec_column = cfg.dec 
+    apply_dered = cfg.apply_dered 
 
     try:
         # Note: specifying a buffer size seems to be necessary for
@@ -178,7 +204,7 @@ def preprocess(cfg):
             total_rows = f.metadata.num_rows
 
             if total_rows < 1:
-                print(input_)
+                #print(input_)
                 return
 
             has_magnitude, has_flux, has_ra, has_dec = parquet_check_column_presence(
@@ -199,20 +225,33 @@ def preprocess(cfg):
             for i, block in enumerate(batches):
                 table = block.to_pandas()
                 
+                if table.index.name == 'objectId': 
+                    table['objectId'] = table.index.values
+                    cols_in_order = ['objectId'] + all_columns
+                    #print(table['objectId'])
+                    #print(cols_in_order)
+                else:  
+                    table['ID'] = table.index.values
+                    cols_in_order = ['ID'] + all_columns
+
                 for col in all_columns:
                     nan_to_num(table[col], copy=False, nan=nan, posinf=nan,
                                neginf=nan)
-
+    
                 if use_flux:
                     convert_to_magnitude(table, flux_columns,
                                          flux_error_columns, mag_columns,
-                                         mag_error_columns)
-
+                                         mag_error_columns, apply_dered,
+                                         coord_columns)
+                
                 output_name = build_output_name(cfg.input, i,
                                                 cfg.output_template)
                 output_path = join(cfg.output_dir, output_name)
+                #print(cols_in_order)
+                #print()
+                #tables_io.write(table[cols_in_order], output_path) # to do (debug)
                 tables_io.write(table, output_path)
-                print(output_path)
+                #print(output_path)
 
     except ArrowInvalid as e:
         print('Error: parquet library returned error.', file=stderr)
