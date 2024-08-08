@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from dataclasses import dataclass, field, replace
 from os import execv
+from os.path import expandvars
 from pathlib import Path
 from shlex import split
 from shutil import which
@@ -8,7 +9,7 @@ from sys import argv, executable
 
 from yaml import safe_load
 
-SBATCH_ARGS = '-N 1 --ntasks-per-node=1'
+SBATCH_ARGS = '-N 1 --exclusive --ntasks-per-node=1 --mem=0'
 PROG = 'pz-train'
 OUTPUT_TEMPLATE = 'estimator_%s.pkl'
 
@@ -31,7 +32,7 @@ def parse_cmdline():
     return conffile
 
 def to_path(text):
-    return Path(text).expanduser()
+    return Path(expandvars(text)).expanduser()
 
 def load_configuration(conffile):
     config = Configuration()
@@ -69,6 +70,9 @@ def find_prog(basename):
 def setup(config):
     config.sbatch = find_prog(config.sbatch)
     find_prog(config.prog_batch)
+
+    if not config.inputfile.is_file():
+        raise RuntimeError('input file not found: %s' % config.inputfile)
 
 def run(config):
     cmd = [config.sbatch] + config.sbatch_args + [config.prog_batch,

@@ -13,6 +13,8 @@ Options:
                                    [default: fzboost].
     -b <bins>, --bins=<bins>       Set number of bins (columns) in the resulting
                                    tables [default: 301].
+    -c <file>, --calibration-file=<file>  Set the name of the calibration file
+                                          [default: estimator_{algorithm}.pkl]
     -g <group>, --group=<group>    For HDF5 input, sets the group name (section)
                                    where input data is stored [default: ]
     -p <file>, --param-file=<file> Extra parameter file for the estimation
@@ -38,7 +40,7 @@ from rail_scripts import (
     abort,
     create_column_mapping_dict,
     error,
-    find_estimator_configuration,
+    find_data_file,
     info,
     load_user_params,
 )
@@ -66,7 +68,8 @@ def parse_cmdline():
     args = docopt(__doc__, version=VERSION_TEXT)
 
     estimator = args["--algorithm"]
-    config = find_estimator_configuration(args["--algorithm"])
+    calibration_file = args["--calibration-file"].format(algorithm=estimator)
+    calibration_file = find_data_file(calibration_file)
     hdf5_group = args["--group"]
     column_template = args["--column-template"]
     column_template_error = args["--column-template-error"]
@@ -88,7 +91,7 @@ def parse_cmdline():
             abort()
 
     info("Estimator algorithm: %s" % estimator)
-    info("Configuration file: %s" % config)
+    info("Estimator calibration file: %s" % calibration_file)
     info("Bins: %d" % num_bins)
     info('HDF5 group name: "%s"' % hdf5_group)
     info('Column template for magnitude data: "%s"' % column_template)
@@ -99,7 +102,7 @@ def parse_cmdline():
         input=args["<input>"],
         output=args["<output>"],
         estimator=estimator,
-        estimator_config=config,
+        estimator_config=calibration_file,
         num_bins=num_bins,
         hdf5_group=hdf5_group,
         column_template=column_template,
@@ -203,7 +206,7 @@ def setup(cfg):
             cfg.num_bins,
         )
     except OSError as err:
-        error("Error: unable to load estimator configuration file.")
+        error("Error: unable to load estimator calibration file.")
         error(err)
         abort()
 
