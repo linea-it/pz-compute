@@ -9,6 +9,7 @@ import glob
 import psutil
 import time
 import tables_io
+import os 
 
 # Configuração do SLURMCluster para usar 12 nós com 56 núcleos lógicos e 128GB de RAM cada
 cluster = SLURMCluster(
@@ -33,11 +34,13 @@ start_cpu_time = psutil.cpu_times()
 
 # Definição das variáveis pelo usuário
 band_for_cut = 'i' 
+#mag_cut = 24.1  
 mag_cut = 25.2  
 fraction = 0.002  
+process_dir =  os.getcwd()  
 
 # Caminho para o relatório de desempenho do Dask
-performance_report_path = f'/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/output/performance_report_{band_for_cut}_{mag_cut}_{fraction}.html'
+performance_report_path = f'{process_dir}/performance_report_{band_for_cut}_{mag_cut}_{fraction}.html'
 
 with performance_report(filename=performance_report_path):
     # Obter lista de arquivos HDF5 na pasta
@@ -61,9 +64,9 @@ with performance_report(filename=performance_report_path):
     ddf_sampled = ddf_filtered.sample(frac=fraction)
 
     # Caminhos de saída
-    output_path_parquet = f'/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/output/random_sample_{band_for_cut}_{mag_cut}_{fraction}.parquet'
-    output_path_csv = f'/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/output/random_sample_{band_for_cut}_{mag_cut}_{fraction}.csv'
-    output_path_hdf5 = f'/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/output/random_sample_{band_for_cut}_{mag_cut}_{fraction}.hdf5'
+    output_path_parquet = f'{process_dir}/output/random_sample_{band_for_cut}_{mag_cut}_{fraction}.parquet'
+    output_path_csv = f'{process_dir}/output/random_sample_{band_for_cut}_{mag_cut}_{fraction}.csv'
+    output_path_hdf5 = f'{process_dir}/output/random_sample_{band_for_cut}_{mag_cut}_{fraction}.hdf5'
 
     # Computando o dataframe.
     ddf_computed = ddf_sampled.compute()
@@ -88,7 +91,7 @@ total_cpu_time_user = end_cpu_time.user - start_cpu_time.user
 total_cpu_time_system = end_cpu_time.system - start_cpu_time.system
 
 # Salvar os tempos de execução em um arquivo de texto
-output_time_path = f'/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/output/execution_times_{band_for_cut}_{mag_cut}_{fraction}.txt'
+output_time_path = f'{process_dir}/execution_times_{band_for_cut}_{mag_cut}_{fraction}.txt'
 with open(output_time_path, 'w') as f:
     f.write(f'Total Wall Time: {total_wall_time} seconds\n')
     f.write(f'Total CPU Time (User): {total_cpu_time_user} seconds\n')

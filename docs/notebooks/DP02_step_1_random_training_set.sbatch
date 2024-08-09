@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=dask_make_random_train     # Nome do job
-#SBATCH --output=/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/logs/output_%j.log    # Nome do arquivo de saída (%j será substituído pelo ID do job)
-#SBATCH --error=/lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/logs/error_%j.log           # Nome do arquivo de erro (%j será substituído pelo ID do job)
+#SBATCH --output=./logs/output_%j.log   # Nome do arquivo de saída (%j será substituído pelo ID do job)
+#SBATCH --error=./logs/error_%j.log           # Nome do arquivo de erro (%j será substituído pelo ID do job)
 #SBATCH --partition=cpu_small  # Substitua pelo nome da sua fila
 #SBATCH --nodes=6              # Número de nós
 #SBATCH --ntasks-per-node=56   # Número de tarefas por nó (equivalente ao número de processos Dask)
@@ -11,7 +11,7 @@
 #SBATCH --propagate
 
 # Inicializar o Conda e ativar o ambiente pz_compute
-export PATH="/lustre/t0/scratch/users/<your-user>/miniconda3/bin:$PATH"
+export PATH="/lustre/t0/scratch/users/`whoami`/miniconda3/bin:$PATH"
 eval "$(conda shell.bash hook)"
 conda activate pz_compute
 
@@ -22,4 +22,5 @@ echo "Pacotes instalados:"
 pip list
 
 # Executar o script Python
-python /lustre/t0/scratch/users/<your-user>/lsst/dp0.2-tests/DP02_step_1_random_training_set.py
+python /lustre/t0/scratch/users/`whoami`/github/linea-it/pz-compute/docs/notebooks/DP02_step_1_random_training_set.py
+
