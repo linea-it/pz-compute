@@ -2,13 +2,9 @@
 #SBATCH --job-name=dask_make_random_train     # Nome do job
 #SBATCH --output=/lustre/t0/scratch/users/%u/random_from_files/logs/output_%j.log    # Nome do arquivo de saída (%j será substituído pelo ID do job)
 #SBATCH --error=/lustre/t0/scratch/users/%u/random_from_files/logs/error_%j.log      # Nome do arquivo de erro (%j será substituído pelo ID do job)
-#SBATCH --partition=cpu_small  # Substitua pelo nome da sua fila
-#SBATCH --nodes=6              # Número de nós
-#SBATCH --ntasks-per-node=28   # Número de tarefas por nó (equivalente ao número de processos Dask)
-#SBATCH --cpus-per-task=2      # Número de threads por tarefa (1 thread por núcleo)
-#SBATCH --mem=100GB            # Memória por nó
-#SBATCH --time=01:00:00        # Tempo máximo de execução
-#SBATCH --propagate
+#SBATCH --partition=cpu_small      # Substitua pelo nome da sua fila
+#SBATCH --time=01:00:00            # Tempo máximo de execução
+#SBATCH --nodes=1                  # Número de nós (apenas 1 para iniciar o script Python)
 
 # Inicializar o Conda e ativar o ambiente pz_compute
 export PATH="/lustre/t0/scratch/users/$USER/miniconda3/bin:$PATH"

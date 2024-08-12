@@ -11,19 +11,19 @@ import lsdb
 
 
 ######################## CONFIGURAÇÃO DO CLUSTER ##########################################
-# Configuração do SLURMCluster para usar 12 nós com 56 núcleos lógicos e 128GB de RAM cada
+# Configuração do SLURMCluster.
 cluster = SLURMCluster(
     interface="ib0",    # Interface do Lustre
     queue='cpu_small',  # Substitua pelo nome da sua fila
     cores=56,           # Número de núcleos lógicos por nó
-    processes=56,       # Número de processos por nó (um processo por núcleo)
+    processes=28,       # Número de processos por nó (um processo por núcleo)
     memory='100GB',     # Memória por nó
     walltime='01:00:00',  # Tempo máximo de execução
     job_extra_directives=['--propagate'],  # Argumentos adicionais para o SLURM
 )
 
-# Escalando o cluster para usar 10 nós
-cluster.scale(jobs=10)  # Defina para usar 10 nós
+# Escalando o cluster para usar X nós.
+cluster.scale(jobs=10)
 
 # Definindo o client do Dask
 client = Client(cluster)

@@ -22,7 +22,7 @@ logs_dir = os.path.join(base_path, 'logs')
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(logs_dir, exist_ok=True)
 
-# Configuração do SLURMCluster para usar 12 nós com 56 núcleos lógicos e 128GB de RAM cada
+# Configuração do SLURMCluster.
 cluster = SLURMCluster(
     interface="ib0",    # Interface do Lustre
     queue='cpu_small',  # Substitua pelo nome da sua fila
@@ -37,8 +37,8 @@ cluster = SLURMCluster(
     ],
 )
 
-# Escalando o cluster para usar 6 nós
-cluster.scale(jobs=6)  # Defina para usar 6 nós
+# Escalando o cluster para usar X nós
+cluster.scale(jobs=6)
 
 # Definindo o client do Dask
 client = Client(cluster)  

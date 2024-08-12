@@ -18,19 +18,8 @@ from hipscat_import.pipeline import ImportArguments, pipeline_with_client
 ###########################################################################################
 ################################## CONFIGURAÇÕES DE INPUT #################################
 ### Diretório e nome dos arquivos de input. O nome pode ser uma lista ou conter um wildcard, ex: files_*.parquet.
-CATALOG_DIR = Path("/lustre/t1/cl/lsst/dp01/primary/catalogs/truth")
-CATALOG_FILES = '*.parquet'
-### Colunas a serem selecionadas no arquivo de input. As colunas de id, ra e dec são indispensáveis.
-CATALOG_SELECTED_COLUMNS = ['id', 'host_galaxy', 'ra', 'dec', 'redshift', 'is_variable',
-       'is_pointsource', 'flux_u', 'flux_g', 'flux_r', 'flux_i', 'flux_z',
-       'flux_y', 'flux_u_noMW', 'flux_g_noMW', 'flux_r_noMW', 'flux_i_noMW',
-       'flux_z_noMW', 'flux_y_noMW', 'tract', 'patch', 'truth_type',
-       'cosmodc2_hp', 'cosmodc2_id', 'mag_r', 'match_objectId', 'match_sep',
-       'is_good_match', 'is_nearest_neighbor', 'is_unique_truth_entry']
-CATALOG_SORT_COLUMN = "id"
-CATALOG_RA_COLUMN = "ra"
-CATALOG_DEC_COLUMN = "dec"
-FILE_TYPE = "parquet"
+CATALOG_HIPSCAT_DIR = Path("/lustre/t1/cl/lsst/dp01/secondary/catalogs/hipscat/truth")
+MARGIN_CACHE_THRESHOLD = 1.0 #arcsec
 ###########################################################################################
 
 ################################# CONFIGURAÇÕES DE OUTPUT #################################
@@ -40,14 +29,15 @@ HIPSCAT_DIR_NAME = "hipscat"
 HIPSCAT_DIR = OUTPUT_DIR / HIPSCAT_DIR_NAME
 
 ### Nomes para os outputs do catalógo e do cache de margem no formato HiPSCat.
-CATALOG_HIPSCAT_NAME = "truth"
-CATALOG_HIPSCAT_DIR = HIPSCAT_DIR / CATALOG_HIPSCAT_NAME
+CATALOG_MARGIN_CACHE_NAME = "truth_margin_cache"
+
+CATALOG_MARGIN_CACHE_DIR = HIPSCAT_DIR / CATALOG_MARGIN_CACHE_NAME
 
 ### Caminho para o relatório de desempenho do Dask.
-LOGS_DIR_NAME = "logs_truth"
+LOGS_DIR_NAME = "logs_truth_margin_cache"
 LOGS_DIR = HIPSCAT_DIR / LOGS_DIR_NAME 
 
-PERFORMANCE_REPORT_NAME = 'performance_report_make_hipscat.html'
+PERFORMANCE_REPORT_NAME = 'performance_report_make_margin_cache.html'
 PERFORMANCE_DIR = LOGS_DIR / PERFORMANCE_REPORT_NAME
 ###########################################################################################
 
@@ -61,16 +51,16 @@ cluster = SLURMCluster(
     cores=56,           # Número de núcleos lógicos por nó
     processes=28,       # Número de processos por nó (um processo por núcleo)
     memory='100GB',     # Memória por nó
-    walltime='05:00:00',  # Tempo máximo de execução
+    walltime='10:00:00',  # Tempo máximo de execução
     job_extra_directives=[
         '--propagate',
         f'--output={LOGS_DIR}/dask_job_%j.out',  # Redireciona a saída para a pasta output
         f'--error={LOGS_DIR}/dask_job_%j.err'    # Redireciona o erro para a pasta output
-    ],                                             
+    ],                                             # Argumentos adicionais para o SLURM
 )
 
-# Escalando o cluster para usar X nós
-cluster.scale(jobs=14)  
+# Escalando o cluster para usar X nós.
+cluster.scale(jobs=14) 
 
 # Definindo o client do Dask
 client = Client(cluster)
@@ -78,27 +68,33 @@ client = Client(cluster)
 
 
 ############################### EXECUTANDO O PIPELINE ######################################
-with performance_report(filename=PERFORMANCE_DIR):
-    if isinstance(CATALOG_FILES, list)==True:
-        CATALOG_PATHS = [CATALOG_DIR / file for file in CATALOG_FILES]
-    elif isinstance(CATALOG_FILES, str)==True:
-        CATALOG_PATHS = list(CATALOG_DIR.glob(CATALOG_FILES))
-    else:
-        raise Exception("The type of names of catalogs files (CATALOG_FILES) is not supported. Supported types are list and str.")
-    
-    if FILE_TYPE=="parquet":
-        catalog_args = ImportArguments(
-            sort_columns=CATALOG_SORT_COLUMN,
-            ra_column=CATALOG_RA_COLUMN,
-            dec_column=CATALOG_DEC_COLUMN,
-            input_file_list=CATALOG_PATHS,
-            file_reader=ParquetReader(column_names=CATALOG_SELECTED_COLUMNS),
-            output_artifact_name=CATALOG_HIPSCAT_NAME,
-            output_path=HIPSCAT_DIR,
+with performance_report(filename=PERFORMANCE_DIR):   
+    ### Getting informations from the catalog.
+    catalog = hipscat.read_from_hipscat(CATALOG_HIPSCAT_DIR)
+
+    info_frame = catalog.partition_info.as_dataframe()
+
+    for index, partition in info_frame.iterrows():
+        file_name = result = hipscat.io.paths.pixel_catalog_file(
+            CATALOG_HIPSCAT_DIR, partition["Norder"], partition["Npix"]
         )
-        pipeline_with_client(catalog_args, client)
+        info_frame.loc[index, "size_on_disk"] = os.path.getsize(file_name)
+
+    info_frame = info_frame.astype(int)
+    info_frame["gbs"] = info_frame["size_on_disk"] / (1024 * 1024 * 1024)
+        
+    ### Computing the margin cache, if it is possible.
+    number_of_pixels = len(info_frame["Npix"])
+    if number_of_pixels <= 1:
+        warnings.warn(f"Number of pixels is equal to {number_of_pixels}. Impossible to compute margin cache.")
     else:
-        raise Exception("Input catalog type not supported yet.")
+        margin_cache_args = MarginCacheArguments(
+            input_catalog_path=CATALOG_HIPSCAT_DIR,
+            output_path=HIPSCAT_DIR,
+            margin_threshold=MARGIN_CACHE_THRESHOLD,  # arcsec
+            output_artifact_name=CATALOG_MARGIN_CACHE_NAME,
+        )
+        pipeline_with_client(margin_cache_args, client)
 ###########################################################################################
     
 # Fechando o client

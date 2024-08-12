@@ -1,15 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=dask_make_hipscat    # Nome do job
-#SBATCH --output=/lustre/t0/scratch/users/luigi.silva/lsst/dp0.2-xmatching-tests/logs/output_%j.log    # Nome do arquivo de saída (%j será substituído pelo ID do job)
-#SBATCH --error=/lustre/t0/scratch/users/luigi.silva/lsst/dp0.2-xmatching-tests/logs/error_%j.log           # Nome do arquivo de erro (%j será substituído pelo ID do job)
-#SBATCH --partition=cpu_small  # Substitua pelo nome da sua fila
-#SBATCH --nodes=10             # Número de nós
-#SBATCH --ntasks-per-node=56   # Número de tarefas por nó (equivalente ao número de processos Dask)
-#SBATCH --cpus-per-task=1      # Número de threads por tarefa (1 thread por núcleo físico)
-#SBATCH --mem=100GB            # Memória por nó
-#SBATCH --time=01:00:00        # Tempo máximo de execução
-#SBATCH --propagate
-#SBATCH --exclusive
+#SBATCH --output=/lustre/t1/cl/lsst/dp01/secondary/catalogs/hipscat/logs_truth/submission_job_%j.out    # Nome do arquivo de saída (%j será substituído pelo ID do job)
+#SBATCH --error=/lustre/t1/cl/lsst/dp01/secondary/catalogs/hipscat/logs_truth/submission_job_%j.err           # Nome do arquivo de erro (%j será substituído pelo ID do job)
+#SBATCH --partition=cpu_small      # Substitua pelo nome da sua fila
+#SBATCH --time=05:00:00            # Tempo máximo de execução
+#SBATCH --nodes=1                  # Número de nós (apenas 1 para iniciar o script Python)
 
 # Inicializar o Conda e ativar o ambiente pz_compute
 export PATH="/lustre/t0/scratch/users/luigi.silva/miniconda3/bin:$PATH"
