@@ -37,3 +37,4 @@ pip install pz-rail-bpz
 pip install pz-rail-flexzboost
 pip install pz-rail-tpz
 pip install pz-rail-gpz-v1
+pip install pz-rail-lephare
