@@ -13,7 +13,7 @@ def bind(my_id):
         harts = [int(x) for x in f.read().split(',')]
 
     sched_setaffinity(0, harts)
-    print(sched_getaffinity(0), flush=True)
+    print(sched_getaffinity(0), flush=True, file=stderr)
 
 def main():
     try:
