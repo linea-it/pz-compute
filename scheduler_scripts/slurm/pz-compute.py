@@ -11,6 +11,7 @@ from yaml import safe_load
 
 SBATCH_ARGS = '-N 26 -n 2032'
 SBATCH_ARGS_TPZ = '-N 26 -n 1316 --mem-per-cpu=3500M'
+SBATCH_ARGS_LEPHARE = '-N 26 -n 1016 -c2'
 
 @dataclass
 class Configuration:
@@ -47,8 +48,13 @@ def load_configuration(conffile):
     if tmp:
         config = replace(config, **tmp)
 
-        if tmp.get('algorithm') == 'tpz' and not 'sbatch_args' in tmp:
-            config.sbatch_args = split(SBATCH_ARGS_TPZ)
+        if not 'sbatch_args' in tmp:
+            algorithm = tmp.get('algorithm')
+
+            if algorithm == 'tpz':
+                config.sbatch_args = SBATCH_ARGS_TPZ
+            elif algorithm == 'lephare':
+                config.sbatch_args = SBATCH_ARGS_LEPHARE
 
     config.inputdir = to_path(config.inputdir)
     config.outputdir = to_path(config.outputdir)
