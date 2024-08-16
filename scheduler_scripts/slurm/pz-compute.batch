@@ -49,7 +49,7 @@ from sys import argv, stderr
 from time import sleep
 
 SRUN = 'srun'
-SRUN_ARGS = [SRUN, '-n1', '-N1']
+SRUN_ARGS = [SRUN, '-n1', '-N1', '--cpu-bind=none']
 LOG = 'log'
 PROG = 'pz-compute'
 ESTIMATE = 'rail-estimate'
