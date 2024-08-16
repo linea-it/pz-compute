@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 from os import execvp, sched_getaffinity, sched_setaffinity
+from socket import gethostname
 from sys import argv, stderr
 
 THREAD_SIBLINGS_LIST = \
         '/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list'
 
 def bind(my_id):
-    curr_mask = list(sorted(sched_getaffinity(0)))
+    print('Hostname: %s' % gethostname(), file=stderr)
+
+    curr_mask = sched_getaffinity(0)
+    print('Affinity mask received: %s' % curr_mask, file=stderr)
+
+    curr_mask = list(sorted(curr_mask))
     my_hart = curr_mask[my_id % len(curr_mask)]
 
     with open(THREAD_SIBLINGS_LIST % my_hart) as f:
         harts = [int(x) for x in f.read().split(',')]
 
     sched_setaffinity(0, harts)
-    print(sched_getaffinity(0), flush=True, file=stderr)
+    print('Affinity mask set: %s' % sched_getaffinity(0), flush=True,
+            file=stderr)
 
 def main():
     try:
