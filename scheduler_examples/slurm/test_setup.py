@@ -154,41 +154,39 @@ def add_input_data(args):
         print(f'Please add manually the data in the input dir with the folowing command:\n ln -s origin_path/*.hdf5 {args.process_id}/input/')
         print()
 
-def check_bashcrc(args):
-    print("OPENING BACH")
-    bashrc_path = os.path.expanduser('~/.bashrc')
-    print("OPENING BACH", bashrc_path)
-
-    code_block = [
-        "if [[ -d ~app.photoz ]]\n",
-        "then\n",
-        "    source ~app.photoz/conf-pz-compute-user.sh\n",
-        "fi\n"
-    ]
-
-    add = False
-    with open(bashrc_path, 'r') as file:
-        print("OPENING BACH", "   ABRIU")
-        lines = file.readlines()
-        print("OPENING BACH", lines)
-        block_present = any(code_block[0] in line for line in lines)
-        for i in range(len(lines) - len(code_block) + 1):
-            if lines[i:i+len(code_block)] == code_block:
-                block_present = True
-                break
-
-    if add is True:
-        with open(bashrc_path, 'a') as file:
-            file.write(new_line)
-        print(f"Already has the block code in {bashrc_path}")
-    else:
-        print(f"It doesn't has the block code in {bashrc_path}")
-        
-def main():
-    args = parse_cmd()
+def copy_configs_file(args):
+    if args.algorithm == None:
+        return
     
-    #check_bashcrc(args)
-    #return
+    file_name_train = f"{args.algorithm}_train.yaml"
+    file_name_estimate = f"{args.algorithm}_estimate.yaml"
+    dst = f"./{args.process_id}"
+    
+    if 'ENVIRONMENT' in os.environ:
+        env = os.environ.get('ENVIRONMENT')
+        if env == "prod":
+            src = f'/lustre/t0/scratch/users/app.photoz/pz-compute/doc/algorithms_config/{file_name_train}'
+            shutil.copyfile(src, dst)
+            
+            src = f'/lustre/t0/scratch/users/app.photoz/pz-compute/doc/algorithms_config/{file_name_estimate}'
+            shutil.copyfile(src, dst)
+            
+        elif env == "dev":
+            scratch = os.environ.get('SCRATCH')
+            
+            src = f'{scratch}/pz-compute/doc/algorithms_config/{file_name_train}'
+            shutil.copyfile(src, dst)
+            
+            src = f'{scratch}/pz-compute/doc/algorithms_config/{file_name_estimate}'
+            shutil.copyfile(src, dst)
+    else:
+        print("Env not defined, not creating the configurations yaml")
+        return
+
+    print("\nIf you are not going to train the algorithm, remember to manually add the estimate.pkl file\n")
+    
+def main():
+    args = parse_cmd() 
     
     create_test_dir(args)
     create_required_dirs(args)
@@ -201,5 +199,6 @@ def main():
     print_output(args, yaml_file)
     
     create_link_to_host_performance(args)
+    copy_configs_file(args)
     
 if __name__ == '__main__': main()
