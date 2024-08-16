@@ -155,35 +155,34 @@ def add_input_data(args):
         print()
 
 def copy_configs_file(args):
-    if args.algorithm == None:
-        return
+    if args.algorithm == "to-be-defined": return
     
     file_name_train = f"{args.algorithm}_train.yaml"
     file_name_estimate = f"{args.algorithm}_estimate.yaml"
-    dst = f"./{args.process_id}"
+    dst = f"./{args.process_id}/"
     
     if 'ENVIRONMENT' in os.environ:
         env = os.environ.get('ENVIRONMENT')
         if env == "prod":
             src = f'/lustre/t0/scratch/users/app.photoz/pz-compute/doc/algorithms_config/{file_name_train}'
-            shutil.copyfile(src, dst)
+            shutil.copy(src, dst)
             
             src = f'/lustre/t0/scratch/users/app.photoz/pz-compute/doc/algorithms_config/{file_name_estimate}'
-            shutil.copyfile(src, dst)
+            shutil.copy(src, dst)
             
         elif env == "dev":
             scratch = os.environ.get('SCRATCH')
             
             src = f'{scratch}/pz-compute/doc/algorithms_config/{file_name_train}'
-            shutil.copyfile(src, dst)
+            shutil.copy(src, dst)
             
             src = f'{scratch}/pz-compute/doc/algorithms_config/{file_name_estimate}'
-            shutil.copyfile(src, dst)
+            shutil.copy(src, dst)
     else:
         print("Env not defined, not creating the configurations yaml")
         return
 
-    print("\nIf you are not going to train the algorithm, remember to manually add the estimate.pkl file\n")
+    print("If you are not going to train the algorithm, remember to manually add the estimate.pkl file\n")
     
 def main():
     args = parse_cmd() 
