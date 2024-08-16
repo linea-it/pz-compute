@@ -53,7 +53,7 @@ from ceci.stage import IN_PROGRESS_PREFIX
 from yaml import YAMLError, safe_dump, safe_load
 
 SRUN = 'srun'
-SRUN_ARGS = [SRUN, '-n1', '-N1']
+SRUN_ARGS = [SRUN, '-n1', '-N1', '--cpu-bind=none']
 LOG = 'log'
 PROG = 'pz-compute'
 ESTIMATE = 'rail-estimate'
