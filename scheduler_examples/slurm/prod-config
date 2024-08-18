@@ -13,3 +13,7 @@ if [[ -d ~app.photoz ]]
 then
     source ~app.photoz/conf-pz-compute-user.sh
 fi
+
+export ENVIRONMENT="prod"
+
+echo 'add test setup where you are going to run pz-compute: ln -s ~app.photoz/pz-compute/scheduler_examples_slurm/test_setup.py'
