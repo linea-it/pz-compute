@@ -18,8 +18,8 @@ from hipscat_import.pipeline import ImportArguments, pipeline_with_client
 ###########################################################################################
 ################################## CONFIGURAÇÕES DE INPUT #################################
 ### Diretório e nome dos arquivos de input. O nome pode ser uma lista ou conter um wildcard, ex: files_*.parquet.
-CATALOG_DIR = Path("/lustre/t1/cl/lsst/dp01/primary/catalogs/truth")
-CATALOG_FILES = '*.parquet'
+CATALOG_DIR = Path("/lustre/t0/scratch/users/luigi.silva/random_from_files/truth/output")
+CATALOG_FILES = 'random_sample_truth_type_1_0.002.parquet'
 ### Colunas a serem selecionadas no arquivo de input. As colunas de id, ra e dec são indispensáveis.
 CATALOG_SELECTED_COLUMNS = ['id', 'host_galaxy', 'ra', 'dec', 'redshift', 'is_variable',
        'is_pointsource', 'flux_u', 'flux_g', 'flux_r', 'flux_i', 'flux_z',
@@ -35,16 +35,16 @@ FILE_TYPE = "parquet"
 
 ################################# CONFIGURAÇÕES DE OUTPUT #################################
 ### Diretório de output para os catálogos.
-OUTPUT_DIR = Path("/lustre/t1/cl/lsst/dp01/secondary/catalogs")
-HIPSCAT_DIR_NAME = "hipscat"
+OUTPUT_DIR = Path("/lustre/t0/scratch/users/luigi.silva/")
+HIPSCAT_DIR_NAME = "random_from_files"
 HIPSCAT_DIR = OUTPUT_DIR / HIPSCAT_DIR_NAME
 
 ### Nomes para os outputs do catalógo e do cache de margem no formato HiPSCat.
-CATALOG_HIPSCAT_NAME = "truth"
+CATALOG_HIPSCAT_NAME = "truth_z_hipscat"
 CATALOG_HIPSCAT_DIR = HIPSCAT_DIR / CATALOG_HIPSCAT_NAME
 
 ### Caminho para o relatório de desempenho do Dask.
-LOGS_DIR_NAME = "logs_truth"
+LOGS_DIR_NAME = "logs_truth_z_hipscat"
 LOGS_DIR = HIPSCAT_DIR / LOGS_DIR_NAME 
 
 PERFORMANCE_REPORT_NAME = 'performance_report_make_hipscat.html'

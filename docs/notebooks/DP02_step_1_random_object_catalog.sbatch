@@ -18,4 +18,4 @@ echo "Pacotes instalados:"
 pip list
 
 # Executar o script Python
-python /lustre/t0/scratch/users/$USER/random_from_files/DP02_step_1_random_training_set.py
+python /lustre/t0/scratch/users/$USER/random_from_files/DP02_step_1_random_object_catalog.py

@@ -18,23 +18,23 @@ from hipscat_import.pipeline import ImportArguments, pipeline_with_client
 ###########################################################################################
 ################################## CONFIGURAÇÕES DE INPUT #################################
 ### Diretório e nome dos arquivos de input. O nome pode ser uma lista ou conter um wildcard, ex: files_*.parquet.
-CATALOG_HIPSCAT_DIR = Path("/lustre/t1/cl/lsst/dp01/secondary/catalogs/hipscat/truth")
+CATALOG_HIPSCAT_DIR = Path("/lustre/t0/scratch/users/luigi.silva/random_from_files/truth_z_hipscat")
 MARGIN_CACHE_THRESHOLD = 1.0 #arcsec
 ###########################################################################################
 
 ################################# CONFIGURAÇÕES DE OUTPUT #################################
 ### Diretório de output para os catálogos.
-OUTPUT_DIR = Path("/lustre/t1/cl/lsst/dp01/secondary/catalogs")
-HIPSCAT_DIR_NAME = "hipscat"
+OUTPUT_DIR = Path("/lustre/t0/scratch/users/luigi.silva")
+HIPSCAT_DIR_NAME = "random_from_files"
 HIPSCAT_DIR = OUTPUT_DIR / HIPSCAT_DIR_NAME
 
 ### Nomes para os outputs do catalógo e do cache de margem no formato HiPSCat.
-CATALOG_MARGIN_CACHE_NAME = "truth_margin_cache"
+CATALOG_MARGIN_CACHE_NAME = "truth_z_hipscat_margin_cache"
 
 CATALOG_MARGIN_CACHE_DIR = HIPSCAT_DIR / CATALOG_MARGIN_CACHE_NAME
 
 ### Caminho para o relatório de desempenho do Dask.
-LOGS_DIR_NAME = "logs_truth_margin_cache"
+LOGS_DIR_NAME = "logs_truth_z_hipscat_margin_cache"
 LOGS_DIR = HIPSCAT_DIR / LOGS_DIR_NAME 
 
 PERFORMANCE_REPORT_NAME = 'performance_report_make_margin_cache.html'
