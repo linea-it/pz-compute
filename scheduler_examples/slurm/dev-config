@@ -17,7 +17,6 @@ if conda info --envs | grep -q pz_compute_dev; then
   conda activate pz_compute_dev
   echo "pz_compute env already exists (: activating it" 
 
-  #MAYBE
   export PATH=$PATH:$SCRATCH/bin
   export DUSTMAPS_CONFIG_FNAME=$SCRATCH/pz-compute/rail_scripts/dustmaps_config.json
 else 
