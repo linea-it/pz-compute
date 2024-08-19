@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=dask_make_random_train     # Nome do job
-#SBATCH --output=/lustre/t0/scratch/users/%u/random_from_files/truth/logs/output_%j.log    # Nome do arquivo de saída (%j será substituído pelo ID do job)
-#SBATCH --error=/lustre/t0/scratch/users/%u/random_from_files/truth/logs/error_%j.log      # Nome do arquivo de erro (%j será substituído pelo ID do job)
+#SBATCH --output=/lustre/t0/scratch/users/%u/random_from_files/logs/output_%j.log    # Nome do arquivo de saída (%j será substituído pelo ID do job)
+#SBATCH --error=/lustre/t0/scratch/users/%u/random_from_files/logs/error_%j.log      # Nome do arquivo de erro (%j será substituído pelo ID do job)
 #SBATCH --partition=cpu_small      # Substitua pelo nome da sua fila
 #SBATCH --time=01:00:00            # Tempo máximo de execução
 #SBATCH --nodes=1                  # Número de nós (apenas 1 para iniciar o script Python)
@@ -18,4 +18,4 @@ echo "Pacotes instalados:"
 pip list
 
 # Executar o script Python
-python /lustre/t0/scratch/users/$USER/random_from_files/truth/DP02_step_1_random_truth_catalog.py
+python /lustre/t0/scratch/users/$USER/random_from_files/DP02_step_1_random_truth_catalog.py

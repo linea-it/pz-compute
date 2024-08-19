@@ -14,7 +14,7 @@ import getpass
 
 # Identificar o path do usuário
 user = getpass.getuser()
-base_path = f'/lustre/t0/scratch/users/{user}/random_from_files/truth'
+base_path = f'/lustre/t0/scratch/users/{user}/random_from_files/'
 
 # Criar pastas 'output' e 'logs' se não existirem
 output_dir = os.path.join(base_path, 'output')

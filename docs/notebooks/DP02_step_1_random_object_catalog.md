@@ -2,7 +2,7 @@ First of all, create a conda virtual environment named "pz_compute", activate it
 ```bash
 conda create -n pz_compute
 conda activate pz_compute 
-conda install dask dask-jobqueue numpy pandas psutil tables-io
+conda install dask dask-jobqueue numpy pandas psutil tables-io h5py
 ```
 
 Then, run the following commands to create the necessary folders:

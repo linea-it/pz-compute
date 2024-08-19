@@ -53,7 +53,7 @@ performance_report_path = os.path.join(output_dir, f'performance_report_{band_fo
 
 with performance_report(filename=performance_report_path):
     # Obter lista de arquivos HDF5 na pasta
-    file_list = glob.glob('/lustre/t1/cl/lsst/dp0.2/secondary/catalogs/skinny/*.hdf5')
+    file_list = glob.glob('/lustre/t1/cl/lsst/dp02/secondary/catalogs/skinny/hdf5/*.hdf5')
     
     # Ler todos os arquivos HDF5 com dask delayed.
     def read_hdf5(file):
