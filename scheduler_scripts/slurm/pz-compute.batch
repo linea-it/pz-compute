@@ -232,7 +232,6 @@ def build_cpu_mask_set(node_list, task_list):
 
 def configure_threads(slots, node_list, task_list):
     # Work around libraries starting a large amount of auxiliary threads.
-    environ['OMP_NUM_THREADS'] = '2'
     environ['ARROW_IO_THREADS'] = '2'
     environ['ARROW_DEFAULT_MEMORY_POOL'] = 'system'
     masks = build_cpu_mask_set(node_list, task_list)
