@@ -35,8 +35,8 @@ else
   cd $SCRATCH/pz-compute/rail_scripts 
   ./install-pz-rail
 
-  ln -s $SCRATCH/pz-compute/scheduler_examples/slurm/test_setup.py $SCRATCH/bin/
-  chmod +x $SCRATCH/bin/test_setup.py
+  ln -s $SCRATCH/pz-compute/scheduler_examples/slurm/setup/pz_run_setup.py $SCRATCH/bin/pz_run_setup_dev.py
+  chmod +x $SCRATCH/bin/pz_run_setup_dev.py
 fi
 
 export ENVIRONMENT="dev"
