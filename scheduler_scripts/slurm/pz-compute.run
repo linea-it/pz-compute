@@ -1,37 +1,153 @@
 #!/usr/bin/env python3
-from os import execvp, sched_getaffinity, sched_setaffinity
+from collections import namedtuple
+from os import environ, execvp, sched_getaffinity, sched_setaffinity
 from socket import gethostname
 from sys import argv, stderr
 
 THREAD_SIBLINGS_LIST = \
         '/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list'
+EXTRA_HARTS = 2
+
+Hart = namedtuple('Hart', ('physical_id', 'core_id', 'hart_id', 'logical_id'))
 
 def info(msg):
     print(msg, file=stderr, flush=True)
 
-def bind(my_id):
+# Returns the hart list from /proc/cpuinfo, sorting by topological proximity.
+def get_sorted_hart_list():
+    hart_counter = {}
+    harts = []
+
+    with open('/proc/cpuinfo') as f:
+        for p in f.read().split('\n\n'):
+            p = p.strip()
+            if not p: continue
+
+            for line in p.split('\n'):
+                if not line: continue
+                key, value = line.split(':')
+                key = key.strip()
+                if key == 'processor':
+                    logical_id = int(value)
+                elif key == 'physical id':
+                    physical_id = int(value)
+                elif key == 'core id':
+                    core_id = int(value)
+
+            core = (physical_id, core_id)
+            hart_counter.setdefault(core, 0)
+            hart_id = hart_counter[core]
+            hart_counter[core] += 1
+            harts.append(Hart(physical_id, core_id, hart_id, logical_id))
+
+    harts.sort()
+    return harts
+
+# Remove harts from the harts list based on the given mask.
+def filter_hart_list(harts, mask):
+    new = []
+
+    for hart in harts:
+        if hart.logical_id in mask:
+            new.append(hart)
+
+    return new
+
+# Given a hart mask and the full list of running harts, expand the mask so that
+# all sibling hyperthreads are included in the new mask.
+def expand_with_sibling_hyperthreads(mask, harts):
+    new_mask = set()
+    core_map = {}
+    hyperthread_map = {}
+
+    for hart in harts:
+        core = hart.physical_id, hart.core_id
+        core_map.setdefault(core, set())
+        core_map[core].add(hart.logical_id)
+
+        hyperthread_map[hart.logical_id] = core
+
+    for logical_id in mask:
+        new_mask |= core_map[hyperthread_map[logical_id]]
+
+    return new_mask
+
+# Bind this process to a set of harts based on the given total number of tasks
+# and harts running and the ID of this process (bind a slice of harts to this
+# process).
+def bind(my_id, num_tasks, num_harts):
     info('Hostname: %s' % gethostname())
 
     curr_mask = sched_getaffinity(0)
-    info('Affinity mask received: %s' % curr_mask)
+    info('Affinity mask inherited: %s' % sorted(curr_mask))
 
-    curr_mask = list(sorted(curr_mask))
-    my_hart = curr_mask[my_id % len(curr_mask)]
+    # From the total number of harts, get a slice for this process. Note: the
+    # slice [hart_begin: hart_end] numerical values are meaningful only to
+    # differentiate between rail-estimate instances and must be mapped to real
+    # logical hart IDs sorted in topological order later (for example, the slice
+    # [0, 1, 2, 3] might be mapped to the harts [0, 28, 1, 29] in a machine with
+    # 56 total harts and 2 hyperthreads per core).
+    hart_begin = my_id * num_harts // num_tasks
+    hart_end = (my_id + 1) * num_harts // num_tasks
+    num_my_harts = hart_end - hart_begin
+    info('Number of harts requested: %d' % num_my_harts)
 
-    with open(THREAD_SIBLINGS_LIST % my_hart) as f:
-        harts = [int(x) for x in f.read().split(',')]
+    if len(curr_mask) < num_my_harts:
+        info('Warning: inherited mask is smaller that number of harts '
+            'requested. Not updating the affinity mask.')
+        return
+    if len(curr_mask) == num_my_harts:
+        info('Reusing inherited affinity mask.')
+        return
 
-    sched_setaffinity(0, harts)
-    info('Affinity mask set: %s' % sched_getaffinity(0))
+    # Retrieve the list of running harts sorted by topology (sibling groups of
+    # hyperthreads, cores and sockets will be adjacent in the list).
+    harts = get_sorted_hart_list()
+
+    # Limit the list of available harts to the affinity mask inherited by this
+    # process (likely preconfigured by slurm or the dispatcher process),
+    # preserving the sorted order.
+    harts = filter_hart_list(harts, curr_mask)
+
+    new_mask = set()
+
+    # Given this process hart slice [hart_begin: hart_end], get the equivalent
+    # mask slice in terms of the active inherited harts' logical IDs. Take care
+    # when receiving a small inherited affinity mask by using a modular range.
+    for i in range(hart_begin, hart_end):
+        new_mask.add(harts[i % len(harts)].logical_id)
+
+    info('Affinity mask requested: %s' % sorted(new_mask))
+
+    # Expand the affinity mask with a few extra harts. These extra harts will be
+    # shared with other running rail-estimate processes if many are running in
+    # the same machine. This allows a small amount of CPU-I/O overlapping (one
+    # process keeps the CPU full while the other is blocked waiting for I/O).
+    for i in range(hart_end, hart_end+EXTRA_HARTS):
+        new_mask.add(harts[i % len(harts)].logical_id)
+
+    # Expand the affinity mask with all hypertreads that are siblings of the
+    # harts already present in the affinity mask.
+    new_mask = expand_with_sibling_hyperthreads(new_mask, harts)
+
+    info('Affinity mask expanded: %s' % sorted(new_mask))
+
+    sched_setaffinity(0, new_mask)
+    environ['OMP_NUM_THREADS'] = str(len(new_mask))
+
+    info('Affinity mask set: %s' % sorted(sched_getaffinity(0)))
 
 def main():
     try:
         my_id = int(argv[1])
+        num_tasks = int(argv[2])
+        num_harts = int(argv[3])
     except (IndexError, ValueError):
-        info('Usage: %s <cpu_id> <prog> [<args>...]' % argv[0])
+        info('Usage: %s <my_id> <num_tasks> <num_harts> <prog> [<args>...]' % \
+                argv[0])
         raise SystemExit(1)
 
-    bind(my_id)
-    execvp(argv[2], argv[2:])
+    bind(my_id, num_tasks, num_harts)
+    execvp(argv[4], argv[4:])
 
 if __name__ == '__main__': main()
