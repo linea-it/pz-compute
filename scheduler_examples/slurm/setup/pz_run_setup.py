@@ -38,7 +38,7 @@ from datetime import datetime
 
 ENV = os.environ.get('ENVIRONMENT') or None
 APP_PZ_COMPUTE_PATH = '/lustre/t0/scratch/users/app.photoz/pz-compute'
-SCRATCH_PATH = os.environ.get('SCRATCH')
+SCRATCH = os.environ.get('SCRATCH')
 
 def parse_cmd():
     parser = argparse.ArgumentParser()
@@ -131,7 +131,7 @@ def create_link_to_host_performance(args):
     if ENV == "prod":
         rail_path = f'{APP_PZ_COMPUTE_PATH}/performance'
     elif ENV == "dev":
-        rail_path = f'{SCRATCH_PATH}/pz-compute/performance'
+        rail_path = f'{SCRATCH}/pz-compute/performance'
     else:
         print("Env not defined, not linking the performance script")
         return
