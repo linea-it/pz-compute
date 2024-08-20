@@ -9,7 +9,7 @@
    prepare-pz-test [options] [--] <process_id> <comment> 
    prepare-pz-test -h | --help
    prepare-pz-test --version
-                           
+   
    Options:
    -h --help   Show help text.
    --version   Show version.
@@ -34,6 +34,33 @@ import glob
 import yaml
 import getpass
 from datetime import datetime
+
+
+ENV = os.environ.get('ENVIRONMENT') or None
+APP_PZ_COMPUTE_PATH = '/lustre/t0/scratch/users/app.photoz/pz-compute'
+SCRATCH_PATH = os.environ.get('SCRATCH')
+
+def parse_cmd():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-p", "--process_id", help = "Integer or short string without blank spaces") 
+    parser.add_argument("-c", "--comment", help = "Comment with process description (enclosed in quotes)") 
+    parser.add_argument("-a", "--algorithm", help = "Specify the algorithm to run") 
+    
+    args = parser.parse_args()
+    args.user = getpass.getuser()
+    if args.algorithm == None:
+        raise "Algorithm must be informed, options are: fzboost, bpz, tpz, gpz"
+       
+    user_input = input("Will you execute a train run? (yes/no): ").strip().lower()
+    
+    if user_input == 'yes' or user_input == 'y':
+        args.will_train = True
+    else:
+        args.will_train = False
+        
+    return args
+
 
 def represent_list(dumper, data):
     return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
@@ -96,35 +123,19 @@ def create_test_dir(args):
             args.process_id = 'test_pz_compute_'+ str(max_id+1)
         else:
             args.process_id = 'test_pz_compute_0'
-            
-def parse_cmd():
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("-p", "--process_id", help = "Integer or short string without blank spaces") 
-    parser.add_argument("-c", "--comment", help = "Comment with process description (enclosed in quotes)") 
-    parser.add_argument("-a", "--algorithm", help = "specify the algorithm to run") 
-    
-    args = parser.parse_args()
-    args.user = getpass.getuser()
-    if args.algorithm == None:
-        raise "Algorithm must be informed, options: fzboost, bpz, tpz, gpz"
-        
-    return args
+         
         
 def create_link_to_host_performance(args):
     rail_path = ""
-
-    if 'ENVIRONMENT' in os.environ:
-        env = os.environ.get('ENVIRONMENT')
-        if env == "prod":
-            rail_path = '/lustre/t0/scratch/users/app.photoz/pz-compute/performance'
-        elif env == "dev":
-            scratch = os.environ.get('SCRATCH')
-            rail_path = f'{scratch}/pz-compute/performance'
+   
+    if ENV == "prod":
+        rail_path = f'{APP_PZ_COMPUTE_PATH}/performance'
+    elif ENV == "dev":
+        rail_path = f'{SCRATCH_PATH}/pz-compute/performance'
     else:
         print("Env not defined, not linking the performance script")
         return
-          
+
     os.symlink(f'{rail_path}/slurm/slurm-analyze-host-performance.py', f'./{args.process_id}/slurm-analyze-host-performance.py')
 
 def add_input_data(args):
@@ -152,39 +163,33 @@ def add_input_data(args):
             print("The input dir does not exists.")
     else:
         print("\nNot using the complete LSST DP0.2 dataset.")
-        print(f'Please add manually the data in the input dir with the folowing command:\n ln -s origin_path/*.hdf5 {args.process_id}/input/')
+        print(f'Please add manually the data in the input dir with the folowing command:\n ln -s <origin_path>/*.hdf5 {args.process_id}/input/')
         print()
 
 def copy_configs_file(args):
-    if args.algorithm == "to-be-defined": 
-        return
-    
     file_name_train = f"{args.algorithm}_train.yaml"
     file_name_estimate = f"{args.algorithm}_estimate.yaml"
     dst = f"./{args.process_id}/"
     
-    if 'ENVIRONMENT' in os.environ:
-        env = os.environ.get('ENVIRONMENT')
-        if env == "prod":
-            src = f'/lustre/t0/scratch/users/app.photoz/pz-compute/doc/algorithms_config/{file_name_train}'
+    if ENV == "prod":
+        if args.will_train:
+            src = f'{APP_PZ_COMPUTE_PATH}/doc/algorithms_config/{file_name_train}'
             shutil.copy(src, dst)
-            
-            src = f'/lustre/t0/scratch/users/app.photoz/pz-compute/doc/algorithms_config/{file_name_estimate}'
+
+        src = f'{APP_PZ_COMPUTE_PATH}/doc/algorithms_config/{file_name_estimate}'
+        shutil.copy(src, dst)
+
+    elif ENV == "dev":
+        if args.will_train:
+            src = f'{SCRATCH}/pz-compute/doc/algorithms_config/{file_name_train}'
             shutil.copy(src, dst)
-            
-        elif env == "dev":
-            scratch = os.environ.get('SCRATCH')
-            
-            src = f'{scratch}/pz-compute/doc/algorithms_config/{file_name_train}'
-            shutil.copy(src, dst)
-            
-            src = f'{scratch}/pz-compute/doc/algorithms_config/{file_name_estimate}'
-            shutil.copy(src, dst)
+
+        src = f'{SCRATCH}/pz-compute/doc/algorithms_config/{file_name_estimate}'
+        shutil.copy(src, dst)
     else:
         print("Env not defined, not creating the configurations yaml")
         return
 
-    print("If you are not going to train the algorithm, remember to manually add the estimate.pkl file\n")
     
 def main():
     args = parse_cmd() 
