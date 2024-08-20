@@ -13,6 +13,7 @@
    Options:
    -h --help   Show help text.
    --version   Show version.
+   -a <algorithm>, --algorithm=<algorithm> fzboost, bpz, gpz, tpz.
    -p <process id>, --process_id=<process id> Integer or short string without 
                                                blank spaces to identify the 
                                                process. There is no warranty of
@@ -106,7 +107,7 @@ def parse_cmd():
     args = parser.parse_args()
     args.user = getpass.getuser()
     if args.algorithm == None:
-        args.algorithm = 'to-be-defined'
+        raise "Algorithm must be informed, options: fzboost, bpz, tpz, gpz"
         
     return args
         
@@ -155,7 +156,8 @@ def add_input_data(args):
         print()
 
 def copy_configs_file(args):
-    if args.algorithm == "to-be-defined": return
+    if args.algorithm == "to-be-defined": 
+        return
     
     file_name_train = f"{args.algorithm}_train.yaml"
     file_name_estimate = f"{args.algorithm}_estimate.yaml"
