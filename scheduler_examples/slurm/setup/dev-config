@@ -39,5 +39,7 @@ else
   chmod +x $SCRATCH/bin/pz_run_setup_dev.py
 fi
 
+chmod +x $SCRATCH/bin/pz_run_setup_dev.py
+
 export ENVIRONMENT="dev"
 
