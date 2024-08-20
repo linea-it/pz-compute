@@ -207,4 +207,6 @@ def main():
     create_link_to_host_performance(args)
     copy_configs_file(args)
     
+    os.chdir(args.process_id)
+    
 if __name__ == '__main__': main()
