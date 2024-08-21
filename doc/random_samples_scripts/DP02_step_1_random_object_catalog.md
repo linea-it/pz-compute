@@ -16,7 +16,7 @@ mkdir logs
 
 Still in the random_from_files directory, copy the scripts to this directory. If you had made the clone of the github repository, just run:
 ```bash
-cp $SCRATCH/pz-compute/docs/notebooks/{DP02_step_1_random_object_catalog.py,DP02_step_1_random_object_catalog.sbatch} .
+cp $SCRATCH/pz-compute/doc/random_samples_scripts/{DP02_step_1_random_object_catalog.py,DP02_step_1_random_object_catalog.sbatch} .
 ```
 
 Run the script with:
