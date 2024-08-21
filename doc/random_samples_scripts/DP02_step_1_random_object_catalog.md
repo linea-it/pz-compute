@@ -4,6 +4,7 @@ conda create -n pz_compute
 conda activate pz_compute 
 conda install dask dask-jobqueue numpy pandas psutil tables-io h5py
 ```
+Note: the name of the environment must be "pz_compute". If you choose another name, you must change the .sbatch script accordingly.
 
 Then, run the following commands to create the necessary folders:
 ```bash
