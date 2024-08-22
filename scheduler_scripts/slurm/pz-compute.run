@@ -6,11 +6,14 @@ from sys import argv, stderr
 THREAD_SIBLINGS_LIST = \
         '/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list'
 
+def info(msg):
+    print(msg, file=stderr, flush=True)
+
 def bind(my_id):
-    print('Hostname: %s' % gethostname(), file=stderr)
+    info('Hostname: %s' % gethostname())
 
     curr_mask = sched_getaffinity(0)
-    print('Affinity mask received: %s' % curr_mask, file=stderr)
+    info('Affinity mask received: %s' % curr_mask)
 
     curr_mask = list(sorted(curr_mask))
     my_hart = curr_mask[my_id % len(curr_mask)]
@@ -19,14 +22,13 @@ def bind(my_id):
         harts = [int(x) for x in f.read().split(',')]
 
     sched_setaffinity(0, harts)
-    print('Affinity mask set: %s' % sched_getaffinity(0), flush=True,
-            file=stderr)
+    info('Affinity mask set: %s' % sched_getaffinity(0))
 
 def main():
     try:
         my_id = int(argv[1])
     except (IndexError, ValueError):
-        print('Usage: %s <cpu_id> <prog> [<args>...]' % argv[0], file=stderr, flush=True)
+        info('Usage: %s <cpu_id> <prog> [<args>...]' % argv[0])
         raise SystemExit(1)
 
     bind(my_id)
