@@ -28,11 +28,10 @@ def save_info_yaml_process_info(begins, ends, duration):
                  'Process finished': str(ends),
                  'Total duration': str(duration)}
 
-    with open(process_info_file,'r') as yamlfile:
-        cur_yaml = yaml.safe_load(yamlfile)
-        cur_yaml['time stats'] = time_dict
-    with open('process_info.yaml','a') as yamlfto:
-        yaml.safe_dump(cur_yaml, yamlfto)
+    with open('process_info.yaml','a') as yamlfile:
+        cur_yaml = {"time stats": time_dict}
+        yaml_text = yaml.dump(cur_yaml)
+        yamlfile.write(yaml_text)
         
     print(f'Information saved in {process_info_file}')
 
@@ -82,7 +81,10 @@ def main():
         print(f"Finished time rail-estimate: {end_time}")
         print(f"Total duration rail-estimate: {duration}")
     else:
-        print(f"Process not started or finished yet.")
+        if start_time and end_time is None:
+            print(f"Process still running")
+        else:
+            print("there was an error running the process")
         return;
 
     save_info_yaml_process_info(start_time, end_time, duration)

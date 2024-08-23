@@ -89,11 +89,13 @@ def create_yaml_process_file(args):
     return yaml_file
 
 def create_yaml_pz_compute(args):
-    yaml_file_config = f'./{args.process_id}/pz_compute.yaml'
+    yaml_file_config = f'./{args.process_id}/pz-compute.yaml'
     
     yaml.add_representer(list, represent_list)
     
-    configs_pz_compute = {'algorithm': args.algorithm, 'sbatch_args': ["-N5", "-n140"]}
+    param_file=None, calib_file=None
+    
+    configs_pz_compute = {'algorithm': args.algorithm, 'sbatch_args': ["-N5", "-n140"], 'param_file': ''}
     
     with open(yaml_file_config, 'w') as outfile:
         yaml.dump(configs_pz_compute, outfile, default_flow_style=False)
@@ -114,15 +116,15 @@ def create_test_dir(args):
             print('Aborting...')
             quit()
     else: 
-        old_process_ids = glob.glob('test_pz_compute_*') 
+        old_process_ids = glob.glob(f'test_pz_compute_{args.algorithm}*') 
         if len(old_process_ids)>0:
             old_n = []
             for old_process_id in old_process_ids:
                 old_n.append(int(old_process_id.split('_')[-1]))
             max_id = max(old_n)
-            args.process_id = 'test_pz_compute_'+ str(max_id+1)
+            args.process_id = f'test_pz_compute_{args.algorithm}'+ str(max_id+1)
         else:
-            args.process_id = 'test_pz_compute_0'
+            args.process_id = f'test_pz_compute_{args.algorithm}_0'
          
         
 def create_link_to_host_performance(args):
@@ -206,7 +208,5 @@ def main():
     
     create_link_to_host_performance(args)
     copy_configs_file(args)
-    
-    os.chdir(args.process_id)
     
 if __name__ == '__main__': main()
