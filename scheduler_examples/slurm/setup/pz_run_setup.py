@@ -95,7 +95,7 @@ def create_yaml_pz_compute(args):
     
     param_file=None, calib_file=None
     
-    configs_pz_compute = {'algorithm': args.algorithm, 'sbatch_args': ["-N5", "-n140"], 'param_file': ''}
+    configs_pz_compute = {'algorithm': args.algorithm, 'sbatch_args': ["-N5", "-n140"]}
     
     with open(yaml_file_config, 'w') as outfile:
         yaml.dump(configs_pz_compute, outfile, default_flow_style=False)
