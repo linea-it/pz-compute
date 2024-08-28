@@ -32,7 +32,6 @@ from math import nan
 from os.path import splitext
 
 from docopt import docopt
-from joblib import parallel_config
 from yaml import YAMLError, safe_load
 
 from rail_scripts import (
@@ -112,11 +111,12 @@ def parse_cmdline():
 
 
 def load_slow_modules(estimator):
-    global DEF_MAGLIMS, DS, Estimator, TableHandle, RailStage
+    global DEF_MAGLIMS, DS, Estimator, TableHandle, RailStage, parallel_config
 
     from rail.core.common_params import lsst_def_maglims as DEF_MAGLIMS
     from rail.core.data import TableHandle
     from rail.core.stage import RailStage
+    from joblib import parallel_config
 
     if estimator == "bpz":
         try:
