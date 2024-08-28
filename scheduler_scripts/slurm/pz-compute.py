@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from os import execv
 from os.path import expandvars
 from pathlib import Path
 from shlex import split
 from shutil import which
 from sys import argv, executable
+from typing import Union
 
 from yaml import safe_load
 
@@ -18,7 +19,7 @@ class Configuration:
     outputdir: str = 'output'
     algorithm: str = 'fzboost'
     sbatch: str = 'sbatch'
-    sbatch_args: list[str] = field(default_factory=lambda: split(SBATCH_ARGS))
+    sbatch_args: Union[list[str], str] = SBATCH_ARGS
     rail_slurm_batch: str = 'pz-compute.batch'
     rail_slurm_py: str = 'pz-compute.run'
     param_file: str = None
@@ -48,7 +49,7 @@ def load_configuration(conffile):
         config = replace(config, **tmp)
 
         if tmp.get('algorithm') == 'tpz' and not 'sbatch_args' in tmp:
-            config.sbatch_args = split(SBATCH_ARGS_TPZ)
+            config.sbatch_args = SBATCH_ARGS_TPZ
 
     config.inputdir = to_path(config.inputdir)
     config.outputdir = to_path(config.outputdir)
@@ -58,6 +59,9 @@ def load_configuration(conffile):
 
     if config.calib_file:
         config.calib_file = to_path(config.calib_file)
+
+    if isinstance(config.sbatch_args, str):
+        config.sbatch_args = split(config.sbatch_args)
 
     print(config)
 
