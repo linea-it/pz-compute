@@ -23,6 +23,7 @@ conda install -y matplotlib
 conda install -y psutil
 conda install -y cython
 conda install -y mpi4py
+conda install -y numexpr
 
 pip install joblib
 pip install scikit-learn
