@@ -39,6 +39,7 @@ from datetime import datetime
 ENV = os.environ.get('ENVIRONMENT') or None
 APP_PZ_COMPUTE_PATH = '/lustre/t0/scratch/users/app.photoz/pz-compute'
 SCRATCH = os.environ.get('SCRATCH')
+LSST_DP02 = '/lustre/t1/cl/lsst/dp0.2/secondary/catalogs/skinny/hdf5/'
 
 def parse_cmd():
     parser = argparse.ArgumentParser()
@@ -57,6 +58,7 @@ def parse_cmd():
     if user_input == 'yes' or user_input == 'y':
         args.will_train = True
     else:
+        print("remember to add the .pkl file for your run")
         args.will_train = False
         
     return args
@@ -77,8 +79,7 @@ def print_output(args, yaml_file):
     print()
     
     print(f'Process info saved in {yaml_file}')    
-    print() 
-    print() 
+    print()
 
 def create_yaml_process_file(args):
     yaml_file = f'./{args.process_id}/process_info.yaml'
@@ -93,9 +94,7 @@ def create_yaml_pz_compute(args):
     
     yaml.add_representer(list, represent_list)
     
-    param_file=None, calib_file=None
-    
-    configs_pz_compute = {'algorithm': args.algorithm, 'sbatch_args': ["-N5", "-n140"]}
+    configs_pz_compute = {'algorithm': args.algorithm, 'sbatch_args': ["-N5", "-n140"], 'param_file':f"{args.algorithm}_estimate.yaml", 'calib_file':f"estimator_{args.algorithm}.pkl"}
     
     with open(yaml_file_config, 'w') as outfile:
         yaml.dump(configs_pz_compute, outfile, default_flow_style=False)
@@ -145,11 +144,10 @@ def add_input_data(args):
     
     if user_input == 'yes' or user_input == 'y':
         if os.path.exists(f'{args.process_id}/input'):
-            source_dir = '/lustre/t1/cl/lsst/dp0.2/secondary/catalogs/skinny/'
             pattern = '*.hdf5'
             target_dir = f'./{args.process_id}/input/'
             
-            for file_path in glob.glob(os.path.join(source_dir, pattern)):
+            for file_path in glob.glob(os.path.join(LSST_DP02, pattern)):
                 filename = os.path.basename(file_path)
                 target_file = os.path.join(target_dir, filename)
 
