@@ -94,7 +94,7 @@ def create_yaml_pz_compute_train(args):
     
     yaml.add_representer(list, represent_list)
     
-    configs_train = {'algorithm': args.algorithm, 'sbatch_args': ["-N1", "-n28"], 'param_file':f"{args.algorithm}_train.yaml"}
+    configs_train = {'algorithm': args.algorithm, 'sbatch_args': ["-N1", "-n1"], 'param_file':f"{args.algorithm}_train.yaml", 'inputfile:':"train-file.hdf5"}
     
     with open(yaml_file_config, 'w') as outfile:
         yaml.dump(configs_train, outfile, default_flow_style=False)
@@ -131,7 +131,7 @@ def create_test_dir(args):
             for old_process_id in old_process_ids:
                 old_n.append(int(old_process_id.split('_')[-1]))
             max_id = max(old_n)
-            args.process_id = f'test_pz_compute_{args.algorithm}'+ str(max_id+1)
+            args.process_id = f'test_pz_compute_{args.algorithm}_'+ str(max_id+1)
         else:
             args.process_id = f'test_pz_compute_{args.algorithm}_0'
          
