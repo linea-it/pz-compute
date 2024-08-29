@@ -89,6 +89,16 @@ def create_yaml_process_file(args):
     
     return yaml_file
 
+def create_yaml_pz_compute_train(args):
+    yaml_file_config = f'./{args.process_id}/pz-train.yaml'
+    
+    yaml.add_representer(list, represent_list)
+    
+    configs_train = {'algorithm': args.algorithm, 'sbatch_args': ["-N1", "-n28"], 'param_file':f"{args.algorithm}_train.yaml"}
+    
+    with open(yaml_file_config, 'w') as outfile:
+        yaml.dump(configs_train, outfile, default_flow_style=False)
+
 def create_yaml_pz_compute(args):
     yaml_file_config = f'./{args.process_id}/pz-compute.yaml'
     
@@ -175,6 +185,7 @@ def copy_configs_file(args):
         if args.will_train:
             src = f'{APP_PZ_COMPUTE_PATH}/doc/algorithms_config/{file_name_train}'
             shutil.copy(src, dst)
+            create_yaml_pz_compute_train(args)
 
         src = f'{APP_PZ_COMPUTE_PATH}/doc/algorithms_config/{file_name_estimate}'
         shutil.copy(src, dst)
@@ -183,6 +194,7 @@ def copy_configs_file(args):
         if args.will_train:
             src = f'{SCRATCH}/pz-compute/doc/algorithms_config/{file_name_train}'
             shutil.copy(src, dst)
+            create_yaml_pz_compute_train(args)
 
         src = f'{SCRATCH}/pz-compute/doc/algorithms_config/{file_name_estimate}'
         shutil.copy(src, dst)
