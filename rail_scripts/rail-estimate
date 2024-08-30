@@ -25,14 +25,13 @@ Options:
                                               columns [default: magerr_{band}]
 
 
-Available algorithms: bpz, fzboost, tpz"""
+Available algorithms: bpz, fzboost, tpz, gpz"""
 
 from collections import namedtuple
 from math import nan
 from os.path import splitext
 
 from docopt import docopt
-from joblib import parallel_config
 from yaml import YAMLError, safe_load
 
 from rail_scripts import (
@@ -112,11 +111,12 @@ def parse_cmdline():
 
 
 def load_slow_modules(estimator):
-    global DEF_MAGLIMS, DS, Estimator, TableHandle, RailStage
+    global DEF_MAGLIMS, DS, Estimator, TableHandle, RailStage, parallel_config
 
     from rail.core.common_params import lsst_def_maglims as DEF_MAGLIMS
     from rail.core.data import TableHandle
     from rail.core.stage import RailStage
+    from joblib import parallel_config
 
     if estimator == "bpz":
         try:
@@ -130,6 +130,8 @@ def load_slow_modules(estimator):
             from rail.estimation.algos.flexzboost import FlexZBoostEstimator as Estimator
     elif estimator == 'tpz':
         from rail.estimation.algos.tpz_lite import TPZliteEstimator as Estimator
+    elif estimator == 'gpz':
+        from rail.estimation.algos.gpz import GPzEstimator as Estimator
     else:
         raise ValueError("Invalid estimator identifier: %s" % estimator)
 

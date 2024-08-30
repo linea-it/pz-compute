@@ -35,18 +35,22 @@
 # it while previous "srun" executions finish, keeping the cluster's task slots
 # fully allocated until all files are processed.
 
+import shlex
 from collections import deque, namedtuple
 from contextlib import contextmanager
 from datetime import datetime
 from glob import glob
 from os import P_NOWAIT, WNOHANG, chdir, environ, getcwd, kill, makedirs, \
-        spawnv, waitpid, sched_getaffinity
+        spawnv, unlink, waitpid, sched_getaffinity
 from os.path import dirname, getsize, isfile, join, relpath
 from shutil import which
 from signal import SIGHUP
 from subprocess import run
 from sys import argv, stderr
 from time import sleep
+
+from ceci.stage import IN_PROGRESS_PREFIX
+from yaml import YAMLError, safe_dump, safe_load
 
 SRUN = 'srun'
 SRUN_ARGS = [SRUN, '-n1', '-N1']
@@ -74,6 +78,9 @@ def stdout_name(task_id):
 def stderr_name(task_id):
     subdir = '%05d' % (task_id // 10000 * 10000)
     return join(LOG, subdir, '%s-%d.err' % (PROG, task_id))
+
+def cmdline_name():
+    return join(LOG, '%s.cmdline.yaml' % PROG)
 
 # Best effort cleanup on abnormal program termination
 def try_kill_children(children):
@@ -239,11 +246,76 @@ def configure_threads(slots, node_list, task_list):
     assert(len(masks) == slots)
     return masks
 
+def skip_existing_output(files, output_dir):
+    new_files = []
+    already = 0
+
+    with now('inspecting the output directory'):
+        for file in files:
+            if isfile(join(output_dir, file)):
+                already += 1
+            else:
+                new_files.append(file)
+
+            in_progress_basename = IN_PROGRESS_PREFIX + file
+            in_progress_path = join(output_dir, in_progress_basename)
+
+            if isfile(in_progress_path):
+                info('Deleting incomplete file: %s' % in_progress_basename)
+
+                try:
+                    unlink(in_progress_path)
+                except OSError as e:
+                    info('Warning: unable to delete file "%s": %s' %
+                            (in_progress_path, e))
+
+        if already > 0:
+            info('Skipped %d files already processed.' % already)
+
+        return new_files
+
+def log_cmdline(args):
+    fname = cmdline_name()
+    dname = dirname(fname)
+
+    try:
+        makedirs(dname, exist_ok=True)
+    except OSError as e:
+        info('Warning: unable to create directory for loggin the command line: %s' % e)
+
+    try:
+        with open(fname, 'r') as f:
+                old = safe_load(f)
+    except (OSError, YAMLError) as e:
+        old = None
+
+    info('Current command line: %s' % shlex.join(args))
+
+    if old is not None:
+        info('Old command line from log file: %s' % shlex.join(old))
+
+    if args != old:
+        info('Assuming new execution from start.')
+
+        try:
+            with open(fname, 'w') as f:
+                safe_dump(args, f)
+        except (OSError, YAMLError) as e:
+            info('Warning: unable to log the command line parameters to file: '
+                    '%s' % e)
+
+    return args == old
+
 def main():
     with now(PROG):
         input_dir, output_dir, extra_args = parse_cmdline()
         slots, node_list, task_list = parse_slurm_variables()
         files = get_input_files(input_dir)
+        maybe_reexecution = log_cmdline(argv[1:])
+
+        if maybe_reexecution:
+            files = skip_existing_output(files, output_dir)
+
         find_program_paths()
         masks = configure_threads(slots, node_list, task_list)
         parallel(files, slots, input_dir, output_dir, extra_args, masks)

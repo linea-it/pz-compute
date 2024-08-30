@@ -1,7 +1,6 @@
 from os.path import isfile
 from sys import stderr
 import yaml
-import ceci
 
 from xdg.BaseDirectory import load_data_paths
 
@@ -96,6 +95,7 @@ def load_user_params(estimator, estimator_name):
 
 
 def set_estimator_param(name, value, default_params):
+    import ceci
     param = default_params.get(name)
     if isinstance(param, ceci.config.StageParameter) and isinstance(value, param.dtype):
         return value

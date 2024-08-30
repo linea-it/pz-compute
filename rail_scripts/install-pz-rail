@@ -23,6 +23,7 @@ conda install -y matplotlib
 conda install -y psutil
 conda install -y cython
 conda install -y mpi4py
+conda install -y numexpr
 
 pip install joblib
 pip install scikit-learn
@@ -36,3 +37,4 @@ pip install pz-rail
 pip install pz-rail-bpz
 pip install pz-rail-flexzboost
 pip install pz-rail-tpz
+pip install pz-rail-gpz-v1
