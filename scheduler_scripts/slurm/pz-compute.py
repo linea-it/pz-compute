@@ -16,6 +16,12 @@ SBATCH_ARGS = {
         None: '-N 26 -n 2032',
 }
 
+TIME_LIMITS = {
+        'gpz': 4*3600,
+        'fzboost': 16*3600,
+        None: None,
+}
+
 @dataclass
 class Configuration:
     inputdir: str = 'input'
@@ -27,6 +33,7 @@ class Configuration:
     rail_slurm_py: str = 'pz-compute.run'
     param_file: str = None
     calib_file: str = None
+    time_limit: int = None
 
 def parse_cmdline():
     try:
@@ -52,6 +59,9 @@ def load_configuration(conffile):
 
     if not 'sbatch_args' in tmp:
         config.sbatch_args = SBATCH_ARGS.get(config.algorithm)
+
+    if not 'time_limit' in tmp:
+        config.time_limit = TIME_LIMITS.get(config.algorithm)
 
     config.inputdir = to_path(config.inputdir)
     config.outputdir = to_path(config.outputdir)
@@ -85,11 +95,20 @@ def setup(config):
     if not config.inputdir.is_dir():
         raise RuntimeError('input directory not found: %s' % config.inputdir)
 
+def seconds_to_time(seconds):
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+
+    return '%d:%02d:%02d' % (hours, minutes, seconds)
+
 def run(config):
     cmd = [config.sbatch]
 
     if config.sbatch_args:
         cmd += config.sbatch_args
+
+    if config.time_limit is not None:
+        cmd += ['--time=' + seconds_to_time(config.time_limit)]
 
     cmd += [config.rail_slurm_batch, config.inputdir, config.outputdir, '-a',
             config.algorithm]
