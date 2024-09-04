@@ -86,8 +86,13 @@ def setup(config):
         raise RuntimeError('input directory not found: %s' % config.inputdir)
 
 def run(config):
-    cmd = [config.sbatch] + config.sbatch_args + [config.rail_slurm_batch,
-            config.inputdir, config.outputdir, '-a', config.algorithm]
+    cmd = [config.sbatch]
+
+    if config.sbatch_args:
+        cmd += config.sbatch_args
+
+    cmd += [config.rail_slurm_batch, config.inputdir, config.outputdir, '-a',
+            config.algorithm]
 
     if config.param_file:
         cmd += ['-p', config.param_file]
