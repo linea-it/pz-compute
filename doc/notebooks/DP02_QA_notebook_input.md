@@ -1,4 +1,5 @@
-Instructions to create the virtual environment in LIneA's JupyterLab to run the DP02_QA_notebook_input notebook.
+**Instructions to create the virtual environment in LIneA's JupyterLab to run the DP02_QA_notebook_input notebook**
+Last updated: September 4, 2024
 
 1. In LIneA's JupyterLab environment, clean your conda and pip:
 ```bash
