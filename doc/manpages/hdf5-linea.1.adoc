@@ -1,0 +1,59 @@
+HDF5-LINEA(1)
+=============
+:doctype: manpage
+:man source: pz-compute
+:man version: g654fe3a
+:man manual: LineA pz-compute Manual
+:revdate: September 2024
+
+NAME
+----
+hdf5-linea - Transform HDF5 file to a standard structure, used by LineA
+
+SYNOPSIS
+--------
+*hdf5-linea* _input_ _output_
+
+DESCRIPTION
+-----------
+The *hdf5-linea* script converts the internal structure of HDF5 to structures
+that follow the current practices in the LineA lab. This will typically be used
+to convert from the file structure used by the DESC-LSST RAIL example files.
+The following transformations are implemented:
+
+- All datasets in the root (``/'') group.
+- Magnitude template name: ``mag_\{band}''.
+- Magnitude error template name: ``magerr_\{band}''.
+
+The column name transformation follows these specific steps:
+
+1. Remove the suffix ``_lsst'' from the name.
+2. Replace the text ``mag_err'' with ``magerr''.
+
+After copying all datasets to the root group, other groups are not included in
+the output file.
+
+
+EXAMPLES
+--------
+Convert the example DC2 validation file to the structure used by LineA (remove
+the ``photometry'' group, rename ``mag_\{band}_lsst'' to ``mag_\{band}'' and
+``mag_err_\{band}_lsst'' to ``magerr_\{band}'':
+
+    $ hdf5-linea test_dc2_validation_9816.hdf5 linea_test.hdf5
+
+EXIT STATUS
+-----------
+*0*::
+  Success.
+
+*1*::
+  Failure.
+
+COPYRIGHT
+---------
+Copyright © 2024 LIneA IT. Licence MIT.
+
+SEE ALSO
+--------
+*rail-preprocess-parquet*(1)
