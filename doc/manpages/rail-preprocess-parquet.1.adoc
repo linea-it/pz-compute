@@ -1,0 +1,171 @@
+RAIL-PREPROCESS-PARQUET(1)
+==========================
+:doctype: manpage
+:man source: pz-compute
+:man version: g654fe3a
+:man manual: LineA pz-compute Manual
+:revdate: September 2024
+
+NAME
+----
+rail-preprocess-parquet - Preprocess raw data so that it's standardized for
+rail-estimate.
+
+SYNOPSIS
+--------
+*rail-preprocess-parquet* [_OPTION_]... [--] _input_ _output_dir_
+
+*rail-preprocess-parquet* *-h*|*--help*
+
+*rail-preprocess-parquet* *--version*
+
+DESCRIPTION
+-----------
+The *rail-preprocess-parquet* script may be used to read input data in Apache
+Parquet format containing either flux or magnitude data and transform it to a
+standard format. It does the following preprocessing steps:
+
+- Limit number of rows per file to a maximum, splitting the file if necessary.
+- Generate files only with necessary columns (magnitudes, errors, optional
+  object ID, optional coordinates).
+- Convert infinite values to NaN.
+- Convert flux to magnitude.
+- Convert Apache Parquet files to HDF5.
+
+Note: dereddening is not implemented yet (TDB).
+
+Preprocessing is done as efficiently as possible and memory usage is limited
+even with arbitrarily large files. The resulting output files are a set of
+files, which are expected to be much smaller than the original file and suitable
+to use with the RAIL algorithms.
+
+The _input_ file must be an Apache Parquet file. In general there will be
+multiple output files for a given input because it will be split so that the
+output files have a maximum number of rows, by default 150 thousand. The output
+is specified as an _output_dir_, and each output file path will be constructed
+from a template in the form ``\{fname}-part\{idx}\{ext}'', where the base file
+name will be built from the _output_dir_ and the _input_ file name, the index
+will be a number representing one slice of the file, indexed in order, starting
+from zero, and the extension, by default will be ``.hdf5''. The file extension
+chosen will decide which file format will be used, according to the rules of the
+RAIL libraries.
+
+The input must have a set of columns for magnitude data and magnitude errors, or
+a set of columns for flux data and flux errors, or the two sets of columns. The
+magnitude columns have higher priority over the flux columns and, by default,
+will be copied as is, if present. If not present, or if the *-f* flag is used,
+then the flux columns will be converted to magnitude using a standardized
+calculation and the resulting magnitudes will be stored in the output files. The
+magnitude column names, by default, must follow the templates ``mag_\{band}''
+and ``magerr_\{band}'' and the flux column names must follow the templates
+``\{band}_gaap1p0Flux'' and ``\{band}_gaap1p0FluxErr'', where the bands are the
+lower case letters representing the color bands ``u'', ``g'', ``r'', ``i'',
+``z'' and ``y''. Other columns that will be copied if present are called, by
+default, ``coord_ra'', ``coord_dec'' and ``objectId''.
+
+Option arguments are used to modify the handling of the input file and output
+files' names, maximum number of rows and magnitude column names. If multiple
+options with conflicting formats appear in the command line, the initial ones
+are ignored and the last ones are used. The list of options follows:
+
+*-f*, *--flux*::
+  Set this flag to prefer using flux columns from the input file, instead of
+  magnitude columns. This flag is only meaningful when both flux and magnitude
+  columns are present in the input file and switches the preference from just
+  copying the magnitude values to calculating magnitude values from flux values.
+
+*-r* _rows_, **--rows=**_rows_::
+  Sets the maximum number of rows per output file. The default is 150000. If the
+  _input_ file has more rows than this limit, it will be split into
+  approximatelly equal parts, as close to this limit as possible. For example,
+  using the default value, an _input_ file with 360000 rows would be split into
+  three files with 120000 rows.
+
+**--output-template=**_template_::
+  Set the names of the output files. The default template is
+  ``\{fname}-part\{idx}\{ext}'', where ``fname'' is constructed from the
+  _output_dir_ and the _input_ file name with the file extension removed,
+  ``idx'' is the 0-based slice index of the output file and ``ext'' is equal to
+  ``.hdf5''. When changing this template, at least the placeholder for ``idx''
+  must be present. Note that the chosen extension defines the output format,
+  according to the rules of the RAIL library.
+
+**--flux-template=**_template_::
+  Set the names of the flux columns. The default template is
+  ``\{band}_gaap1p0Flux''. It's ignored when magnitude columns are present in
+  the _input_ file, unless the *-f* flag is used.
+
+**--flux-error-emplate=**_template_::
+  Set the names of the flux error columns. The default template is
+  ``\{band}_gaap1p0FluxErr''. It's ignored when magnitude columns are present in
+  the _input_ file, unless the *-f* flag is used.
+
+**--mag-template=**_template_::
+  Set the names of the magnitude columns. The default template is
+  ``mag_\{band}''. The magnitude template name is used for the input columns,
+  unless the *-f* flag is used, and it's also used for the names of the output
+  columns.
+
+**--mag-error-template=**_template_::
+  Set the names of the magnitude error columns. The default template is
+  ``magerr_\{band}''. The magnitude template name is used for the input columns,
+  unless the *-f* flag is used, and it's also used for the names of the output
+  columns.
+
+**--ra=**_ra_::
+  Set the name of equatorial coordinate right ascension. The default name is
+  ``coord_ra''. The column with this name is copied if it exists.
+
+**--dec=**_dec_::
+  Set the name of equatorial coordinate right declination. The default name is
+  ``coord_dec''. The column with this name is copied if it exists.
+
+*-h*, *--help*::
+  Show help message instead of executing an estimation.
+
+*--version*::
+  Show program version number instead of executing an estimation.
+
+EXAMPLES
+--------
+Generate skinny tables for a file from the LSST DP0.2 dataset, using all the
+default options (maximum 150000 rows per output file, default template names,
+convert the flux columns to magnitude columns, generate HDF5 files):
+
+    $ rail-preprocess-parquet \
+            objectTable_tract_4857_DC2_2_2i_runs_DP0_2_v23_0_1_PREOPS-905_step3_28_20220306T041600Z.parq \
+            dir1
+
+Preprocess an input file with magnitude columns with a different template:
+
+    $ rail-preprocess-parquet --mag-template={band}magnitude \
+            --mag-error-template={band}error \
+            input1.pq dir1
+
+Generate output files with at most 500000 rows:
+
+    $ rail-preprocess-parquet -r 500000 input1.pq dir1
+
+For an input file that has both magnitude and flux columns, prefer flux columns:
+
+    $ rail-preprocess-parquet -f mag-and-flux.pq dir1
+
+Generate Parquet files:
+
+    $ rail-preprocess-parquet --output-template={fname}-{idx}.pq input1.pq dir1
+
+EXIT STATUS
+-----------
+*0*::
+  Success.
+
+*1*::
+  Failure.
+
+COPYRIGHT
+---------
+Copyright © 2024 LIneA IT. Licence MIT.
+
+SEE ALSO
+--------
+*rail-estimate*(1), *rail-train*(1)
