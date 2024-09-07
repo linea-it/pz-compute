@@ -1,0 +1,52 @@
+PARQUET-COUNT-ROWS(1)
+=====================
+:doctype: manpage
+:man source: pz-compute
+:man version: g654fe3a
+:man manual: LineA pz-compute Manual
+:revdate: September 2024
+
+NAME
+----
+parquet-count-rows - Count the number of rows in Apache Parquet files
+
+SYNOPSIS
+--------
+*parquet-count-rows* [_file_]...
+
+DESCRIPTION
+-----------
+The *parquet-count-rows* script prints the number of rows in each of the given
+Parquet input files and then prints a grand total number of rows. The program
+uses the number of rows stored in the metadata section without loading the
+column data in memory.
+
+EXAMPLES
+--------
+Count the number of rows of a single file:
+
+    $ parquet-count-rows file1.pq
+
+Print the number of rows of each of 3 files and then the grand total:
+
+    $ parquet-count-rows file1.pq file2.pq file3.pq
+
+Use shell expansion to count the number of rows of all files in a directory:
+
+    $ parquet-count-rows dir1/*.pq
+
+EXIT STATUS
+-----------
+*0*::
+  Success.
+
+*1*::
+  Failure.
+
+COPYRIGHT
+---------
+Copyright © 2024 LIneA IT. Licence MIT.
+
+SEE ALSO
+--------
+*hdf5-count-rows*(1)
