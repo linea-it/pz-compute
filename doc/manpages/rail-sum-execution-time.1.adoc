@@ -1,0 +1,73 @@
+RAIL-SUM-EXECUTION-TIME(1)
+==========================
+:doctype: manpage
+:man source: pz-compute
+:man version: g654fe3a
+:man manual: LineA pz-compute Manual
+:revdate: September 2024
+
+NAME
+----
+rail-sum-execution-time - Calculate total execution time from logs
+
+SYNOPSIS
+--------
+*rail-sum-execution-time* [_log_file_]...
+
+DESCRIPTION
+-----------
+The *rail-sum-execution-time* script prints the total execution time of each
+execution of some job, represented by some _log_file_ given. It relies on the
+log files having a preformatted timestamp line at the beginning and at the end
+of the files, representing the start end end of the job. The general format of
+the timestamp line is the following:
+
+    <date>: <event>: <description>
+
+The precise formats that can be parsed are defined by a regular expression in
+the code. In the current implementation, the date must be in ISO standard
+format, the event must be ``Starting'' or ``Finished'' and the description field
+must be the same in both start and finish events. An example of valid timestamp
+line is the following:
+
+    2024-09-02 21:56:22.714813: Starting: pz-compute
+
+This line represents the starting timestamp and must be matched by an ending
+one with an identical description field:
+
+    2024-09-03 22:37:19.369830: Finished: pz-compute
+
+The script only considers the first starting event in the file and its
+corresponding finish event, ignoring all other events.
+
+One execution time per _log_file_ is output and then a grand total is produced.
+The script also accepts Unix glob expressions as inputs and will loop over the
+matched files.
+
+EXAMPLES
+--------
+Print the total execution time of a slurm batch job that logged its start and
+finish timestamps:
+
+    $ rail-sum-execution-time slurm-26580.out
+
+Print the execution time of all log files in a directory and the grand total:
+
+    $ rail-sum-execution-time dir1/*.log
+
+Use the built-in glob expansion instead of the shell to summarize a large amount
+of log files (using shell quotes to avoid shell expansion):
+
+    $ rail-sum-execution-time 'dir1/*.log'
+
+EXIT STATUS
+-----------
+*0*::
+  Success.
+
+*1*::
+  Failure.
+
+COPYRIGHT
+---------
+Copyright © 2024 LIneA IT. Licence MIT.
