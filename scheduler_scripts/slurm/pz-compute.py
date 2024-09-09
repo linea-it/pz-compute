@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
+<<<<<<< HEAD
 from dataclasses import dataclass, field, replace
 from os import execv
+=======
+from dataclasses import dataclass, replace
+from os import execv
+from os.path import expandvars
+>>>>>>> main
 from pathlib import Path
 from shlex import split
 from shutil import which
 from sys import argv, executable
+<<<<<<< HEAD
+=======
+from typing import Union
+>>>>>>> main
 
 from yaml import safe_load
 
 SBATCH_ARGS = '-N 26 -n 2032'
+<<<<<<< HEAD
+=======
+SBATCH_ARGS_TPZ = '-N 26 -n 1316 --mem-per-cpu=3500M'
+>>>>>>> main
 
 @dataclass
 class Configuration:
@@ -16,10 +30,18 @@ class Configuration:
     outputdir: str = 'output'
     algorithm: str = 'fzboost'
     sbatch: str = 'sbatch'
+<<<<<<< HEAD
     sbatch_args: list[str] = field(default_factory=lambda: split(SBATCH_ARGS))
     rail_slurm_batch: str = 'pz-compute.batch'
     rail_slurm_py: str = 'pz-compute.run'
     param_file: str = None
+=======
+    sbatch_args: Union[list[str], str] = SBATCH_ARGS
+    rail_slurm_batch: str = 'pz-compute.batch'
+    rail_slurm_py: str = 'pz-compute.run'
+    param_file: str = None
+    calib_file: str = None
+>>>>>>> main
 
 def parse_cmdline():
     try:
@@ -30,7 +52,11 @@ def parse_cmdline():
     return conffile
 
 def to_path(text):
+<<<<<<< HEAD
     return Path(text).expanduser()
+=======
+    return Path(expandvars(text)).expanduser()
+>>>>>>> main
 
 def load_configuration(conffile):
     config = Configuration()
@@ -44,12 +70,27 @@ def load_configuration(conffile):
     if tmp:
         config = replace(config, **tmp)
 
+<<<<<<< HEAD
+=======
+        if tmp.get('algorithm') == 'tpz' and not 'sbatch_args' in tmp:
+            config.sbatch_args = SBATCH_ARGS_TPZ
+
+>>>>>>> main
     config.inputdir = to_path(config.inputdir)
     config.outputdir = to_path(config.outputdir)
 
     if config.param_file:
         config.param_file = to_path(config.param_file)
 
+<<<<<<< HEAD
+=======
+    if config.calib_file:
+        config.calib_file = to_path(config.calib_file)
+
+    if isinstance(config.sbatch_args, str):
+        config.sbatch_args = split(config.sbatch_args)
+
+>>>>>>> main
     print(config)
 
     return config
@@ -72,10 +113,20 @@ def setup(config):
 
 def run(config):
     cmd = [config.sbatch] + config.sbatch_args + [config.rail_slurm_batch,
+<<<<<<< HEAD
             config.inputdir, config.outputdir, config.algorithm]
 
     if config.param_file:
         cmd.append(config.param_file)
+=======
+            config.inputdir, config.outputdir, '-a', config.algorithm]
+
+    if config.param_file:
+        cmd += ['-p', config.param_file]
+
+    if config.calib_file:
+        cmd += ['-c', config.calib_file]
+>>>>>>> main
 
     print(' '.join(str(x) for x in cmd))
     execv(config.sbatch, cmd)

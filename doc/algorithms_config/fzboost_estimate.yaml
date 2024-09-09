@@ -1,0 +1,15 @@
+# config.yaml
+
+qp_representation: "interp"
+nzbins: 301 
+nondetect_val: 99.0 
+mag_limits: 
+    mag_u_lsst: 27.79
+    mag_g_lsst: 29.04
+    mag_r_lsst: 29.06
+    mag_i_lsst: 28.62
+    mag_z_lsst: 27.98
+    mag_y_lsst: 27.05
+bands: ["mag_u_lsst", "mag_g_lsst", "mag_r_lsst", "mag_i_lsst", "mag_z_lsst", "mag_y_lsst"]  
+err_bands: ["mag_err_u_lsst", "mag_err_g_lsst", "mag_err_r_lsst", "mag_err_i_lsst", "mag_err_z_lsst", "mag_err_y_lsst"]
+ref_band: "mag_i_lsst" 

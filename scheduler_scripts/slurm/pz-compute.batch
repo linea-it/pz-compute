@@ -10,6 +10,7 @@
 # Usage:
 #
 #     $ sbatch [<sbatch_options>...] rail-slurm.batch \
+<<<<<<< HEAD
 #             [<input_dir> [<output_dir> [<algorithm>]]]
 #
 # - input_dir: Input directory with pre-processed input data
@@ -29,18 +30,47 @@
 #     # Change the slurm queue
 #     $ sbatch -p cpu_long -t 8:00:00 -N20 --ntasks-per-node=40 \
 #             input1 output1 bpz
+=======
+#             [<input_dir> [<output_dir> [<args>...]]]
+#
+# - input_dir: Input directory with pre-processed input data
+# - output_dir: Target output directory for the estimations
+# - args: Extra parameters passed to rail-estimate
+#
+# The rail-estimate program also requires by default an
+# estimator_<algorithm>.pkl file available in the current directory or in a
+# standard data directory.  In case of BPZ algorithm, the BPZ cache files (AB
+# directory) must have been previously generated.
+#
+# Example usage:
+#
+#     # Defaults: input_dir=input, output_dir=output
+#     $ sbatch rail_slurm.batch
+#
+#     # Change the slurm queue, change estimation algorithm to BPZ
+#     $ sbatch -p cpu_long -t 8:00:00 -N20 --ntasks-per-node=40 \
+#             input1 output1 -a bpz
+>>>>>>> main
 #
 # This script is somewhat "Unix intensive" because it tries to exploit support
 # for dynamic scheduling on slurm. It calls "srun" in parallel and keeps calling
 # it while previous "srun" executions finish, keeping the cluster's task slots
 # fully allocated until all files are processed.
 
+<<<<<<< HEAD
+=======
+import shlex
+>>>>>>> main
 from collections import deque, namedtuple
 from contextlib import contextmanager
 from datetime import datetime
 from glob import glob
 from os import P_NOWAIT, WNOHANG, chdir, environ, getcwd, kill, makedirs, \
+<<<<<<< HEAD
         spawnv, waitpid, sched_getaffinity
+=======
+        spawnv, unlink, waitpid, sched_getaffinity
+>>>>>>> main
 from os.path import dirname, getsize, isfile, join, relpath
 from shutil import which
 from signal import SIGHUP
@@ -48,15 +78,26 @@ from subprocess import run
 from sys import argv, stderr
 from time import sleep
 
+<<<<<<< HEAD
+=======
+from ceci.stage import IN_PROGRESS_PREFIX
+from yaml import YAMLError, safe_dump, safe_load
+
+>>>>>>> main
 SRUN = 'srun'
 SRUN_ARGS = [SRUN, '-n1', '-N1']
 LOG = 'log'
 PROG = 'pz-compute'
 ESTIMATE = 'rail-estimate'
+<<<<<<< HEAD
 ESTIMATE_ARGS = ['--bins=301']
 OUTPUT_DIR = 'output'
 INPUT_DIR = 'input'
 ALGORITHM = 'fzboost'
+=======
+OUTPUT_DIR = 'output'
+INPUT_DIR = 'input'
+>>>>>>> main
 HELPER = 'pz-compute.run'
 MAX_ATTEMPTS = 3
 
@@ -77,6 +118,12 @@ def stderr_name(task_id):
     subdir = '%05d' % (task_id // 10000 * 10000)
     return join(LOG, subdir, '%s-%d.err' % (PROG, task_id))
 
+<<<<<<< HEAD
+=======
+def cmdline_name():
+    return join(LOG, '%s.cmdline.yaml' % PROG)
+
+>>>>>>> main
 # Best effort cleanup on abnormal program termination
 def try_kill_children(children):
     for pid in children:
@@ -96,8 +143,12 @@ def now(msg):
     yield
     info('%s: Finished: %s' % (datetime.now(), msg))
 
+<<<<<<< HEAD
 def parallel(files, slots, input_dir, output_base_dir, algorithm, masks,
              param_file):
+=======
+def parallel(files, slots, input_dir, output_base_dir, extra_args, masks):
+>>>>>>> main
     children = {}
     task_id = 0
     attempt = { file: 0 for file in files }
@@ -113,11 +164,15 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks,
             output_dir = dirname(output_file)
             stdout_file = stdout_name(task_id)
             stderr_file = stderr_name(task_id)
+<<<<<<< HEAD
             args = [ESTIMATE] + ESTIMATE_ARGS + ['-a', algorithm] + \
                     [input_file, output_file]
 
             if param_file:
                 args += ['-p', param_file]
+=======
+            args = [ESTIMATE, input_file, output_file] + extra_args
+>>>>>>> main
 
             makedirs(dirname(stdout_file), exist_ok=True)
             makedirs(dirname(stderr_file), exist_ok=True)
@@ -150,7 +205,11 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks,
                     raise RuntimeError('Error: too many failed attempts.')
                 else:
                     info('Will retry again later.')
+<<<<<<< HEAD
                     files.appendleft(relative_path)
+=======
+                    files.appendleft(prev_relative_path)
+>>>>>>> main
                     sleep(0.2)
             else:
                 info('%s: Finished: %s %s id=%d' % (datetime.now(), ESTIMATE,
@@ -181,6 +240,7 @@ def parse_cmdline():
     else:
         output_dir = OUTPUT_DIR
 
+<<<<<<< HEAD
     if len(argv) > 3:
         algorithm = argv[3]
     else:
@@ -192,6 +252,10 @@ def parse_cmdline():
         param_file = None
 
     return input_dir, output_dir, algorithm, param_file
+=======
+    extra_args = argv[3:]
+    return input_dir, output_dir, extra_args
+>>>>>>> main
 
 def find_program_paths():
     with now('finding program paths'):
@@ -255,6 +319,7 @@ def configure_threads(slots, node_list, task_list):
     assert(len(masks) == slots)
     return masks
 
+<<<<<<< HEAD
 def main():
     with now(PROG):
         input_dir, output_dir, algorithm, param_file = parse_cmdline()
@@ -264,5 +329,80 @@ def main():
         masks = configure_threads(slots, node_list, task_list)
         parallel(files, slots, input_dir, output_dir, algorithm, masks,
                  param_file)
+=======
+def skip_existing_output(files, output_dir):
+    new_files = []
+    already = 0
+
+    with now('inspecting the output directory'):
+        for file in files:
+            if isfile(join(output_dir, file)):
+                already += 1
+            else:
+                new_files.append(file)
+
+            in_progress_basename = IN_PROGRESS_PREFIX + file
+            in_progress_path = join(output_dir, in_progress_basename)
+
+            if isfile(in_progress_path):
+                info('Deleting incomplete file: %s' % in_progress_basename)
+
+                try:
+                    unlink(in_progress_path)
+                except OSError as e:
+                    info('Warning: unable to delete file "%s": %s' %
+                            (in_progress_path, e))
+
+        if already > 0:
+            info('Skipped %d files already processed.' % already)
+
+        return new_files
+
+def log_cmdline(args):
+    fname = cmdline_name()
+    dname = dirname(fname)
+
+    try:
+        makedirs(dname, exist_ok=True)
+    except OSError as e:
+        info('Warning: unable to create directory for loggin the command line: %s' % e)
+
+    try:
+        with open(fname, 'r') as f:
+                old = safe_load(f)
+    except (OSError, YAMLError) as e:
+        old = None
+
+    info('Current command line: %s' % shlex.join(args))
+
+    if old is not None:
+        info('Old command line from log file: %s' % shlex.join(old))
+
+    if args != old:
+        info('Assuming new execution from start.')
+
+        try:
+            with open(fname, 'w') as f:
+                safe_dump(args, f)
+        except (OSError, YAMLError) as e:
+            info('Warning: unable to log the command line parameters to file: '
+                    '%s' % e)
+
+    return args == old
+
+def main():
+    with now(PROG):
+        input_dir, output_dir, extra_args = parse_cmdline()
+        slots, node_list, task_list = parse_slurm_variables()
+        files = get_input_files(input_dir)
+        maybe_reexecution = log_cmdline(argv[1:])
+
+        if maybe_reexecution:
+            files = skip_existing_output(files, output_dir)
+
+        find_program_paths()
+        masks = configure_threads(slots, node_list, task_list)
+        parallel(files, slots, input_dir, output_dir, extra_args, masks)
+>>>>>>> main
 
 if __name__ == '__main__': main()

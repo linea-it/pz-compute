@@ -1,7 +1,6 @@
 from os.path import isfile
 from sys import stderr
 import yaml
-import ceci
 
 from xdg.BaseDirectory import load_data_paths
 
@@ -34,12 +33,6 @@ def find_data_file(file_name):
     # Non existent file just returns the original file name, so that it
     # can be tracked later.
     return file_name
-
-
-def find_estimator_configuration(model_name):
-    model_file = ESTIMATOR_CONFIGURATION_TEMPLATE % model_name
-
-    return find_data_file(model_file)
 
 
 def map_bands(template, bands):
@@ -102,6 +95,7 @@ def load_user_params(estimator, estimator_name):
 
 
 def set_estimator_param(name, value, default_params):
+    import ceci
     param = default_params.get(name)
     if isinstance(param, ceci.config.StageParameter) and isinstance(value, param.dtype):
         return value

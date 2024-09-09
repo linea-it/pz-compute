@@ -1,7 +1,10 @@
 #!/bin/sh
 #SBATCH --time=16:00:00
 #SBATCH -J pz-train
+<<<<<<< HEAD
 #SBATCH --mem-per-cpu=2140M
+=======
+>>>>>>> main
 #SBATCH -p cpu
 #SBATCH --propagate=NPROC
 srun rail-train $@
