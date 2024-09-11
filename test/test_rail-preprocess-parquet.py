@@ -8,7 +8,7 @@ module = importlib.util.module_from_spec(spec)
 sys.modules[module_name] = module
 spec.loader.exec_module(module)
 
-from module import dered
+from module import dered, round_decimal_cases
 
 import pandas.testing as pd_testing
 
@@ -20,6 +20,10 @@ def test_dered():
 
     apply_dered = "sfd"
 
+    values = ['mag_u', 'mag_g', 'mag_r', 'mag_i', 'mag_z', 'mag_y']   
+
+    ra_column = 'ra'
+    dec_column = 'dec'
    
     input_table = pd.Dataframe({'mag_u': [75.121210, 26.671684, 30.535095],
                                 'mag_g': [27.096551, 26.752316, 27.632894], 
@@ -27,25 +31,47 @@ def test_dered():
                                 'mag_i': [26.277775, 26.492797, 26.080708], 
                                 'mag_z': [25.930055, 26.032065, 25.856228],
                                 'mag_y': [24.833418, 29.494424, 27.102938]}) 
-
-    values = ['mag_u', 'mag_g', 'mag_r', 'mag_i', 'mag_z', 'mag_y']   
-
-    ra_column = 'ra'
-    dec_column = 'dec'
-
-
+    
     output_table = pd.Dataframe({'mag_u': [74.956912, 26.511667, 30.368855],
                                  'mag_g': [26.972218, 26.631222, 27.507090], 
                                  'mag_r': [26.568742, 26.110116, 26.187997], 
                                  'mag_i': [26.207410, 26.424266, 26.009512], 
                                  'mag_z': [25.876086, 25.979502, 25.801621], 
                                  'mag_y': [24.788672, 29.450843, 27.057663]})
-
+ 
 
     # Compare DataFrames with a tolerance level
     pd_testing.assert_frame_equal(dered(apply_dered, input_table, 
                                         values, ra_column, dec_column),
-                                  output_table, 
-                                  atol=1e-2)  
+                                  output_table, atol=1e-2)  
+
+
+def test_round_decimal_cases():
+    """ Unit test for round decimal cases """
+
+    round_mags = "4"
+
+    input_table = pd.Dataframe({'mag_u': [75.121210, 26.671684, 30.535095],
+                                'mag_g': [27.096551, 26.752316, 27.632894], 
+                                'mag_r': [26.660967, 26.199939, 26.281313],
+                                'mag_i': [26.277775, 26.492797, 26.080708], 
+                                'mag_z': [25.930055, 26.032065, 25.856228],
+                                'mag_y': [24.833418, 29.494424, 27.102938]}) 
+
+    mag_columns = ['mag_u', 'mag_g', 'mag_r', 'mag_i', 'mag_z', 'mag_y']   
+    err_columns = ['magerr_u', 'magerr_g', 'magerr_r', 'mageer_i', 'magerr_z', 'magerr_y']   
+
+    output_table = pd.Dataframe({'mag_u': [74.9569, 26.5116, 30.3688],
+                                 'mag_g': [26.9722, 26.6312, 27.5070], 
+                                 'mag_r': [26.5687, 26.1101, 26.1879], 
+                                 'mag_i': [26.2074, 26.4242, 26.0095], 
+                                 'mag_z': [25.8760, 25.9795, 25.8016], 
+                                 'mag_y': [24.7886, 29.4508, 27.0576]})
+
+
+    # Compare DataFrames with a tolerance level
+    pd_testing.assert_frame_equal(round_decimal_cases(rouns_mags, input_table, 
+                                        mag_columns, err_columns),
+                                  output_table, atol=1e-2)  
 
 
