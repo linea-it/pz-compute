@@ -203,6 +203,8 @@ def dered(apply_dered, table, values, ra_column, dec_column):
 
     for val, band in zip(values, DEFAULT_BANDS):
         table[val] = table[val] - ebv * A_EBV[band]
+    
+    return table
 
 def convert_to_magnitude(table, flux_columns, flux_error_columns, mag_columns,
                          mag_error_columns, apply_dered):
