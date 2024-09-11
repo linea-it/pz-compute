@@ -16,9 +16,9 @@ Options:
     --output-template=<template>      Set the names of the output files
                                       [default: {fname}-part{idx}{ext}].
     --flux-template=<template>        Set the names of the flux columns
-                                      [default: {band}_gaap1p0Flux].
+                                      [default: {band}_cModelFlux].
     --flux-error-template=<template>  Set the names of the flux error columns
-                                      [default: {band}_gaap1p0FluxErr].
+                                      [default: {band}_cModelFluxErr].
     --mag-template=<template>         Set the names of the magnitude columns
                                       [default: mag_{band}].
     --mag-error-template=<template>   Set the names of the magnitude error
@@ -27,6 +27,7 @@ Options:
                                       Right Ascension [default: coord_ra]
     --dec=<dec>                       Set the name of equatorial coordinate
                                       Declination [default: coord_dec]
+    --apply-dered=<sfd/None>          Apply dereddening to mags [default: None].
 
 
 The following preprocessing steps are currently implemented:
@@ -53,17 +54,26 @@ from numpy import log, log10, multiply, nan_to_num, nan
 from pyarrow import ArrowInvalid
 from pyarrow.parquet import ParquetFile, write_table
 
+from astropy.coordinates import SkyCoord
+from dustmaps.sfd import SFDQuery
+
 from rail_scripts import DEFAULT_BANDS, VERSION_TEXT, abort, error, info, \
         map_bands
 
 BUFFER_SIZE = 1<<20
 DEFAULT_EXT = '.hdf5'
+A_EBV = {'u' : 4.81, 
+         'g' : 3.64,
+         'r' : 2.70, 
+         'i' : 2.06, 
+         'z' : 1.58, 
+         'y' : 1.31}
 
 Configuration = namedtuple('Configuration',
                            ('input', 'output_dir', 'flux_template',
                             'flux_error_template', 'mag_template',
                             'mag_error_template', 'rows', 'flux',
-                            'output_template', 'ra','dec'))
+                            'output_template', 'ra','dec', 'apply_dered'))
 
 def parse_cmdline():
     args = docopt(__doc__, version=VERSION_TEXT)
@@ -83,7 +93,8 @@ def parse_cmdline():
                          rows=rows, flux=args['--flux'],
                          output_template=args['--output-template'],
                          ra=args['--ra'], 
-                         dec=args['--dec'])
+                         dec=args['--dec'],
+                         apply_dered=args['--apply-dered'])
 
 def build_output_name(file_name, index, template, extension=DEFAULT_EXT):
     file_name = basename(file_name)
@@ -152,13 +163,30 @@ def flux_to_mag(table, values, errors):
     for val in values:
         table[val] = -2.5*log10(table[val]) + MAG_OFFSET
 
+def dered(table, values, apply_dered):
+    #print(table[values][-5:]) 
+    #coords = SkyCoord(data['coord_ra'], 
+    #                  data['coord_dec'],
+    #                  unit='deg', frame='icrs')
+    #if apply_dered == 'sfd': 
+        #sfd = SFDQuery()
+        #ebv = sfd(coords)
+        #for val, band in zip(values, DEFAULT_BANDS):
+            #table[val] = table[val] - ebv*band_a_ebv[band]
+    #print(table[values][-5:]) 
+    raise NotImplementedError("TBD: Apply dereddening")
+
 def convert_to_magnitude(table, flux_columns, flux_error_columns, mag_columns,
-                         mag_error_columns):
+                         mag_error_columns, apply_dered):
+    
+    
     all_flux = flux_columns + flux_error_columns
     all_mag = mag_columns + mag_error_columns
     flux_mag_map = {flux: mag for (flux, mag) in zip(all_flux, all_mag)}
     table.rename(flux_mag_map, axis=1, inplace=True, errors='raise')
     flux_to_mag(table, mag_columns, mag_error_columns)
+    if apply_dered != 'None': 
+        dered(table, mag_columns, apply_dered)
 
 
 def preprocess(cfg):
@@ -169,7 +197,7 @@ def preprocess(cfg):
     mag_error_columns = map_bands(cfg.mag_error_template, bands)
     ra_column = cfg.ra 
     dec_column = cfg.dec 
-
+    apply_dered = cfg.apply_dered
     try:
         # Note: specifying a buffer size seems to be necessary for
         # iter_batches() to efficiently deal with allocations smaller than 1 row
@@ -185,7 +213,6 @@ def preprocess(cfg):
                     f, flux_columns + flux_error_columns,
                     mag_columns + mag_error_columns, 
                     ra_column, dec_column)
-            
             use_flux, coord_columns, value_columns, error_columns = choose_columns(
                     has_ra, has_dec, has_magnitude, has_flux, 
                     cfg.ra, cfg.dec, cfg.flux, flux_columns, 
@@ -206,8 +233,11 @@ def preprocess(cfg):
                 if use_flux:
                     convert_to_magnitude(table, flux_columns,
                                          flux_error_columns, mag_columns,
-                                         mag_error_columns)
-
+                                         mag_error_columns, apply_dered)
+            
+                if table.index.name == 'objectId':
+                    table.reset_index(inplace=True)
+                
                 output_name = build_output_name(cfg.input, i,
                                                 cfg.output_template)
                 output_path = join(cfg.output_dir, output_name)
