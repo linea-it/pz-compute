@@ -68,7 +68,6 @@ from pyarrow import ArrowInvalid
 from pyarrow.parquet import ParquetFile, write_table
 
 from astropy.coordinates import SkyCoord
-from dustmaps.sfd import SFDQuery
 
 from rail_scripts import DEFAULT_BANDS, VERSION_TEXT, abort, error, info, \
         map_bands
@@ -177,20 +176,33 @@ def flux_to_mag(table, values, errors):
         table[val] = -2.5*log10(table[val]) + MAG_OFFSET
 
 def dered(apply_dered, table, values, ra_column, dec_column):
-    
+    """ Apply extinction correction based on Milky Way dust maps 
+        provided by dustmaps Python package. Maps options are: 
+        sfd, csfd, planck, planckGNILC, bayestar, iphas, marshall, 
+        chen2014, lenz2017, pg2010, leikeensslin2019, leike2020, 
+        edenhofer2023, and bh. 
+        See dustmaps package documentation for details: 
+        https://dustmaps.readthedocs.io/en/latest/index.html """
+
     coords = SkyCoord(table[ra_column], 
                       table[dec_column],
                       unit='deg', frame='icrs')
     if apply_dered == 'sfd': 
+        from dustmaps.sfd import SFDQuery
         sfd = SFDQuery()
-        ebv = sfd(coords)
-        for val, band in zip(values, DEFAULT_BANDS):
-            table[val] = table[val] - ebv * A_EBV[band]
+        ebv = sfd(coords)  
+    elif apply_dered == 'plank': 
+        from dustmaps.planck import PlanckQuery
+        planck = PlanckQuery()
+        ebv = planck(coords)
     else: 
         msg = f"Dust map {apply_dered} invalid or not implemented yet. \n"
         msg += "Please, open an issue on pz-compute repository with your request."
         msg += "https://github.com/linea-it/pz-compute/issues/new"
         raise NotImplementedError(msg) 
+
+    for val, band in zip(values, DEFAULT_BANDS):
+        table[val] = table[val] - ebv * A_EBV[band]
 
 def convert_to_magnitude(table, flux_columns, flux_error_columns, mag_columns,
                          mag_error_columns, apply_dered):
