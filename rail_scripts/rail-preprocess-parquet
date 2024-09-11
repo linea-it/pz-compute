@@ -27,7 +27,15 @@ Options:
                                       Right Ascension [default: coord_ra]
     --dec=<dec>                       Set the name of equatorial coordinate
                                       Declination [default: coord_dec]
-    --apply-dered=<sfd/None>          Apply dereddening to mags [default: None].
+    --apply-dered=<map_name>          Apply dereddening to mags. Options are: 
+                                      sfd, csfd, planck, planckGNILC, bayestar,
+                                      iphas, marshall, chen2014, lenz2017, 
+                                      pg2010, leikeensslin2019, leike2020, 
+                                      edenhofer2023, and bh. See dustmaps 
+                                      package documentation for details on 
+                                      Github [default: None]. 
+    --round-mags=<n_decimal_cases>    Number of decimal cases for rounding 
+                                      magnitudes and errors [default: None].   
 
 
 The following preprocessing steps are currently implemented:
@@ -38,6 +46,11 @@ The following preprocessing steps are currently implemented:
   the input files. 
 - Convert infinite values to NaN.
 - Convert flux to magnitude.
+- Apply extinction correction based on Milky Way dust maps from dustmaps Python
+  package (https://dustmaps.readthedocs.io/en/latest/index.html) (optional). 
+- Round magnitudes and errors to remove fictitious precision and save storage
+  space (optional).    
+
 
 Preprocessing is done as efficiently as possible and memory usage is limited
 even with arbitrarily large files.
@@ -163,18 +176,21 @@ def flux_to_mag(table, values, errors):
     for val in values:
         table[val] = -2.5*log10(table[val]) + MAG_OFFSET
 
-def dered(table, values, apply_dered):
-    #print(table[values][-5:]) 
-    #coords = SkyCoord(data['coord_ra'], 
-    #                  data['coord_dec'],
-    #                  unit='deg', frame='icrs')
-    #if apply_dered == 'sfd': 
-        #sfd = SFDQuery()
-        #ebv = sfd(coords)
-        #for val, band in zip(values, DEFAULT_BANDS):
-            #table[val] = table[val] - ebv*band_a_ebv[band]
-    #print(table[values][-5:]) 
-    raise NotImplementedError("TBD: Apply dereddening")
+def dered(apply_dered, table, values, ra_column, dec_column):
+    
+    coords = SkyCoord(table[ra_column], 
+                      table[dec_column],
+                      unit='deg', frame='icrs')
+    if apply_dered == 'sfd': 
+        sfd = SFDQuery()
+        ebv = sfd(coords)
+        for val, band in zip(values, DEFAULT_BANDS):
+            table[val] = table[val] - ebv * A_EBV[band]
+    else: 
+        msg = f"Dust map {apply_dered} invalid or not implemented yet. \n"
+        msg += "Please, open an issue on pz-compute repository with your request."
+        msg += "https://github.com/linea-it/pz-compute/issues/new"
+        raise NotImplementedError(msg) 
 
 def convert_to_magnitude(table, flux_columns, flux_error_columns, mag_columns,
                          mag_error_columns, apply_dered):
@@ -185,9 +201,6 @@ def convert_to_magnitude(table, flux_columns, flux_error_columns, mag_columns,
     flux_mag_map = {flux: mag for (flux, mag) in zip(all_flux, all_mag)}
     table.rename(flux_mag_map, axis=1, inplace=True, errors='raise')
     flux_to_mag(table, mag_columns, mag_error_columns)
-    if apply_dered != 'None': 
-        dered(table, mag_columns, apply_dered)
-
 
 def preprocess(cfg):
     bands = DEFAULT_BANDS
@@ -237,7 +250,11 @@ def preprocess(cfg):
             
                 if table.index.name == 'objectId':
                     table.reset_index(inplace=True)
-                
+                    
+                if apply_dered != 'None': 
+                    dered(apply_dered, table, mag_columns, 
+                          ra_column, dec_column)
+
                 output_name = build_output_name(cfg.input, i,
                                                 cfg.output_template)
                 output_path = join(cfg.output_dir, output_name)
