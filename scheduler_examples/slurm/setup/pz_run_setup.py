@@ -36,7 +36,7 @@ import getpass
 from datetime import datetime
 
 
-ENV = os.environ.get('ENVIRONMENT') or None
+ENV = os.environ.get('ENVIRONMENT') or "prod"
 APP_PZ_COMPUTE_PATH = '/lustre/t0/scratch/users/app.photoz/pz-compute'
 SCRATCH = os.environ.get('SCRATCH')
 LSST_DP02 = '/lustre/t1/cl/lsst/dp0.2/secondary/catalogs/skinny/hdf5/'
@@ -148,6 +148,7 @@ def create_link_to_host_performance(args):
         return
 
     os.symlink(f'{rail_path}/slurm/slurm-analyze-host-performance.py', f'./{args.process_id}/slurm-analyze-host-performance.py')
+    os.symlink(f'{rail_path}/slurm/slurm-analyze-host-performance.sbatch', f'./{args.process_id}/slurm-analyze-host-performance.sbatch')
 
 def add_input_data(args):
     user_input = input("Do you want to use the complete LSST DP0.2 dataset? (yes/no): ").strip().lower()
