@@ -72,6 +72,9 @@ from astropy.coordinates import SkyCoord
 from rail_scripts import DEFAULT_BANDS, VERSION_TEXT, abort, error, info, \
         map_bands
 
+import warnings
+warnings.filterwarnings('ignore')
+
 BUFFER_SIZE = 1<<20
 DEFAULT_EXT = '.hdf5'
 A_EBV = {'u' : 4.81, 
@@ -246,7 +249,7 @@ def preprocess(cfg):
             total_rows = f.metadata.num_rows
 
             if total_rows < 1:
-                print(input_)
+                #print(input_)
                 return
 
             has_magnitude, has_flux, has_ra, has_dec = parquet_check_column_presence(
@@ -291,7 +294,7 @@ def preprocess(cfg):
                                                 cfg.output_template)
                 output_path = join(cfg.output_dir, output_name)
                 tables_io.write(table, output_path)
-                print(output_path)
+                #print(output_path)
 
     except ArrowInvalid as e:
         print('Error: parquet library returned error.', file=stderr)
