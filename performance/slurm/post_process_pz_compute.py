@@ -8,6 +8,7 @@ import time
 import tables_io
 import getpass
 import matplotlib.pyplot as plt
+
 import qp
 
 from dask import dataframe as dd
@@ -94,7 +95,7 @@ def run_paralell_post_process(process_dir):
     )
 
     # Escalando o cluster para usar X nós
-    cluster.scale(jobs=6)
+    cluster.scale(jobs=10)
 
     # Definindo o client do Dask
     client = Client(cluster)   
@@ -120,32 +121,47 @@ def run_paralell_post_process(process_dir):
 
             return df
         
+        def read_using_qp(file):
+            ens = qp.read(file)
+            test_xvals = ens.gen_obj.xvals
+            mean = ens.mean().mean()
+            ens.npdf
+            
+            pdfs = ens.pdf(test_xvals)
+            pdfs_stack = pdfs.sum(axis=0)
+        
+            df = pd.DataFrame(pdfs_stack).T
+            df['objects']= ens.npdf
+            df['mean']= mean
+            return df
+            
         # Ler os arquivos usando dask.delayed
+        #parts = [delayed(read_hdf5)(file) for file in file_list]
         parts = [delayed(read_hdf5)(file) for file in file_list]
         ddf = dd.from_delayed(parts)
         
         ddf_computed = ddf.compute()
         data = ddf_computed.sum(axis=0)
         
-        total_objects = data['objects']
-        zmode_values=pd.DataFrame(data.drop(['objects']))
+        total_objects = int(data['objects'])
+        zmode_values=pd.DataFrame(data.drop(['objects'], inplace=True))
         
         #apagar mais pra frente
         output_path_csv = os.path.join(process_dir, f'sample.csv')
-        zmode_values.to_csv(output_path_csv, index=False)
+        ddf_computed.to_csv(output_path_csv, index=False)
         
-        output_path_parquet = os.path.join(process_dir, f'sample.parquet')
-        zmode_values.to_parquet(output_path_parquet, index=False)
+        #output_path_parquet = os.path.join(process_dir, f'sample.parquet')
+        #zmode_values.to_parquet(output_path_parquet, index=False)
         
-        output_path_hdf5 = os.path.join(process_dir, f'sample.hdf5')
-        tables_io.write(zmode_values, output_path_hdf5)
+        #output_path_hdf5 = os.path.join(process_dir, f'sample.hdf5')
+        #tables_io.write(zmode_values, output_path_hdf5)
         ######
         
         output_img_path = os.path.join(process_dir, f'stack_nz.png')
         plt.plot(zmode_values)
         plt.savefig(output_img_path)
         
-        return total_objects
+        return f'{total_objects:_}'
 
     # Fechando o client
     client.close()
