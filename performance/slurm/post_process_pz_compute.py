@@ -108,26 +108,16 @@ def run_paralell_post_process(process_dir):
 
         # Ler todos os arquivos HDF5 com dask delayed.
         def read_hdf5(file):
-            #data = tables_io.read(file)
+            data = tables_io.read(file)
 
-            #y_vals = data['data']['yvals'][:]
+            y_vals = data['data']['yvals'][:]
+            number_objects = len(y_vals)
+            
+            y_vals_sum = np.sum(y_vals, axis=0)
+            df = pd.DataFrame(y_vals_sum).T
 
-            #y_vals_sum = np.sum(y_vals, axis=0)
-            #df = pd.DataFrame(y_vals_sum).T
+            df['objects']= int(number_objects)
 
-            #df['objects']= int(len(y_vals))
-            
-            ens = qp.read(file)
-            
-            number_objects = ens.npdf
-            xvals = ens.gen_obj.xvals
-            
-            pdfs = ens.pdf(xvals)
-            pdfs_stack = np.sum(pdfs, axis=0)
-            
-            df = pd.DataFrame(pdfs_stack).T
-            df['objects']= ens.npdf
-            
             return df
         
         # Ler os arquivos usando dask.delayed
