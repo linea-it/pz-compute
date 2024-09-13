@@ -8,7 +8,7 @@ import time
 import tables_io
 import getpass
 import matplotlib.pyplot as plt
-
+import qp
 
 from dask import dataframe as dd
 from dask import delayed
@@ -118,9 +118,11 @@ def run_paralell_post_process(process_dir):
             #df['objects']= int(len(y_vals))
             
             ens = qp.read(file)
-            number_objects = ens.npdf
             
-            pdfs = ens.pdf(test_xvals)
+            number_objects = ens.npdf
+            xvals = ens.gen_obj.xvals
+            
+            pdfs = ens.pdf(xvals)
             pdfs_stack = np.sum(pdfs, axis=0)
             
             df = pd.DataFrame(pdfs_stack).T
