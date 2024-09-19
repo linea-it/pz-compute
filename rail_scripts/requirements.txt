@@ -2,3 +2,4 @@ docopt
 pyxdg
 joblib
 pz_rail
+dustmaps
