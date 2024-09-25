@@ -6,13 +6,13 @@ zmin: 0.0
 zmax: 3.0 
 nzbins: 301 
 nondetect_val: 99.0 
-bands: ["mag_u_lsst", "mag_g_lsst", "mag_r_lsst", "mag_i_lsst", "mag_z_lsst", "mag_y_lsst"] 
-err_bands: ["mag_err_u_lsst", "mag_err_g_lsst", "mag_err_r_lsst", "mag_err_i_lsst", "mag_err_z_lsst", "mag_err_y_lsst"]
+bands: ["mag_u", "mag_g", "mag_r", "mag_i", "mag_z", "mag_y"] 
+err_bands: ["magerr_u", "magerr_g", "magerr_r", "magerr_i", "magerr_z", "magerr_y"]
 mag_limits: 
-   mag_u_lsst: 27.79
-   mag_g_lsst: 29.04
-   mag_r_lsst: 29.06
-   mag_i_lsst: 28.62
-   mag_z_lsst: 27.98
-   mag_y_lsst: 27.05
-ref_band: "mag_i_lsst" 
+   mag_u: 27.79
+   mag_g: 29.04
+   mag_r: 29.06
+   mag_i: 28.62
+   mag_z: 27.98
+   mag_y: 27.05
+ref_band: "mag_i" 

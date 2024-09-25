@@ -1,0 +1,17 @@
+#PROD configs for pz-compute
+
+. $HOME/.bashrc
+
+echo 'PRODUCTION - setting environment'
+
+cd $SCRATCH
+
+# raise NPROC
+ulimit -u 65536 2> /dev/null
+
+if [[ -d ~app.photoz ]]
+then
+    source ~app.photoz/conf-pz-compute-user.sh
+fi
+
+export ENVIRONMENT="prod"
