@@ -38,12 +38,12 @@ ssh loginapl01
 
 1. Add test setup where you are going to run pz-compute:
     ```shell
-     ln -s ~app.photoz/pz-compute/scheduler_examples_slurm/test_setup.py
+     ln -s ~app.photoz/pz-compute/scheduler_examples_slurm/pz_run_setup.py
     ```
 
 2. Execute 
      ```shell
-    python test_setup.py -a=algorithm -c="comments" -p=dir-process
+    python pz_run_setup.py -a=algorithm -c="comments" -p=dir-process
     ```
 
 
@@ -84,9 +84,9 @@ ssh loginapl01
 
 ### Execution  
 
-1. Inside the bin dir, there is a alias to test_setup.py. To create a run dir execute: 
+1. Inside the bin dir, there is a alias to pz_run_setup.py. To create a run dir execute: 
      ```shell
-    python test_setup.py -a=algorithm -c="comments" -p=dir-process
+    python pz_run_setup.py -a=algorithm -c="comments" -p=dir-process
     ```
     
 2. Remember to add a estimate.pkl file for the algorithm that you are going to run, or train the algorithm.
