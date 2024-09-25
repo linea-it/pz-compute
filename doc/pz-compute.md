@@ -12,130 +12,85 @@ ssh loginapl01
 
 ### Quick setup 
 
+0. Copy the file 
+
+   ```shell
+    cp <path-to-y=pz-compute>/pz-compute/scheduler_examples/slurm/setup/prod-config ~/.prod-config"
+    ```
+
 1. Add the following block to your `~/.bashrc` file:
     
     ```shell
-    if [[ -d ~app.photoz ]]
-    then
-        source ~app.photoz/conf-pz-compute-user.sh
-    fi
+    alias pz-prod=". ~/.prod-config"
     ```
 
 2. Logout and login again to **loginapl01**. 
 
+3. Type pz-prod, this is going to send you to your t0 scratch area. Once you are here, everytime you login, just need to run this command.
+
+    ```shell
+    pz-prod
+    ```
+
 
 ### Execution  
 
-1. In your scracth area, create a new directory for your process and create a subdirectory `input` inside it:     
 
+1. Add test setup where you are going to run pz-compute:
     ```shell
-    cd $SCRATCH
-    mkdir <process_name>
-    cd <process_name>
-    mkdir input
+     ln -s ~app.photoz/pz-compute/scheduler_examples_slurm/pz_run_setup.py
     ```
 
-2. Fill in your `input` dir with input files, or symbolic links to them. For instance, for the complete LSST DP0.2 dataset, the default input files are the skinny tables available in Lustre T1:
-
-    ```shell
-    ln -s /lustre/t1/cl/lsst/dp0.2/secondary/catalogs/skinny/*.hdf5 ./input/
+2. Execute 
+     ```shell
+    python pz_run_setup.py -a=algorithm -c="comments" -p=dir-process
     ```
 
-3. Run the pipeline 
+
+3. Run the pipeline inside the created dir
 
     Default configuration: 
 
     ```shell
-    pz-compute
+        pz-compute
     ```
     
-    For custom configuration, make a copy of the template yaml configuration file to the process directory and update the default values of the configuration parameters. 
-
-
+    For custom configuration, make a copy/edit of the template yaml configuration file to the process directory and update the default values of the configuration parameters. 
 
 
 ## Developer/revisor mode 
 
 ### Quick setup 
 
+0. Copy the file 
 
-1. Create a new development environment:  
+   ```shell
+    cp <path-to-y=pz-compute>/pz-compute/scheduler_examples/slurm/setup/dev-config ~/.dev-config
+    ```
+
+1. Add the following block to your `~/.bashrc` file:
     
     ```shell
-    conda create --name pz_compute
-    conda activate pz_compute
+    alias pz-dev=". ~/.dev-config"
     ```
-
-2. In your scracth area, clone the `pz-compute` repository and checkout to your development branch: 
-
-    ```shell
-    cd $SCRATCH
-    git clone https://github.com/linea-it/pz-compute.git # for HTTPS clone
-    ```
-    or
-
-    ```shell
-    git clone git@github.com:linea-it/pz-compute.git # for SSH clone
-    ```
-    then
-
-    ```shell
-    cd pz-compute
-    git checkout <dev-branch-name>
-    ```
-
-
-
-3. Still in your scracth area, create a directory (e.g., "bin") to host a symbolic link to the pipeline executable file and name it as `pz-compute-dev`: 
     
-    ```shell
-    cd $SCRATCH
-    mkdir bin
-    cd bin
-    ln -s $SCRATCH/pz-compute/scheduler_scripts/slurm/pz-compute ./pz-compute-dev
-    chmod +x pz-compute-dev
-    ```
+2. Logout and login again to **loginapl01**. 
 
-4. Add two environment variables to your `~/.bashrc` file: (i) add the directory with the link to executable file to your environment variable `$PATH`; (ii) add the directory to save the dust maps files to `DUSTMAPS_CONFIG_FNAME` :
-    
-    ```shell
-    export PATH=$PATH:$SCRATCH/bin
-    export DUSTMAPS_CONFIG_FNAME=$SCRATCH/pz-compute/rail_scripts/dustmaps_config.json
-    ```
-
-5. Logout and login again to **loginapl01**, or execute: 
-    
-    ```shell
-    source ~/.bashrc
-    ```
-
-5. Install the pipeline: 
+3. Type pz-dev, first time that you run it, it will create a pz-compute-dev env, do the installing and setup for pz-compute, then send you to your t0 scratch area. Ps: make sure that your bashrc is configured to use the miniconda path intalled inside the lustre env. Once you are here, everytime you login, just need to run this command.
 
     ```shell
-    conda activate pz_compute
-    mkdir -p $ALTHOME/data
-    cd $SCRATCH/pz-compute/rail_scripts 
-    ./install-pz-rail  # for now, it is mandatory to execute this script from inside the rail_scripts dir 
+    pz-dev
     ```
 
 ### Execution  
 
-(steps 1 and 2 are identical to _production mode_)
-
-1. In your scracth area, create a new directory for your process and create a subdirectory `input` inside it:     
-
-    ```shell
-    cd $SCRATCH
-    mkdir <process_name>
-    cd <process_name>
-    mkdir input
+1. Inside the bin dir, there is a alias to pz_run_setup.py. To create a run dir execute: 
+     ```shell
+    python pz_run_setup.py -a=algorithm -c="comments" -p=dir-process
     ```
+    
+2. Remember to add a estimate.pkl file for the algorithm that you are going to run, or train the algorithm.
 
-2. Fill in your `input` dir with input files, or symbolic links to them. For instance, for the complete LSST DP0.2 dataset, the default input files are the skinny tables available in Lustre T1:
-
-    ```shell
-    ln -s /lustre/t1/cl/lsst/dp0.2/secondary/catalogs/skinny/*.hdf5 ./input/
-    ```
 
 3. Run the pipeline 
 
@@ -145,4 +100,4 @@ ssh loginapl01
     pz-compute-dev
     ```
     
-    For custom configuration, make a copy of the template yaml configuration file to the process directory and update the default values of the configuration parameters. 
+    For custom configuration, make a copy/edit of the template yaml configuration file to the process directory and update the default values of the configuration parameters. 

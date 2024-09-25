@@ -1,0 +1,54 @@
+#DEVELOPMENT env for pz-compute
+
+. $HOME/.bashrc
+
+echo "DEV - setting environment"
+
+cd $SCRATCH
+
+if [ -d "pz-compute" ] || [ -L "pz-compute" ]; then
+  cd "pz-compute"
+else
+  echo "pz-compute dir does not exist, please clone or link it"
+  exit 1
+fi
+
+if conda info --envs | grep -q pz_compute_dev; then 
+  conda activate pz_compute_dev
+  echo "pz_compute env already exists (: activating it" 
+
+  export PATH=$PATH:$SCRATCH/bin
+  export DUSTMAPS_CONFIG_FNAME=$SCRATCH/pz-compute/rail_scripts/dustmaps_config.json
+  export PATH=$PATH:$SCRATCH/pz-compute/scheduler_examples/slurm
+  
+else 
+  echo "pz_compute env does not exist ): creating it"
+  
+  conda create --name pz_compute_dev python=3.11
+  conda activate pz_compute_dev 
+
+  mkdir $SCRATCH/bin
+  ln -s $SCRATCH/pz-compute/scheduler_scripts/slurm/pz-compute $SCRATCH/bin/pz-compute-dev
+  chmod +x $SCRATCH/bin/pz-compute-dev
+  
+  ln -s $SCRATCH/pz-compute/scheduler_scripts/slurm/pz-train $SCRATCH/bin/pz-train-dev
+  chmod +x $SCRATCH/bin/pz-train-dev
+
+  export PATH=$PATH:$SCRATCH/bin
+  export DUSTMAPS_CONFIG_FNAME=$SCRATCH/pz-compute/rail_scripts/dustmaps_config.json
+  
+  mkdir -p $ALTHOME/data
+  cd $SCRATCH/pz-compute/rail_scripts 
+  ./install-pz-rail
+
+  //todo adicionar instalação do docopt e pyxdg
+  
+  ln -s $SCRATCH/pz-compute/scheduler_examples/slurm/setup/pz_run_setup.py $SCRATCH/bin/pz_run_setup_dev.py
+  chmod +x $SCRATCH/bin/pz_run_setup_dev.py
+  
+  ln -s  $SCRATCH/pz-compute/rail_scripts/rail-estimate rail-estimate
+  ln -s  $SCRATCH/pz-compute/rail_scripts/rail-train rail-train 
+fi
+
+export ENVIRONMENT="dev"
+
