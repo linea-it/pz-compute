@@ -3,3 +3,4 @@ pyxdg
 joblib
 pz_rail
 PyYAML
+dustmaps
