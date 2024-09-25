@@ -123,21 +123,25 @@ def run_paralell_post_process(process_dir):
         
         def read_using_qp(file):
             ens = qp.read(file)
-            test_xvals = ens.gen_obj.xvals
-            mean = ens.mean().mean()
-            ens.npdf
+            #test_xvals = ens.gen_obj.xvals
+            #mean = ens.mean().mean()
+            #ens.npdf
             
-            pdfs = ens.pdf(test_xvals)
-            pdfs_stack = pdfs.sum(axis=0)
+            #pdfs = ens.pdf(test_xvals)
+            #pdfs_stack = pdfs.sum(axis=0)
         
+            pdfs_stack = [0,1]
+            
             df = pd.DataFrame(pdfs_stack).T
-            df['objects']= ens.npdf
-            df['mean']= mean
+            #df['objects']= ens.npdf
+            #df['mean']= mean
             return df
             
         # Ler os arquivos usando dask.delayed
         #parts = [delayed(read_hdf5)(file) for file in file_list]
-        parts = [delayed(read_hdf5)(file) for file in file_list]
+        print("AAAAAA")
+        
+        parts = [delayed(read_using_qp)(file) for file in file_list]
         ddf = dd.from_delayed(parts)
         
         ddf_computed = ddf.compute()
