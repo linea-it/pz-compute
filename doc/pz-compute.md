@@ -65,7 +65,7 @@ ssh loginapl01
 0. Copy the file 
 
    ```shell
-    cp <path-to-y=pz-compute>/pz-compute/scheduler_examples/slurm/setup/dev-config ~/.dev-config"
+    cp <path-to-y=pz-compute>/pz-compute/scheduler_examples/slurm/setup/dev-config ~/.dev-config
     ```
 
 1. Add the following block to your `~/.bashrc` file:
