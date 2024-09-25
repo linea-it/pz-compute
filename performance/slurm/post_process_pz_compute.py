@@ -85,7 +85,7 @@ def run_paralell_post_process(process_dir):
         queue='cpu_small',  # Substitua pelo nome da sua fila
         cores=56,           # Número de núcleos lógicos por nó
         processes=28,       # Número de processos por nó (um processo por núcleo)
-        memory='100GB',     # Memória por nó
+        memory='300GB',     # Memória por nó
         walltime='01:00:00',  # Tempo máximo de execução
         job_extra_directives=[
             '--propagate',
@@ -123,25 +123,22 @@ def run_paralell_post_process(process_dir):
         
         def read_using_qp(file):
             ens = qp.read(file)
-            #test_xvals = ens.gen_obj.xvals
-            #mean = ens.mean().mean()
-            #ens.npdf
+            test_xvals = ens.gen_obj.xvals
+            mean = ens.mean().mean()
+            ens.npdf
             
-            #pdfs = ens.pdf(test_xvals)
-            #pdfs_stack = pdfs.sum(axis=0)
-        
-            pdfs_stack = [0,1]
+            pdfs = ens.pdf(test_xvals)
+            pdfs_stack = pdfs.sum(axis=0)
             
             df = pd.DataFrame(pdfs_stack).T
-            #df['objects']= ens.npdf
-            #df['mean']= mean
+            df['objects']= ens.npdf
+            df['mean']= mean
             return df
             
         # Ler os arquivos usando dask.delayed
         #parts = [delayed(read_hdf5)(file) for file in file_list]
-        print("AAAAAA")
-        
         parts = [delayed(read_using_qp)(file) for file in file_list]
+        
         ddf = dd.from_delayed(parts)
         
         ddf_computed = ddf.compute()

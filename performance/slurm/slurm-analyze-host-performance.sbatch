@@ -7,15 +7,15 @@
 #SBATCH --nodes=1                  # Número de nós (apenas 1 para iniciar o script Python)
 
 # Inicializar o Conda e ativar o ambiente pz_compute
-export PATH="/lustre/t0/scratch/users/$USER/miniconda3/bin:$PATH"
-eval "$(conda shell.bash hook)"
-conda activate pz_compute
+#export PATH="/lustre/t0/scratch/users/$USER/miniconda3/bin:$PATH"
+#eval "$(conda shell.bash hook)"
+#conda activate pz_compute
 
 # Verificar se o ambiente foi ativado corretamente
-echo "Usando Python de: $(which python)"
-echo "Versão do Python: $(python --version)"
-echo "Pacotes instalados:"
-pip list
+#echo "Usando Python de: $(which python)"
+#echo "Versão do Python: $(python --version)"
+#echo "Pacotes instalados:"
+#pip list
 
 # Executar o script Python
 python $PWD/DP02_step_1_random_object_catalog.py
