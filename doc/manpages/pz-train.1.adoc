@@ -1,0 +1,175 @@
+PZ-TRAIN(1)
+===========
+:doctype: manpage
+:man source: pz-train
+:man version: 0.2.0
+:man manual: LineA pz-compute Manual
+:revdate: October 2024
+
+NAME
+----
+pz-train - Dispatch rail-train tasks to LineA's cluster using slurm
+
+SYNOPSIS
+--------
+*pz-train* [_configfile_]
+
+*pz-train.py* [_configfile_]
+
+*sbatch* [_sbatch_options_] *pz-train.batch* [_args_]...
+
+DESCRIPTION
+-----------
+The *pz-train* program is an easy-to-use collection of scripts that allow
+dispatching a batch job of a photometric redshift (PZ) algorithm calibration
+process (*rail-train*) to the LineA Apollo cluster using the *slurm* scheduler.
+Its focus is on having many default settings suitable for the LineA cluster,
+while supporting extra configuration from YAML files. The *pz-train* program is
+a companion script to *pz-compute*, to generate calibration files implicitly
+required by it.
+
+Multiple scripts compose the *pz-compute* program that run in different steps,
+but its core, *pz-train.py*, has the goal of reading a configuration file in
+YAML format, by default called 'pz-train.yaml', and converting the configuration
+to a suitable command-line for calling *sbatch* to dispatch the calibration
+process to the cluster. The configuration file should have a top-level
+dictionary and includes parameters for which algorithm the calibration will be
+executed, the name of the input and output files, command-line parameters for
+*sbatch* and so on. Details of the configuration file format are described in
+its own manual page *pz-train.yaml*. The configuration file name may be changed
+with the command-line parameter _configfile_. If the configuration file doesn't
+exist, then the program assumes a very basic set of defaults: estimating with
+the ``fzboost'' algorithm, an input reference file named 'input.hdf5' and an
+output calibration file named 'estimator_fzboost.pkl'
+
+When executed, the *pz-train* script will read the configuration file, print
+the resulting interpreted configuration, translate it to a suitable *sbatch*
+command-line and execute the batch job with it. The *sbatch* command-line
+parameters are typically configured to allocate one whole node for the
+callibration process, reserving all memory and all hardware threads to the batch
+job. After *sbatch* is called, the *pz-train* script finishes and a slurm batch
+job script (*pz-train.batch*) starts executing in the cluster. This batch job
+does any initial configuration required for the calibration process and then
+runs a single *rail-train* process with *srun* (currently it doesn't do anything
+other than setting a few slurm parameters).
+
+The *pz-train* program indirectly creates a log file by calling *sbatch*, which
+creates a standard top-level slurm log file. The slurm batch job script and
+*rail-train* standard output and standard error output streams are directed to
+this file.
+
+SCRIPTS
+-------
+The scripts that compose the *pz-train* program are: *pz-train*, *pz-train.py*
+and *pz-train.batch*. They were designed to be used implicitly, called by the
+initial *pz-train* script, in sequence. They may, however, be used separately,
+for example, to skip a certain top-level script from the execution sequence or
+to use specific parameters not supported by their front-end scripts.
+
+The *pz-train* script is a Bourne shell script that has the goal of handling
+installations of the *pz-train* program, custom Python versions and library
+dependencies in a non-standard location (this is the case for the production
+installation of *pz-train* in the LineA lab). This script is not required if the
+program is installed in a standard location, like '/usr' or '/usr/local', or
+even if the program is installed in a different location, but the Python
+installation is in a system-default location (in this case, it's possible and
+easier to link *pz-train.py* to *pz-train* instead). The goal of the *pz-train*
+script is to configure path variables that make all other scripts and the custom
+Python accessible using the modified search paths with top priority. After
+configuring the paths, it executes *pz-train.py* (with the assurance that the
+custom Python and libraries will be used). The path variables configured are
+``PATH'', ``XDG_DATA_DIRS'' and ``XDG_CONFIG_DIRS''.
+
+The *pz-train* script requires a few rules for the configured environment
+variables to work as expected. The rules are the same as the rules for
+*pz-compute*, which are described in its manual, along with an example of how to
+set-up the installation directory hierarchy with the scripts.
+
+The script *pz-train.py* is the second and main script in the chain and is called by
+*pz-train* with a custom Python after the path variables are configured. Its
+goal is to read the configuration file in YAML format, by default called
+'pz-train.yaml' and convert the configuration into a *sbatch* command-line
+suitable for calling the *pz-train.batch* slurm batch job. The configurations
+available are described in the *pz-train.yaml* manual page. The default
+configuration file name may be changed with the _configfile_ command-line
+parameter.
+
+Before calling *sbatch*, the *pz-train.py* script checks that *pz-train.batch*
+can be found by searching the configured path and aborts execution before
+calling *sbatch* if it's not found.
+
+An example configuration file and the resulting *sbatch* execution requested by
+*pz-train.py* would be the following:
+
+Example 'pz-train.yaml' configuration:
+
+    inputfile: ref/small-training1.pq
+    outputfile: output/bpz/bpz-small.pkl
+    algorithm: bpz
+    param_file: ref/bpz-small.yaml
+
+This configuration results in the following *sbatch* call:
+
+    $ sbatch -N 1 --exclusive --ntasks-per-node=1 --mem=0 pz-train.batch    \
+            ref/small-training1.pq output/bpz/bpz-small.pkl -a bpz          \
+            -p ref/bpz-small.yaml
+
+The script *pz-train.batch* is the third script in the execution chain and is a
+mostly trivial Bourne shell script, designed to do any initial configuration in
+the cluster node before *rail-train* is executed. Currently it doesn't do
+anything, except configuring common slurm parameters suitable for the LineA
+cluster (for example, the name of the slurm partition and batch job display
+name). It then calls *rail-train* with *srun*, passing through all command-line
+parameters received.
+
+EXAMPLES
+--------
+Run *pz-train* in a directory containing only a file called 'input.hdf5',
+using all defaults (algorithm ``fzboost'', output to 'estimator_fzboost.pkl'):
+
+    $ pz-train
+
+Run *pz-train* in a directory containing the *pz-train.yaml* configuration file
+configuring all parameters:
+
+    $ pz-train
+
+Run *pz-train* with a different configuration file:
+
+    $ pz-train custom-config.yaml
+
+Run *pz-train.py*, skipping the *pz-train* path configuration (requires suitable
+system-wide Python, RAIL and *pz-train* installations):
+
+    $ pz-train.py
+
+Run *pz-train.batch* directly, bypassing the YAML configuration file (manually
+enter the *sbatch* command-line), reserve one execution slot, 8 hardware threads
+and 40 GiB of RAM, use the ``hpc-lsst'' account and run the calibration for the
+BPZ estimator with custom parameters:
+
+    $ sbatch -N 1 -n 1 -c 8 --mem=40G -A hpc-lsst pz-train.batch ref1_dp0.2.hdf5 \
+            calibration/dp0.2/bpz.pkl -a bpz -p bpz_params_dp0.2.yaml
+
+FILES
+-----
+'pz-train.yaml'::
+  The default configuration file name for *pz-train*.
+
+'slurm-\{jobid}.out'::
+  The log template file name generated by *sbatch*, used by *pz-train.batch*.
+
+'input.hdf5'::
+  The default input file name for *pz-train*.
+
+'estimator_\{algorithm}.pkl'::
+  The default template name of the output file generated by *pz-train*.
+
+COPYRIGHT
+---------
+Copyright © 2024 LIneA IT. Licence MIT.
+
+SEE ALSO
+--------
+*pz-compute*(1), *pz-train.yaml*(5), *rail-train*(1), *sbatch*(1), *slurm*(1),
+*srun*(1)
