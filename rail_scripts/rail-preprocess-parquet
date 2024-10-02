@@ -16,9 +16,9 @@ Options:
     --output-template=<template>      Set the names of the output files
                                       [default: {fname}-part{idx}{ext}].
     --flux-template=<template>        Set the names of the flux columns
-                                      [default: {band}_gaap1p0Flux].
+                                      [default: {band}_cModelFlux].
     --flux-error-template=<template>  Set the names of the flux error columns
-                                      [default: {band}_gaap1p0FluxErr].
+                                      [default: {band}_cModelFluxErr].
     --mag-template=<template>         Set the names of the magnitude columns
                                       [default: mag_{band}].
     --mag-error-template=<template>   Set the names of the magnitude error
@@ -27,6 +27,15 @@ Options:
                                       Right Ascension [default: coord_ra]
     --dec=<dec>                       Set the name of equatorial coordinate
                                       Declination [default: coord_dec]
+    --apply-dered=<map_name>          Apply dereddening to mags. Options are: 
+                                      sfd, csfd, planck, planckGNILC, bayestar,
+                                      iphas, marshall, chen2014, lenz2017, 
+                                      pg2010, leikeensslin2019, leike2020, 
+                                      edenhofer2023, and bh. See dustmaps 
+                                      package documentation for details on 
+                                      Github [default: None]. 
+    --round-mags=<n_decimal_cases>    Number of decimal cases for rounding 
+                                      magnitudes and errors [default: None].   
 
 
 The following preprocessing steps are currently implemented:
@@ -37,6 +46,11 @@ The following preprocessing steps are currently implemented:
   the input files. 
 - Convert infinite values to NaN.
 - Convert flux to magnitude.
+- Apply extinction correction based on Milky Way dust maps from dustmaps Python
+  package (https://dustmaps.readthedocs.io/en/latest/index.html) (optional). 
+- Round magnitudes and errors to remove fictitious precision and save storage
+  space (optional).    
+
 
 Preprocessing is done as efficiently as possible and memory usage is limited
 even with arbitrarily large files.
@@ -53,17 +67,29 @@ from numpy import log, log10, multiply, nan_to_num, nan
 from pyarrow import ArrowInvalid
 from pyarrow.parquet import ParquetFile, write_table
 
+from astropy.coordinates import SkyCoord
+
 from rail_scripts import DEFAULT_BANDS, VERSION_TEXT, abort, error, info, \
         map_bands
 
+import warnings
+warnings.filterwarnings('ignore')
+
 BUFFER_SIZE = 1<<20
 DEFAULT_EXT = '.hdf5'
+A_EBV = {'u' : 4.81, 
+         'g' : 3.64,
+         'r' : 2.70, 
+         'i' : 2.06, 
+         'z' : 1.58, 
+         'y' : 1.31}
 
 Configuration = namedtuple('Configuration',
                            ('input', 'output_dir', 'flux_template',
                             'flux_error_template', 'mag_template',
                             'mag_error_template', 'rows', 'flux',
-                            'output_template', 'ra','dec'))
+                            'output_template', 'ra','dec', 'apply_dered',
+                            'round_mags'))
 
 def parse_cmdline():
     args = docopt(__doc__, version=VERSION_TEXT)
@@ -83,7 +109,9 @@ def parse_cmdline():
                          rows=rows, flux=args['--flux'],
                          output_template=args['--output-template'],
                          ra=args['--ra'], 
-                         dec=args['--dec'])
+                         dec=args['--dec'],
+                         apply_dered=args['--apply-dered'],
+                         round_mags=args['--round-mags'])
 
 def build_output_name(file_name, index, template, extension=DEFAULT_EXT):
     file_name = basename(file_name)
@@ -152,14 +180,56 @@ def flux_to_mag(table, values, errors):
     for val in values:
         table[val] = -2.5*log10(table[val]) + MAG_OFFSET
 
-def convert_to_magnitude(table, flux_columns, flux_error_columns, mag_columns,
-                         mag_error_columns):
+def round_decimal_cases(round_mags, table, mag_columns, mag_err_columns): 
+    """ Round decimal cases in magnitudes and errors to remove 
+        fictitious precision and save storage space """
+    
+    for mag, err  in zip(mag_columns, mag_err_columns):
+        table[mag] = table[mag].round(decimals=int(round_mags))  
+        table[err] = table[err].round(decimals=int(round_mags))  
+    
+    return table
+
+def dered(apply_dered, table, values, ra_column, dec_column):
+    """ Apply extinction correction based on Milky Way dust maps 
+        provided by dustmaps Python package. Maps options are: 
+        sfd, csfd, planck, planckGNILC, bayestar, iphas, marshall, 
+        chen2014, lenz2017, pg2010, leikeensslin2019, leike2020, 
+        edenhofer2023, and bh. 
+        See dustmaps package documentation for details: 
+        https://dustmaps.readthedocs.io/en/latest/index.html """
+
+    coords = SkyCoord(table[ra_column], 
+                      table[dec_column],
+                      unit='deg', frame='icrs')
+    if apply_dered == 'sfd': 
+        from dustmaps.sfd import SFDQuery
+        sfd = SFDQuery()
+        ebv = sfd(coords)  
+    elif apply_dered == 'plank': 
+        from dustmaps.planck import PlanckQuery
+        planck = PlanckQuery()
+        ebv = planck(coords)
+    else: 
+        msg = f"Dust map {apply_dered} invalid or not implemented yet. \n"
+        msg += "Please, open an issue on pz-compute repository with your request."
+        msg += "https://github.com/linea-it/pz-compute/issues/new"
+        raise NotImplementedError(msg) 
+
+    for val, band in zip(values, DEFAULT_BANDS):
+        table[val] = table[val] - ebv * A_EBV[band]
+    
+    return table
+
+def convert_to_magnitude(table, flux_columns, flux_error_columns, 
+                         mag_columns, mag_error_columns):
+    
+    
     all_flux = flux_columns + flux_error_columns
     all_mag = mag_columns + mag_error_columns
     flux_mag_map = {flux: mag for (flux, mag) in zip(all_flux, all_mag)}
     table.rename(flux_mag_map, axis=1, inplace=True, errors='raise')
     flux_to_mag(table, mag_columns, mag_error_columns)
-
 
 def preprocess(cfg):
     bands = DEFAULT_BANDS
@@ -169,7 +239,8 @@ def preprocess(cfg):
     mag_error_columns = map_bands(cfg.mag_error_template, bands)
     ra_column = cfg.ra 
     dec_column = cfg.dec 
-
+    apply_dered = cfg.apply_dered
+    round_mags = cfg.round_mags
     try:
         # Note: specifying a buffer size seems to be necessary for
         # iter_batches() to efficiently deal with allocations smaller than 1 row
@@ -178,14 +249,13 @@ def preprocess(cfg):
             total_rows = f.metadata.num_rows
 
             if total_rows < 1:
-                print(input_)
+                #print(input_)
                 return
 
             has_magnitude, has_flux, has_ra, has_dec = parquet_check_column_presence(
                     f, flux_columns + flux_error_columns,
                     mag_columns + mag_error_columns, 
                     ra_column, dec_column)
-            
             use_flux, coord_columns, value_columns, error_columns = choose_columns(
                     has_ra, has_dec, has_magnitude, has_flux, 
                     cfg.ra, cfg.dec, cfg.flux, flux_columns, 
@@ -204,15 +274,27 @@ def preprocess(cfg):
                                neginf=nan)
 
                 if use_flux:
-                    convert_to_magnitude(table, flux_columns,
-                                         flux_error_columns, mag_columns,
+                    convert_to_magnitude(table, flux_columns, 
+                                         flux_error_columns, 
+                                         mag_columns,
                                          mag_error_columns)
+            
+                if table.index.name == 'objectId':
+                    table.reset_index(inplace=True)
+                    
+                if apply_dered != 'None': 
+                    dered(apply_dered, table, mag_columns, 
+                          ra_column, dec_column)
+
+                if round_mags != 'None': 
+                    round_decimal_cases(round_mags, table, 
+                                        mag_columns, mag_error_columns)
 
                 output_name = build_output_name(cfg.input, i,
                                                 cfg.output_template)
                 output_path = join(cfg.output_dir, output_name)
                 tables_io.write(table, output_path)
-                print(output_path)
+                #print(output_path)
 
     except ArrowInvalid as e:
         print('Error: parquet library returned error.', file=stderr)
