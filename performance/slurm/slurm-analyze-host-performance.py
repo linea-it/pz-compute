@@ -43,7 +43,10 @@ def calculate_duration(start_time, end_time):
 def save_info_yaml_process_info(begins, ends, duration, total_size, files_processed, objects):    
     time_dict = {'Process started': str(begins),
                  'Process finished': str(ends),
-                 'Total duration': str(duration)
+                 'Total duration': str(duration),
+                 'Files count': str(files_processed),
+                 'Output size': str(total_size),
+                 'Total objects': objects
                 }
 
     with open('process_info.yaml','a') as yamlfile:
@@ -103,7 +106,10 @@ def main():
             print("there was an error running the process")
         return;
 
-    save_info_yaml_process_info(start_time, end_time, duration)
+    total_size, files_processed = output_basic_info()
+    total_objects = post_process_pz_compute.run_paralell_post_process(current_dir)
+    save_info_yaml_process_info(start_time, end_time, duration, total_size, files_processed, total_objects)
+    post_process_pz_compute.time_profiler(current_dir, file_path)
     
 
 if __name__ == '__main__': main()
