@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from dataclasses import dataclass, field, replace
-from os import execv
+from os import environ, execv
 from os.path import expandvars
 from pathlib import Path
 from shlex import split
@@ -8,6 +8,8 @@ from shutil import which
 from sys import argv, executable
 
 from yaml import safe_load
+
+from pz_compute import get_lephare_dirs
 
 SBATCH_ARGS = '-N 1 --exclusive --ntasks-per-node=1 --mem=0'
 PROG = 'pz-train'
@@ -22,6 +24,8 @@ class Configuration:
     sbatch_args: list[str] = field(default_factory=lambda: split(SBATCH_ARGS))
     prog_batch: str = '%s.batch' % PROG
     param_file: str = None
+    lepharedir: str = None
+    lepharework: str = None
 
 def parse_cmdline():
     try:
@@ -49,6 +53,15 @@ def load_configuration(conffile):
 
         config = replace(config, **tmp)
 
+    if config.algorithm == 'lephare':
+        lepharedir, lepharework = get_lephare_dirs()
+
+        if not 'lepharedir' in tmp:
+            config.lepharedir = lepharedir
+
+        if not 'lepharework' in tmp:
+            config.lepharework = lepharework
+
     config.inputfile = to_path(config.inputfile)
     config.outputfile = to_path(config.outputfile)
 
@@ -73,6 +86,12 @@ def setup(config):
 
     if not config.inputfile.is_file():
         raise RuntimeError('input file not found: %s' % config.inputfile)
+
+    if config.lepharedir:
+        environ['LEPHAREDIR'] = config.lepharedir
+
+    if config.lepharework:
+        environ['LEPHAREWORK'] = config.lepharework
 
 def run(config):
     cmd = [config.sbatch] + config.sbatch_args + [config.prog_batch,

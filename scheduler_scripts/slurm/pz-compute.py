@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from dataclasses import dataclass, replace
-from os import execv
+from os import environ, execv
 from os.path import expandvars
 from pathlib import Path
 from shlex import split
@@ -9,6 +9,8 @@ from sys import argv, executable
 from typing import Union
 
 from yaml import safe_load
+
+from pz_compute import get_lephare_dirs
 
 SBATCH_ARGS = {
         'tpz': '-N 26 -n 1316 --mem-per-cpu=3500M',
@@ -34,6 +36,8 @@ class Configuration:
     param_file: str = None
     calib_file: str = None
     time_limit: int = None
+    lepharedir: str = None
+    lepharework: str = None
 
 def parse_cmdline():
     try:
@@ -62,6 +66,15 @@ def load_configuration(conffile):
 
     if not 'time_limit' in tmp:
         config.time_limit = TIME_LIMITS.get(config.algorithm, TIME_LIMITS[None])
+
+    if config.algorithm == 'lephare':
+        lepharedir, lepharework = get_lephare_dirs()
+
+        if not 'lepharedir' in tmp:
+            config.lepharedir = lepharedir
+
+        if not 'lepharework' in tmp:
+            config.lepharework = lepharework
 
     config.inputdir = to_path(config.inputdir)
     config.outputdir = to_path(config.outputdir)
@@ -94,6 +107,12 @@ def setup(config):
 
     if not config.inputdir.is_dir():
         raise RuntimeError('input directory not found: %s' % config.inputdir)
+
+    if config.lepharedir:
+        environ['LEPHAREDIR'] = config.lepharedir
+
+    if config.lepharework:
+        environ['LEPHAREWORK'] = config.lepharework
 
 def seconds_to_time(seconds):
     minutes, seconds = divmod(seconds, 60)
