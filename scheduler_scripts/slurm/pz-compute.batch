@@ -53,7 +53,7 @@ from ceci.stage import IN_PROGRESS_PREFIX
 from yaml import YAMLError, safe_dump, safe_load
 
 SRUN = 'srun'
-SRUN_ARGS = [SRUN, '-n1', '-N1']
+SRUN_ARGS = [SRUN, '-n1', '-N1', '--cpu-bind=none']
 LOG = 'log'
 PROG = 'pz-compute'
 ESTIMATE = 'rail-estimate'
@@ -62,12 +62,12 @@ INPUT_DIR = 'input'
 HELPER = 'pz-compute.run'
 MAX_ATTEMPTS = 3
 
-Mask = namedtuple('Mask', ('host', 'slot'))
+Mask = namedtuple('Mask', ('host', 'slot', 'tasks', 'harts'))
 
 # Spawns a single task to a single cluster slot
 def srun(cmd, stdout, stderr, mask):
     args = SRUN_ARGS + ['--output', stdout, '--error', stderr, '-w', mask.host,
-            HELPER, str(mask.slot)] + list(cmd)
+            HELPER, str(mask.slot), str(mask.tasks), str(mask.harts)] + cmd
 
     return spawnv(P_NOWAIT, SRUN_PATH, args)
 
@@ -205,7 +205,7 @@ def find_program_paths():
 
         SRUN_PATH = srun
 
-def parse_slurm_tasks_per_node(tasks_per_node):
+def parse_slurm_list(tasks_per_node):
     task_list = []
     for t in tasks_per_node.split(','):
         l = t.split('(x')
@@ -222,27 +222,28 @@ def parse_slurm_tasks_per_node(tasks_per_node):
 def parse_slurm_variables():
     slots = int(environ['SLURM_NTASKS'])
     tasks_per_node = environ['SLURM_TASKS_PER_NODE']
+    harts_per_node = environ['SLURM_JOB_CPUS_PER_NODE']
     node_list = run('scontrol show hostnames', check=True, capture_output=True,
                     shell=True).stdout.decode('utf-8').split()
-    task_list = parse_slurm_tasks_per_node(tasks_per_node)
+    task_list = parse_slurm_list(tasks_per_node)
+    hart_list = parse_slurm_list(harts_per_node)
 
-    return slots, node_list, task_list
+    return slots, node_list, task_list, hart_list
 
-def build_cpu_mask_set(node_list, task_list):
+def build_cpu_mask_set(node_list, task_list, hart_list):
     masks = set()
 
-    for n, t in zip(node_list, task_list):
+    for n, t, h in zip(node_list, task_list, hart_list):
         for i in range(t):
-            masks.add(Mask(host=n, slot=i))
+            masks.add(Mask(host=n, slot=i, tasks=t, harts=h))
 
     return masks
 
-def configure_threads(slots, node_list, task_list):
+def configure_threads(slots, node_list, task_list, hart_list):
     # Work around libraries starting a large amount of auxiliary threads.
-    environ['OMP_NUM_THREADS'] = '2'
     environ['ARROW_IO_THREADS'] = '2'
     environ['ARROW_DEFAULT_MEMORY_POOL'] = 'system'
-    masks = build_cpu_mask_set(node_list, task_list)
+    masks = build_cpu_mask_set(node_list, task_list, hart_list)
     assert(len(masks) == slots)
     return masks
 
@@ -309,7 +310,7 @@ def log_cmdline(args):
 def main():
     with now(PROG):
         input_dir, output_dir, extra_args = parse_cmdline()
-        slots, node_list, task_list = parse_slurm_variables()
+        slots, node_list, task_list, hart_list = parse_slurm_variables()
         files = get_input_files(input_dir)
         maybe_reexecution = log_cmdline(argv[1:])
 
@@ -317,7 +318,7 @@ def main():
             files = skip_existing_output(files, output_dir)
 
         find_program_paths()
-        masks = configure_threads(slots, node_list, task_list)
+        masks = configure_threads(slots, node_list, task_list, hart_list)
         parallel(files, slots, input_dir, output_dir, extra_args, masks)
 
 if __name__ == '__main__': main()
