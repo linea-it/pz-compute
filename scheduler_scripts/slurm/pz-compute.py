@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from dataclasses import dataclass, replace
-from os import execv
+from os import environ, execv
 from os.path import expandvars
 from pathlib import Path
 from shlex import split
@@ -10,9 +10,19 @@ from typing import Union
 
 from yaml import safe_load
 
-SBATCH_ARGS = '-N 26 -n 2032'
-SBATCH_ARGS_TPZ = '-N 26 -n 1316 --mem-per-cpu=3500M'
-SBATCH_ARGS_LEPHARE = '-N 26 -n 1016 -c2'
+from pz_compute import get_lephare_dirs
+
+SBATCH_ARGS = {
+        'tpz': '-N 26 -n 1316 --mem-per-cpu=3500M',
+        'lephare': '-N 26 -n 1016 -c2',
+        None: '-N 26 -n 2032',
+}
+
+TIME_LIMITS = {
+        'gpz': 4*3600,
+        'fzboost': 16*3600,
+        None: None,
+}
 
 @dataclass
 class Configuration:
@@ -20,11 +30,14 @@ class Configuration:
     outputdir: str = 'output'
     algorithm: str = 'fzboost'
     sbatch: str = 'sbatch'
-    sbatch_args: Union[list[str], str] = SBATCH_ARGS
+    sbatch_args: Union[list[str], str] = None
     rail_slurm_batch: str = 'pz-compute.batch'
     rail_slurm_py: str = 'pz-compute.run'
     param_file: str = None
     calib_file: str = None
+    time_limit: int = None
+    lepharedir: str = None
+    lepharework: str = None
 
 def parse_cmdline():
     try:
@@ -44,18 +57,24 @@ def load_configuration(conffile):
         with open(conffile) as f:
             tmp = safe_load(f)
     except FileNotFoundError:
-        tmp = None
+        tmp = {}
 
-    if tmp:
-        config = replace(config, **tmp)
+    config = replace(config, **tmp)
 
-        if not 'sbatch_args' in tmp:
-            algorithm = tmp.get('algorithm')
+    if not 'sbatch_args' in tmp:
+        config.sbatch_args = SBATCH_ARGS.get(config.algorithm, SBATCH_ARGS[None])
 
-            if algorithm == 'tpz':
-                config.sbatch_args = SBATCH_ARGS_TPZ
-            elif algorithm == 'lephare':
-                config.sbatch_args = SBATCH_ARGS_LEPHARE
+    if not 'time_limit' in tmp:
+        config.time_limit = TIME_LIMITS.get(config.algorithm, TIME_LIMITS[None])
+
+    if config.algorithm == 'lephare':
+        lepharedir, lepharework = get_lephare_dirs()
+
+        if not 'lepharedir' in tmp:
+            config.lepharedir = lepharedir
+
+        if not 'lepharework' in tmp:
+            config.lepharework = lepharework
 
     config.inputdir = to_path(config.inputdir)
     config.outputdir = to_path(config.outputdir)
@@ -89,9 +108,29 @@ def setup(config):
     if not config.inputdir.is_dir():
         raise RuntimeError('input directory not found: %s' % config.inputdir)
 
+    if config.lepharedir:
+        environ['LEPHAREDIR'] = config.lepharedir
+
+    if config.lepharework:
+        environ['LEPHAREWORK'] = config.lepharework
+
+def seconds_to_time(seconds):
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+
+    return '%d:%02d:%02d' % (hours, minutes, seconds)
+
 def run(config):
-    cmd = [config.sbatch] + config.sbatch_args + [config.rail_slurm_batch,
-            config.inputdir, config.outputdir, '-a', config.algorithm]
+    cmd = [config.sbatch]
+
+    if config.sbatch_args:
+        cmd += config.sbatch_args
+
+    if config.time_limit is not None:
+        cmd += ['--time=' + seconds_to_time(config.time_limit)]
+
+    cmd += [config.rail_slurm_batch, config.inputdir, config.outputdir, '-a',
+            config.algorithm]
 
     if config.param_file:
         cmd += ['-p', config.param_file]
