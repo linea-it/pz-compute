@@ -41,13 +41,11 @@ else
   cd $SCRATCH/pz-compute/rail_scripts 
   ./install-pz-rail
 
-  //todo adicionar instalação do docopt e pyxdg
-  
   ln -s $SCRATCH/pz-compute/scheduler_examples/slurm/setup/pz_run_setup.py $SCRATCH/bin/pz_run_setup_dev.py
   chmod +x $SCRATCH/bin/pz_run_setup_dev.py
   
-  ln -s  $SCRATCH/pz-compute/rail_scripts/rail-estimate rail-estimate
-  ln -s  $SCRATCH/pz-compute/rail_scripts/rail-train rail-train 
+  ln -s  $SCRATCH/pz-compute/rail_scripts/rail-estimate $SCRATCH/bin/rail-estimate
+  ln -s  $SCRATCH/pz-compute/rail_scripts/rail-train $SCRATCH/bin/rail-train 
 fi
 
 export ENVIRONMENT="dev"
