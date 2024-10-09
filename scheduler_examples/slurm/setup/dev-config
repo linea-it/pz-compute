@@ -38,8 +38,7 @@ else
   export DUSTMAPS_CONFIG_FNAME=$SCRATCH/pz-compute/rail_scripts/dustmaps_config.json
   
   mkdir -p $ALTHOME/data
-  cd $SCRATCH/pz-compute/rail_scripts 
-  ./install-pz-rail
+  $SCRATCH/pz-compute/rail_scripts/install-pz-rail
 
   ln -s $SCRATCH/pz-compute/scheduler_examples/slurm/setup/pz_run_setup.py $SCRATCH/bin/pz_run_setup_dev.py
   chmod +x $SCRATCH/bin/pz_run_setup_dev.py
