@@ -28,7 +28,7 @@ while supporting extra configuration from YAML files. The *pz-train* program is
 a companion script to *pz-compute*, to generate calibration files implicitly
 required by it.
 
-Multiple scripts compose the *pz-compute* program that run in different steps,
+Multiple scripts compose the *pz-train* program that run in different steps,
 but its core, *pz-train.py*, has the goal of reading a configuration file in
 YAML format, by default called 'pz-train.yaml', and converting the configuration
 to a suitable command-line for calling *sbatch* to dispatch the calibration
