@@ -7,7 +7,7 @@ echo "DEV - setting environment"
 cd $SCRATCH
 
 if [ -d "pz-compute" ] || [ -L "pz-compute" ]; then
-  cd "pz-compute"
+  echo "pz-compute dir ok"
 else
   echo "pz-compute dir does not exist, please clone or link it"
   exit 1
@@ -15,14 +15,14 @@ fi
 
 if conda info --envs | grep -q pz_compute_dev; then 
   conda activate pz_compute_dev
-  echo "pz_compute env already exists (: activating it" 
+  echo "pz_compute_dev env already exists (: activating it" 
 
   export PATH=$PATH:$SCRATCH/bin
   export DUSTMAPS_CONFIG_FNAME=$SCRATCH/pz-compute/rail_scripts/dustmaps_config.json
   export PATH=$PATH:$SCRATCH/pz-compute/scheduler_examples/slurm
   
 else 
-  echo "pz_compute env does not exist ): creating it"
+  echo "pz_compute_dev env does not exist ): creating it"
   
   conda create --name pz_compute_dev python=3.11
   conda activate pz_compute_dev 
