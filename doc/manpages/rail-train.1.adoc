@@ -1,0 +1,186 @@
+RAIL-TRAIN(1)
+=============
+:doctype: manpage
+:man source: pz-compute
+:man version: 0.2.0
+:man manual: LineA pz-compute Manual
+:revdate: September 2024
+
+NAME
+----
+rail-train - Generate calibration file for photo-z estimation algorithms.
+
+SYNOPSIS
+--------
+*rail-train* [_OPTION_]... [--] _input_ [_output_]
+
+*rail-train* *-h*|*--help*
+
+*rail-train* *--version*
+
+DESCRIPTION
+-----------
+The *rail-train* program is a companion script to *rail-estimate*, used for
+generating the calibration files required by the photometric redshift (PZ)
+estimation algorithms. The *rail-train* prepares a ``pre-trained'' file for
+certain algorithms used to compute PZ tables (for example, the calculated
+weights for a neural network). *rail-train* receives an _input_ file containing
+both the raw magnitude data and reference output redshifts, considered to be
+correct and accurate. The _output_ file will be generated with the calibration
+data specific to the estimator algorithm requested. Training is slow, but can be
+done only once and used later with *rail-estimate* for any production data that
+is expected to have the same behavior as the reference _input_ file.
+
+The _input_ file may be a Parquet file, HDF5 file or any other format supported
+by the LSST-DESC RAIL library. The program reads the input table, with lines
+representing known objects in the sky with known magnitude and redshift values.
+The calibration process (called the ``inform'' process in RAIL) is executed and
+the _output_ file is generated as a Python pickle file with algorithm-specific
+calibration data that may be used by *rail-estimate* to run an estimation on the
+same _input_ file, producing accurate estimated redshift probability
+distribution functions (PDFs) that mirror the reference redshift values.
+
+The input must have a set of columns for magnitude data and magnitude errors, by
+default following the templates ``mag_\{band}'' and ``magerr_\{band}'', where
+the bands are the lower case letters representing the color bands ``u'', ``g'',
+``r'', ``i'', ``z'' and ``y''. For hierachical input formats, the data must be,
+by default, in the root section. The input table must also have a column called
+``redshift'' representing the known redshift values.
+
+The program supports multiple estimation algorithms to execute the calibration
+and by default chooses the *fzboost* (FlexZBoost) algorithm. By default, the
+_output_ file name is constructed from the template name
+``estimator_\{algorithm}.pkl''.
+
+Option arguments are used to modify the handling of the input file, the
+calibration algorithm and the calibration parameters. If multiple options with
+conflicting formats appear in the command line, the initial ones are ignored and
+the last ones are used. The list of options follows:
+
+*-a* _name_, **--algorithm=**_name_::
+  Select estimation algorithm. The available algorithms are: *fzboost*
+  (default), *bpz*, *tpz*, *gpz* and *lephare*. Algorithm availability depends
+  on the presence of their respective add-on packages to the core RAIL
+  framework. Note that the *bpz* algorithm might auto-generate cached data files
+  the first time it runs and its default directory is the RAIL installation
+  directory.
+
+*-b* _bins_, **--bins=**_bins_::
+  Set number of bins (columns) in the resulting tables. The default is 301. The
+  *rail-train* program doesn't directly create the estimated redshift tables,
+  but this parameter may be necessary for the calibration process too and it may
+  be stored in the calibration file for later use during the estimation. This
+  parameter is only meaningful for the algorithms that generate the redshift
+  PDFs in the shape of a grid. Note: the number of bins may also be configured
+  with a parameter file set with *-p*. If present in the file, the parameter
+  will have priority over this option.
+
+*-g* _group_, **--group=**_group_::
+  For HDF5 input, sets the group name (section) where input data is stored. By
+  default, the root group is used.
+
+*-p* _file_, **--param-file=**_file_::
+  Extra parameter file for the calibration algorithm. Individual algorithms may
+  have a large amount of parameters. This option should be used to provide a
+  YAML file containing a top-level dictionary with the parameters that should be
+  modified from their default values. The *rail-train* program doesn't
+  configure most algorithm parameters, relying on the defaults provided by the
+  algorithms themselves. The exceptions are the number of bins, configured with
+  the *-b* option and the *nondetect_val* parameter, which is set by default to
+  *NaN* for the *tpz* algorithm. Source distributions of *rail-train* contain
+  example parameter files with all the default values for certain source code
+  snapshots of the estimation algorithms. If any command-line options and
+  parameters in the parameter file refer to the same parameter, the ones in the
+  parameter file have priority.
+
+**--column-template=**_template_::
+  Set the names of the input columns. This is a template text, by default
+  ``mag_\{band}''. The color bands required are ``u'', ``g'', ``r'', ``i'',
+  ``z'' and ``y'', so, for example, when setting this option to
+  ``\{band}magnitue'', it will require the columns ``umagnitude'',
+  ``gmagnitude'', ``rmagnitude'', etc. present in the input file.
+
+**--column-template-error=**_template-error_::
+  Set the names of the input error columns. This is a template text, by default
+  ``magerr_\{band}''. The color bands required are ``u'', ``g'', ``r'', ``i'',
+  ``z'' and ``y'', so, for example, when setting this option to
+  ``\{band}error'', it will require the columns ``uerror'', ``gerror'',
+  ``rerror'', etc. present in the input file.
+
+*-h*, *--help*::
+  Show help message instead of executing an estimation.
+
+*--version*::
+  Show program version number instead of executing an estimation.
+
+EXAMPLES
+--------
+Execute a calibration using all the defaults: *fzboost* algorithm, input with
+the ``mag_\{band}'' and ``magerr_\{band}'' columns, generate the calibration
+file ``estimator_fzboost.pkl'', for estimating with 301 bins, all other defaults
+inherited from *fzboost*:
+
+    $ rail-train reference1.pq
+
+Execute a calibration using a different algorithm (*tpz*) and output name:
+
+    $ rail-train -a tpz input1.pq tpz-calib1.pkl
+
+Change the input file's column names and group to estimate the example file
+provided by the RAIL source distribution:
+
+    $ rail-train --group=photometry --column-template=mag_\{band}_lsst \
+                    --column-template-error=mag_err_\{band}_lsst \
+                    test_dc2_training_9816.hdf5 fzboost-calib1.pkl
+
+Provide a custom algorithm configuration and generate the ``estimator_bpz.pkl''
+file:
+
+    $ rail-train -a bpz -p custom-bpz.yaml input1.hdf5
+
+Example configuration file for the *bpz* algorithm (use it with *-p*):
+
+    data_path: "None"
+    columns_file: "test_bpz.columns"
+    spectra_file: "CWWSB4.list"
+    m0: 20.0
+    nt_array: [1, 2, 3]
+    mmin: 18.0
+    mmax: 29.0
+    init_kt: 0.3
+    init_zo: 0.4
+    init_alpha: 1.8
+    init_km: 0.1
+    type_file: ""
+    zmin: 0.0
+    zmax: 3.0
+    nzbins: 301
+    nondetect_val: 99.0
+
+EXIT STATUS
+-----------
+*0*::
+  Success.
+
+*1*::
+  Failure.
+
+FILES
+-----
+'estimator_\{algorithm}.pkl', '$XDG_DATA_HOME/rail_scripts/estimator_\{algorithm}.pkl'::
+  The default file name template for the calibration files.
+
+'$XDG_DATA_HOME/rail_scripts/algorithms_config'::
+  The directory with example parameter files.
+
+
+COPYRIGHT
+---------
+Copyright © 2024 LIneA IT. Licence MIT.
+
+SEE ALSO
+--------
+*rail-estimate*(1)
+
+A quick start tutorial document is also available in the source distribution:
+'doc/rail-estimate-getting-started.md'.

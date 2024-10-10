@@ -1,0 +1,52 @@
+HDF5-COUNT-ROWS(1)
+==================
+:doctype: manpage
+:man source: pz-compute
+:man version: 0.2.0
+:man manual: LineA pz-compute Manual
+:revdate: September 2024
+
+NAME
+----
+hdf5-count-rows - Count the number of rows in HDF5 files
+
+SYNOPSIS
+--------
+*hdf5-count-rows* [_file_]...
+
+DESCRIPTION
+-----------
+The *hdf5-count-rows* script prints the number of rows in each of the given HDF5
+input files and then prints a grand total number of rows. To find out the number
+of rows in each file, the program loops over all columns in the file and
+considers the column with the largest number of rows.
+
+EXAMPLES
+--------
+Count the number of rows of a single file:
+
+    $ hdf5-count-rows file1.hdf5
+
+Print the number of rows of each of 3 files and then the grand total:
+
+    $ hdf5-count-rows file1.hdf5 file2.hdf5 file3.hdf5
+
+Use shell expansion to count the number of rows of all files in a directory:
+
+    $ hdf5-count-rows dir1/*.hdf5
+
+EXIT STATUS
+-----------
+*0*::
+  Success.
+
+*1*::
+  Failure.
+
+COPYRIGHT
+---------
+Copyright © 2024 LIneA IT. Licence MIT.
+
+SEE ALSO
+--------
+*parquet-count-rows*(1)
