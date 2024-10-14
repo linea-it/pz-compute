@@ -8,6 +8,8 @@ import time
 import tables_io
 import getpass
 import matplotlib.pyplot as plt
+import shutil
+import h5py
 
 import qp
 
