@@ -66,7 +66,7 @@ def time_profiler(process_dir, file_path):
     plt.scatter(end_times, process_ids, color='teal', label='End', s=2, zorder=3)
 
     plt.title(f'Time profiler of {len(process_ids)} Processes')
-    plt.xlabel('time (s)')
+    plt.xlabel('time')
     plt.ylabel('Process ID')
     plt.grid(True, linestyle='--')
     plt.legend()
@@ -75,7 +75,6 @@ def time_profiler(process_dir, file_path):
     plt.savefig(output_img_path)
 
 def run_paralell_post_process(process_dir):
-    # Criar pastas 'output' e 'logs' se não existirem
     output_dir = os.path.join(process_dir, 'output_dask')
     logs_dir = os.path.join(process_dir, 'logs_dask')
     os.makedirs(output_dir, exist_ok=True)
@@ -96,22 +95,17 @@ def run_paralell_post_process(process_dir):
         ],
     )
 
-    # Escalando o cluster para usar X nós
     cluster.scale(jobs=10)
 
-    # Definindo o client do Dask
     client = Client(cluster)   
 
-    # Caminho para o relatório de desempenho do Dask
     performance_report_path = os.path.join(process_dir, f'dask_performance_report.html')
     file_to_copy = None
     
     with performance_report(filename=performance_report_path):
-        # Obter lista de arquivos HDF5 na pasta
         file_list = glob.glob(f'{process_dir}/output/*.hdf5')
         file_to_copy = file_list[0]
         
-        # Ler todos os arquivos HDF5 com dask delayed.
         def read_hdf5(file):
             data = tables_io.read(file)
 
@@ -147,23 +141,7 @@ def run_paralell_post_process(process_dir):
                     
             return qp.read(output_file_hdf5)
         
-        # def read_using_qp(file):
-        #     ens = qp.read(file)
-        #     test_xvals = ens.gen_obj.xvals
-        #     mean = ens.mean().mean()
-        #     ens.npdf
-            
-        #     pdfs = ens.pdf(test_xvals)
-        #     pdfs_stack = pdfs.sum(axis=0)
-            
-        #     df = pd.DataFrame(pdfs_stack).T
-        #     df['objects']= ens.npdf
-        #     df['mean']= mean
-        #     return df
-            
-        # Ler os arquivos usando dask.delayed
         parts = [delayed(read_hdf5)(file) for file in file_list]
-        #parts = [delayed(read_using_qp)(file) for file in file_list]
         
         ddf = dd.from_delayed(parts)
         
@@ -187,17 +165,6 @@ def run_paralell_post_process(process_dir):
         x_peak = round(x_peak, 2)
         mean = round(mean[0][0], 2) 
         
-        #apagar mais pra frente
-        # output_path_csv = os.path.join(process_dir, f'sample.csv')
-        # ddf_computed.to_csv(output_path_csv, index=False)
-        
-        #output_path_parquet = os.path.join(process_dir, f'sample.parquet')
-        #zmode_values.to_parquet(output_path_parquet, index=False)
-        
-        #output_path_hdf5 = os.path.join(process_dir, f'sample.hdf5')
-        #tables_io.write(zmode_values, output_path_hdf5)
-        ######
-        
         output_img_path = os.path.join(process_dir, f'stack_nz.png')
 
         plt.plot(test_xvals, pdfs_stack)
@@ -215,6 +182,5 @@ def run_paralell_post_process(process_dir):
         
         return f'{total_objects:_}'
 
-    # Fechando o client
     client.close()
     cluster.close()
