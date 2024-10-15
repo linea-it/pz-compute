@@ -1,0 +1,205 @@
+PZ-COMPUTE.YAML(5)
+==================
+:doctype: manpage
+:man source: pz-compute
+:man version: 0.2.0
+:man manual: LineA pz-compute Manual
+:revdate: October 2024
+
+NAME
+----
+pz-compute.yaml - Configuration file for pz-compute
+
+DESCRIPTION
+-----------
+The *pz-compute* program is an easy-to-use collection of scripts that allow
+dispatching a batch job of photometric redshift (PZ) estimation processes
+(*rail-estimate*) to the LineA Apollo cluster using the slurm scheduler. The
+configuration file used by pz-compute is described here.
+
+The configuration file is a YAML file with a top-level mapping (dictionary). The
+top-level mapping accepts a fixed list of keys that may configure slurm, the
+*pz-compute* chain of scripts, or *rail-estimate*. All the parameters are
+optional, having default values, if missing. An example with the full list of
+parameters follows:
+
+    inputdir: input
+    outputdir: output
+    algorithm: fzboost
+    sbatch: sbatch
+    sbatch_args: -N 26 -n 2032
+    rail_slurm_batch: pz-compute.batch
+    rail_slurm_py: pz-compute.run
+    param_file: fzboost-params.yaml
+    calib_file: fzboost-calibration.pkl
+    time_limit: 9:30:00
+    lepharedir:
+    lepharework:
+
+There are some parameters that represent file or directory paths. These paths
+may be relative to the working directory or absolute. They support expanding
+environment variables using the Python standard library's ``expandvars()'' and
+expanding user home directories with ``expanduser()'', so, for example, a path
+like ``~/data/$\{DATASET}/large'' is accepted.
+
+The description of each parameter, including the allowed Python types, follows:
+
+inputdir: str [default: input]::
+  The input directory that contains the files to be processed. The whole
+  directory tree is recursivelly considered. All files are considered valid
+  inputs. This parameter supports expanding environment variables and user home
+  directories.
+
+outputdir: str [default: output]::
+  The output directory where *pz-compute* will write the estimation results to.
+  A complete mirror of the input directory hierarchy is automatically created in
+  this directory. This parameter supports expanding environment variables and
+  user home directories.
+
+algorithm: str [default: fzboost]::
+  The estimation algorithm to use. Valid values are given by *rail-estimate*
+  command-line parameter ``--algorithm''.
+
+sbatch: str [default: sbatch]::
+  The file name of the *sbatch* executable. The file must be in the executable
+  search path.
+
+sbatch_args: str | list[str] | null::
+  The parameters passed to *sbatch* when executing *pz-compute.batch*. The
+  defaults try to completely fill the LineA cluster and vary with the algorithm
+  and are the following:
+
+  - tpz: -N 26 -n 1316 --mem-per-cpu=3500M
+  - lephare: -N 26 -n 1016 -c2
+  - (others): -N 26 -n 2032
+
++
+To remove all default parameters, pass ``null''.  Besides the parameters passed
+  in *sbatch* command-line, *pz-compute.batch* also defines the following
+  parameters:
+
+  - (implicit): -J pz-compute --mem-per-cpu=2140M -p cpu --propagate=NPROC
+
++
+The implicit parameters may be overwritten with ``sbatch_args'', but not
+  removed.
+
+rail_slurm_batch: str [default: pz-compute.batch]::
+  The file name of the *pz-compute.batch* script. The file must be in the
+  executable search path.
+
+rail_slurm_py: str [default: pz-compute.run]::
+  The file name of the *pz-compute.run* script. The file must be in the
+  executable search path. This parameter doesn't directly change which script is
+  called, instead, it must match the script name being used in
+  *pz-compute.batch* and is used only to confirm that the script exists.
+
+param_file: str [default: None]::
+  The file name of the estimator algorithm's parameter file. This is forwarded
+  to *rail-estimate* with the ``--param-file'' command-line parameter. This
+  parameter supports expanding environment variables and user home directories.
+
+calib_file: str [default: None]::
+  The file name of the estimator algorithm's calibration file. This is forwarded
+  to *rail-estimate* with the ``--calibration-file'' parameter. This parameter
+  supports expanding environment variables and user home directories.
+
+time_limit: int | null::
+  The time limit parameter in seconds to be passed to *sbatch*. The time limit
+  applies to the whole pz-compute batch job and if the limit is hit during the
+  execution, the estimation process is aborted. The defaults vary with the
+  algorithm:
+
+  - gpz: 4 hours
+  - fzboost: 16 hours
+  - (others): None (use the maximum time limit configured by the cluster)
+
++
+To disable the default time limits and use the maximum configured by the
+  cluster, pass ``null''. This parameter requires integer values, but
+  *pz-compute* supports the old YAML 1.1 sexagesimal integer format, so values
+  like ``9:59:59'' are accepted. This parameter translates to the *sbatch*
+  parameter ``--time''. If ``sbatch_args'' includes ``--time'' and
+  ``time_limit'' is also set, then ``time_limit'' has the priority.
+
+lepharedir: str | null::
+  The path of the lephare-data directory. Ignored when the algorithm is not set
+  to ``lephare''. This is used to set the ``$LEPHAREDIR'' environment variable.
+  If neither this parameter nor the environment variables are set, then the
+  default is set to '/lustre/t1/cl/lsst/pz_project/lephare-data'. To clear the
+  environment variable, pass ``null''.
+
+lepharework: str | null::
+  The cache directory of the lephare algorithm. Ignored when the algorithm is
+  not set to ``lephare''. This is used to set the ``$LEPHAREWORK'' environment
+  variable. This path must have the name 'train' as its last component because
+  the rail_lephare module overwrites it with the internal RAIL calibration stage
+  name (currently set to 'train'). If this parameter is not set, *pz-compute*
+  first checks that either the ``$LEPHAREWORK'' or ``$XDG_CACHE_HOME''
+  environment variables are set. If any is set, they are not changed. If neither
+  are, then ``$LEPHAREWORK'' is set to 'lephare-work/train'. To clear the
+  environment variable, pass ``null''.
+
+EXAMPLES
+--------
+A trivial example, assuming all defaults, except the algorithm (input directory
+called 'input', output directory called 'output', run on all cluster nodes, use
+the maximum time limit):
+
+    algorithm: bpz
+
+A typical example, configuring the directories and algorithm's parameters:
+
+    algorithm: tpz
+    inputdir: $DP02/ref
+    outputdir: output/tpz/dp02
+    param_file: tpz-medium.yaml
+    time_limit: 16:00:00
+
+An example that allocates less cluster nodes and removes the default time limit:
+
+    algorithm: gpz
+    inputdir: ~app.photoz/data/dataset1
+    outputdir: $SCRATCH/output/gpz/dataset1
+    sbatch_args: -N 5 -n 520
+    time_limit:
+
+An example using a calibration file with a different name:
+
+    algorithm: fzboost
+    calib_file: fzboost-calib2.pkl
+
+Running TPZ with a small calibration file and using 100% of CPU:
+
+    algorithm: tpz
+    calib_file: $XDG_DATA_HOME/rail_scripts/tpz-small.pkl
+    sbatch_args: -N 26 -n 2032
+
+Running a multi-threaded estimator in specific nodes specifying 8 hardware
+threads per execution slot:
+
+    algorithm: lephare
+    sbatch_args: -N 10 -n 70 -c 8 -w apl[04-13]
+    lepharedir: $SCRATCH/lephare-data
+
+Running a multi-threaded estimator in specific nodes specifying 7 execution
+slots per node:
+
+    algorithm: lephare
+    sbatch_args: -N 10 -n 70 --ntasks-per-node=7 -w apl[04-13]
+    lepharedir: $SCRATCH/lephare-data
+
+Using custom executables for running *pz-compute*:
+
+    algorithm: fzboost
+    sbatch: $SCRATCH/bin/mysbatch
+    rail_slurm_batch: $SCRATCH/bin/pz-compute-dev.batch
+    rail_slurm_py: $SCRATCH/bin/pz-compute-dev.run
+
+COPYRIGHT
+---------
+Copyright © 2024 LIneA IT. Licence MIT.
+
+SEE ALSO
+--------
+*pz-compute*(1), *rail-estimate*(1), *sbatch*(1), *slurm*(1)

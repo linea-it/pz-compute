@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-#SBATCH --time=4:00:00
 #SBATCH -p cpu
 #SBATCH -J dispatch
 #SBATCH -N 1

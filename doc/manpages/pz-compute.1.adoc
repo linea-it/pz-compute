@@ -1,0 +1,364 @@
+PZ-COMPUTE(1)
+=============
+:doctype: manpage
+:man source: pz-compute
+:man version: 0.2.0
+:man manual: LineA pz-compute Manual
+:revdate: September 2024
+
+NAME
+----
+pz-compute - Dispatch rail-estimate tasks to LineA's cluster using slurm
+
+SYNOPSIS
+--------
+*pz-compute* [_configfile_]
+
+*pz-compute.py* [_configfile_]
+
+*sbatch* [_sbatch_options_] *pz-compute.batch* [_inputdir_ [_outputdir_
+    [_args_]...]]
+
+*pz-compute.run* _my_id_ _num_tasks_ _num_harts_ _prog_ [_args_]...
+
+DESCRIPTION
+-----------
+The *pz-compute* program is an easy-to-use collection of scripts that allow
+dispatching a batch job of photometric redshift (PZ) estimation processes
+(*rail-estimate*) to the LineA Apollo cluster using the *slurm* scheduler. The
+program allows executing estimations with arbitrarily large datasets. Its focus
+is on having many default settings suitable for the LineA cluster, while
+supporting extra configuration from YAML files, and executing the estimations as
+efficiently as possible by dispatching multiple *rail-estimate* processes in
+parallel, keeping all the cluster's CPUs as busy as possible (100% CPU usage).
+
+Multiple scripts compose the *pz-compute* program that run in different steps,
+either in the login machine, or in parallel per allocated slots, in the
+cluster's machines. The scripts call each other in sequence, starting from the
+front-end script, *pz-compute*. By default, the program opens a configuration
+file called 'pz-compute.yaml' if it exists and reads the configuration from it,
+which may include which estimation algorithm to be used, the location of the
+input files, the location of the output files, extra configurations for *slurm*,
+extra parameter files for the estimation algorithm and so on. The configuration
+file may be changed with the command-line parameter _configfile_. The
+configuration file is a YAML file with a top-level dictionary and is described
+in its own manual page *pz-compute.yaml*. If the configuration file doesn't
+exist, then the program assumes a very basic set of defaults: estimating with
+the ``fzboost'' algorithm the files in directory 'input', storing the results in
+directory 'output'.
+
+When executed, the *pz-compute* script will read the configuration file, print
+the resulting interpreted configuration, translate it to a suitable *sbatch*
+command-line and execute the batch job with it. The *sbatch* command-line might
+include parameters like the number of cluster nodes to be allocated, the total
+number of parallel tasks, the number of hardware threads to be allocated per
+task and the time limit for the execution. After *sbatch* is executed, the
+*pz-compute* script finishes and a slurm batch job script starts executing in
+the cluster.
+
+The slurm batch job script executed by *sbatch* (*pz-compute.batch*) will run on
+a single cluster node, initially searching the input directory recursively for
+all files contained within. All files found are considered valid for the
+estimation. The script also supports in certain situations searching an existing
+output directory for outputs already completed to avoid reprocessing them. With
+the input file list ready, the batch job script starts dispatching tasks with
+*srun* to their individual slots in the cluster, filling all the allocated
+slots. One task is created per input file and each task runs one *rail-estimate*
+process independently. During the execution, the batch script keeps all the
+slots fully allocated, dispatching more tasks as each task finishes, as long as
+there still are input files to be processed. If all files can be processed
+successfully, the slurm batch job script completes successfully. Temporary
+errors are handled per task by retrying the failed input files a few times. If
+some file fails more than a certain number of times (currently set to 3), then a
+permanent error is assumed to be happening and the batch job script aborts in
+the middle of the execution.
+
+The *pz-compute* program accepts from its configuration file an input directory
+representing the root of the directory hierarchy containing the input files and
+an output directory. It derives the individual names of the output files by
+mirroring the input directory structure and mirroring the input file paths in
+the output directory, so that the output files will have the same names as the
+corresponding input files. In the general case the input and output directories
+must be different due to the risk of temporary files created during the
+execution overwriting input files before their estimations.
+
+The *pz-compute* program creates a set of log files. There's one main log file
+created by slurm that's used by the slurm batch job script to log its own
+execution steps (which will include searching for input files and programs,
+creating directories, executing tasks and reporting slurm errors). In this
+top-level slurm log file, messages are written in a standardized format, so that
+they might be parsed later by other scripts (for example, the script
+*rail-sum-execution-time* benefits from this format). A directory called 'log'
+is created and one subdirectory with a numeric name is created for each group of
+10000 tasks. Inside each subdirectory, two log files per task are created, with
+the template names 'pz-compute-\{task_id}.out' and 'pz-compute-\{task_id}.err'
+that store the tasks' standard outputs and standard error outputs. Lastly, a
+file called 'log/pz-compute.cmdline.yaml' is created with the command-line
+arguments synthesized by the program to the *pz-compute.batch* slurm batch job
+script. This command-line participates in the execution resumption logic: it's
+only when two successive executions of *pz-compute.batch* with the exact same
+command-line parameters are requested that the program will allow skipping the
+estimation of already existing output files. Otherwise, a complete new
+re-execution from zero will be assumed and any existing output files will be
+overwritten during the new estimations.
+
+The configuration and mapping between each requested task and execution slots in
+the cluster is done by slurm, with some configuration support available. In the
+simplest cases, *pz-compute* configures slots with 1 hardware thread and 2140
+MiB of RAM available for each task. Specific estimation algorithms that require
+more memory or more hardware threads per task have different defaults. For
+example, the TPZ algorithm is configured with 3500 MiB of RAM per task (and so
+slurm will leave some hardware threads unused in the LineA cluster to avoid
+hitting the memory limit).  Resource reservation per slot may be configured with
+the ``sbatch_args'' configuration parameter, which is directly forwarded to
+*sbatch* when executing *pz-compute.batch*. See the manual of the configuration
+file *pz-compute.yaml* for details.
+
+The execution of each parallel task is started by calling *srun* from the batch
+job script. Each active task starts by executing *pz-compute.run*, so this is
+the first script in the chain that runs in one of the allocated slots, in
+parallel with others. Currently, it only does one last preparation step: it
+configures the reservation of hardware threads for each execution slot, with the
+main procedure being configuring the CPU (hardware thread) affinity for the task
+before calling *rail-estimate*. This limits the set of hardware threads that the
+task is allowed to use at the operating-system level. The CPU affinity per task
+is chosen with the goal of the tasks having overlapping slices of hardware
+threads covering all hardware threads reserved for the whole batch job. In
+practice this will result in a CPU affinity allocation that allows two
+``neighbor'' tasks to share the same hardware threads, so that when one task is
+blocked waiting for I/O, its neighbor may use the idle hardware threads from the
+neighbor to speed up its own computation (if it's multi-threaded). Besides
+configuring the CPU affinity, *pz-compute.run* configures the
+``OMP_NUM_THREADS'' environment variable to make sure that estimator algorithms
+using the OpenMP library have a limited number of auxiliary software threads.
+Finally, the script calls *rail-estimate* to process the input file associated
+with the task being executed.
+
+SCRIPTS
+-------
+The scripts that compose the *pz-compute* program are: *pz-compute*,
+*pz-compute.py*, *pz-compute.batch* and *pz-compute.run*. They were designed to
+be used implicitly, called by the initial *pz-compute* script, in sequence. They
+may, however, be used separately, for example, to skip a certain top-level
+script from the execution sequence or to use specific parameters not supported
+by their front-end scripts.
+
+The *pz-compute* script is a Bourne shell script that has the goal of handling
+installations of the *pz-compute* program, custom Python versions and library
+dependencies in a non-standard location (this is the case for the production
+installation of *pz-compute* in the LineA lab). This script is not required if
+the program is installed in a standard location, like '/usr' or '/usr/local', or
+even if the program is installed in a different location, but the Python
+installation is in a system-default location (in this case, it's possible and
+easier to link *pz-compute.py* to *pz-compute* instead). The goal of the
+*pz-compute* script is to configure path variables that make all other scripts
+and the custom Python accessible using the modified search paths with top
+priority. After configuring the paths, it executes *pz-compute.py* (with the
+assurance that the custom Python and libraries will be used). The path variables
+configured are ``PATH'', ``XDG_DATA_DIRS'' and ``XDG_CONFIG_DIRS''.
+
+The *pz-compute* script requires a few rules for the configured environment
+variables to work as expected. For the ``PATH'' variable to be correctly
+configured, *pz-compute* must be installed in a directory where it's not a
+symbolic link (*pz-compute* finds the installed directory by calling *realpath*
+on itself), together with all other scripts that compose the *pz-compute*
+program, which may be installed as symbolic links or regular files. Besides the
+*pz-compute* scripts, it's recommended to add a symbolic link called ``python3''
+to the custom python to be used, otherwise which Python version will be used
+will depend on the user's own pre-configured environment. Note that, except for
+the symbolic link to Python, the directory of *pz-compute* in the source code
+package fulfills the requirements for the successful configuration of ``PATH'',
+so that *pz-compute* may be executed directly from a cloned source code
+repository (as long as the user previously configured the custom Python, which
+is the case for *conda* users in the LineA lab).
+
+Correct configuration for the XDG environment variables ``XDG_DATA_DIRS'' and
+``XDG_CONFIG_DIRS'' is optional, but allows *rail-estimate* to find certain data
+files that it may use as defaults, for example, the estimation algorithms'
+calibration files. To configure them, the *pz-compute* scripts must be installed
+in a directory hierarchy that mimics the Filesystem Hierarchy Standard (FHS)
+directory hierarchy of '/usr/local'. The scripts in this case should be
+installed in a 'libexec' style subdirectory (for example, 'libexec/pz-compute',
+'lib/pz-compute' or 'lib64/pz-compute'). Then ``XDG_CONFIG_DIRS'' will be
+expanded to include 'etc' and ``XDG_DATA_DIRS'' will be expanded to include
+'share'.
+
+A full example, assuming that the scripts will be installed in a directory
+hierarchy starting with directory 'myhome' will be the following:
+
+    myhome/
+    ├── etc/
+    ├── libexec/
+    │   └── pz-compute/
+    │       ├── python3           (symbolic link to custom Python)
+    │       ├── pz-compute        (not a symbolic link)
+    │       ├── pz-compute.batch
+    │       ├── pz-compute.py
+    │       └── pz-compute.run
+    └── share/
+
+In the example, the directory 'myhome/libexec/pz-compute/' is prepended to
+``PATH'' by the *pz-compute* script, the directory 'myhome/etc/' is prepended to
+``XDG_CONFIG_DIRS'' and 'myhome/share/' is prepended to ``XDG_DATA_DIRS'' (and
+then *pz-compute.py* is called). To execute *pz-compute* in such installation,
+create a symbolic link from 'myhome/libexec/pz-compute/pz-compute' to your
+executable directory already in your path (for example, 'myhome/bin') or to the
+work directory to be used for the estimations.
+
+The script *pz-compute.py* is the second script in the chain and is called by
+*pz-compute* with a custom Python after the path variables are configured. Its
+goal is to read the configuration file in YAML format, by default called
+'pz-compute.yaml' and convert the configuration into a *sbatch* command-line
+suitable for calling the *pz-compute.batch* slurm batch job. The configurations
+available are described in the *pz-compute.yaml* manual page. The default
+configuration file name may be changed with the _configfile_ command-line
+parameter.
+
+Before calling *sbatch*, the *pz-compute.py* script checks that both
+*pz-compute.batch* and *pz-compute.run* can be found by searching the configured
+path and aborts execution before calling *sbatch* if they're not found.
+
+An example configuration file and the resulting *sbatch* execution requested by
+*pz-compute.py* would be the following:
+
+Example 'pz-compute.yaml' configuration:
+
+    inputdir: datasets/dp0.2
+    outputdir: estimations/dp0.2/bpz
+    algorithm: bpz
+    sbatch_args: -N 12 -n 1248 -A hpc-lsst
+    param_file: bpz_params_dp0.2.yaml
+
+This configuration results in the following *sbatch* call:
+
+    $ sbatch -N 12 -n 1248 -A hpc-lsst pz-compute.batch datasets/dp0.2 \
+            estimations/dp0.2/bpz -a bpz -p bpz_params_dp0.2.yaml
+
+The script *pz-compute.batch* is the third script in the execution chain and is
+designed to be executed as a single task in the cluster, dispatched by *sbatch*.
+It depends on variables configured by slurm being present. Its goals are to
+discover what files need to be processed, to dispatch each task that will run
+*rail-estimate* to each available cluster slot, to manage errors and interrupted
+executions efficiently, to log all the execution steps happening in the cluster
+and to forward parameters to *rail-estimate* (``command-line pass-through'').
+This is the core script in the *pz-compute* program and its behavior is
+explained in the main *pz-compute* program description.
+
+By default, the input directory searched by the *pz-compute.batch* script should
+be called 'input' and it may be changed with the _inputdir_ parameter in the
+YAML file. The input directory must exist when calling the script. By default,
+the output directory will be called 'output' and it may be changed with the
+_outputdir_ parameter. The output directory will be created, if necessary. The
+script supports an arbitrary extra set of command line parameters (_args_) which
+are not used by the script and are, instead, forwarded to *rail-estimate* when
+dispatching each individual task.
+
+The *pz-compute.batch* script doesn't directly request the execution of
+*rail-estimate*. Instead it dispatches executions of *pz-compute.run*. This
+script is a script that runs per task, in parallel with others, independently.
+Its goal is to do any task-specific preparation. Currently it just configures
+the sets of hardware threads that the task may use, as explained in the main
+*pz-compute* program description, and then, calls *rail-estimate*. The
+*pz-compute.run* script relies on a set of command-line parameters to correctly
+choose which hardware threads it should reserve. The parameter _my_id_ is a
+per-node slot ID (ranging from 0 to _num_tasks_-1) that is used to retrieve a
+fixed reservation: a task with a specific slot ID will be given a fixed slice of
+hardware threads to use. For example, a task running in a certain cluster node
+with _my_id_ set to zero will always receive the first slice of hardware threads
+in that node, the task running with _my_id_ equal to 1 will receive the second
+slice and so on. The full list of hardware threads is kept sorted by
+*pz-compute.run* in a fixed order and is sorted by topological proximity, so
+that neighbor groups of hyperthreads, cores and sockets are kept adjacent in the
+list. The sorted list of hardware threads is also the same among different
+tasks, so that the slicing maps distinct slices to distinct slot IDs. The actual
+shape of the hardware thread slices is controlled by the _num_tasks_ and
+_num_harts_ command-line parameters, where _num_tasks_ is the number of parallel
+tasks (or slots) that were assigned to the node and _num_harts_ is the total
+number of hardware threads that were assigned to the node. So, for example, if
+28 tasks were requested and 56 hardware threads were reserved, then the slice
+size will be 2 hardware threads per slot (subject to the expansion explained in
+the main *pz-compute* program description) and a task with slot ID equal to zero
+would be assigned the hardware threads numbers 0 and 1. Fractional hart/task
+ratios are accepted and in this case some slots will be assigned a slice of
+hardware threads 1 element larger and others a slice 1 smaller. A most trivial
+example of direct execution of the *pz-compute.run* script is running it with
+*srun* with the number of nodes set to 1 (``-N 1''), the number of tasks and
+_num_tasks_ set to 1 (``-n 1''), the number of CPUs (hardware threads) per tasks
+and _num_harts_ set to the same value (``-c _num_harts_'') and _my_id_ set to
+zero (the only task requested).  It's also necessary to set ``--cpu-bind=none''
+to allow the *pz-compute.run* to do it's own hardware thread slice selection and
+expansion.
+
+    $ srun -N1 -n1 -c4 --cpu-bind=none pz-compute.run 0 1 4 \
+        rail-estimate input1.hdf5 output1.hdf5
+
+In this example, one task with 4 hardware threads is requested. In practice,
+*pz-compute.run* will expand the slice to 6 hardware threads and the first 6
+hardware threads in the node will be allocated.
+
+EXAMPLES
+--------
+Run *pz-compute* in a directory containing only a directory called 'input/',
+with the files to be processed, using all defaults (algorithm ``fzboost'',
+output to directory ``output''):
+
+    $ pz-compute
+
+Run *pz-compute* in a directory containing the *pz-compute.yaml* configuration
+file configuring all parameters:
+
+    $ pz-compute
+
+Run *pz-compute* with a different configuration file:
+
+    $ pz-compute custom-config.yaml
+
+Run *pz-compute.py*, skipping the *pz-compute* path configuration (requires
+suitable system-wide Python, RAIL and *pz-compute* installations):
+
+    $ pz-compute.py
+
+Run *pz-compute.batch* directly, bypassing the YAML configuration file (manually
+enter the *sbatch* command-line), reserve LineA's 12 machines assigned to the
+``hpc-lsst'' account and run the BPZ estimator with custom parameters:
+
+    $ sbatch -N 12 -n 1248 -A hpc-lsst pz-compute.batch datasets/dp0.2 \
+            estimations/dp0.2/bpz -a bpz -p bpz_params_dp0.2.yaml
+
+Run *pz-compute.run* directly in the login machine, allocating half of the
+hardware threads:
+
+    $ pz-compute.run 1 2 56 rail-estimate input1.hdf5 output1.hdf5
+
+FILES
+-----
+'pz-compute.yaml'::
+  The default configuration file name for *pz-compute*.
+
+'slurm-\{jobid}.out'::
+  The log file generated by *sbatch*, used by *pz-compute.batch*.
+
+'log'::
+  The log directory that is created by *pz-compute.batch*.
+
+'log/\{num}'::
+  A subdirectory with numeric name is created for each group of 10000 tasks.
+
+'log/\{num}/pz-compute-\{task_id}.out'::
+  The standard output for a certain task.
+
+'log/\{num}/pz-compute-\{task_id}.err'::
+  The standard error output for a certain task.
+
+'log/pz-compute.cmdline.yaml'::
+  The command line generated for *pz-compute.batch* is stored and participates
+  in the execution resumption logic.
+
+COPYRIGHT
+---------
+Copyright © 2024 LIneA IT. Licence MIT.
+
+SEE ALSO
+--------
+*pz-compute.yaml*(5), *pz-train*(1), *rail-estimate*(1), *sbatch*(1),
+*slurm*(1), *srun*(1)

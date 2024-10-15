@@ -4,7 +4,7 @@ import yaml
 
 from xdg.BaseDirectory import load_data_paths
 
-VERSION_TEXT = "rail_scripts 0.1.0"
+VERSION_TEXT = "rail_scripts 0.2.0"
 PROJECT_NAME = "rail_scripts"
 ESTIMATOR_CONFIGURATION_TEMPLATE = "estimator_%s.pkl"
 PARAMS_TEMPLATE = "%s_params.yaml"
