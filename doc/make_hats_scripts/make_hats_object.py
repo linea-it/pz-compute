@@ -8,18 +8,18 @@ from pathlib import Path
 ############################ DASK ############################
 from dask.distributed import Client, performance_report
 from dask_jobqueue import SLURMCluster
-######################## HIPSCAT ######################
-### HIPSCAT
-import hipscat
-from hipscat_import.catalog.file_readers import ParquetReader
-from hipscat_import.margin_cache.margin_cache_arguments import MarginCacheArguments
-from hipscat_import.pipeline import ImportArguments, pipeline_with_client  
+######################## HATS ######################
+### HATS
+import hats
+from hats_import.catalog.file_readers import ParquetReader
+from hats_import.margin_cache.margin_cache_arguments import MarginCacheArguments
+from hats_import.pipeline import ImportArguments, pipeline_with_client  
 ###########################################################################################
 
 ######################### CONFIGURAÇÃO DOS PATHS DO USUÁRIO ###############################
 # Identificar o path do usuário
 user = getpass.getuser()
-base_path = f'/lustre/t0/scratch/users/{user}/hipscat_files'
+base_path = f'/lustre/t0/scratch/users/{user}/hats_files'
 
 # Criar pastas 'output' e 'logs' se não existirem
 user_output_dir = os.path.join(base_path, 'output')
@@ -30,37 +30,34 @@ os.makedirs(user_logs_dir, exist_ok=True)
 
 ################################## CONFIGURAÇÕES DE INPUT #################################
 ### Diretório e nome dos arquivos de input. O nome pode ser uma lista ou conter um wildcard, ex: files_*.parquet.
-CATALOG_DIR = Path('/lustre/t1/cl/lsst/dp01/primary/catalogs/truth')
-CATALOG_FILES = 'truth_tract507*.parquet'
+CATALOG_DIR = Path('/lustre/t1/cl/lsst/dp02/primary/catalogs/object')
+CATALOG_FILES = '*.parq'
 ### Colunas a serem selecionadas no arquivo de input. As colunas de id, ra e dec são indispensáveis.
-CATALOG_SELECTED_COLUMNS = ['id', 'host_galaxy', 'ra', 'dec', 'redshift', 'is_variable',
-                            'is_pointsource', 'flux_u', 'flux_g', 'flux_r', 'flux_i', 'flux_z',
-                            'flux_y', 'flux_u_noMW', 'flux_g_noMW', 'flux_r_noMW', 'flux_i_noMW',
-                            'flux_z_noMW', 'flux_y_noMW', 'tract', 'patch', 'truth_type',
-                            'cosmodc2_hp', 'cosmodc2_id', 'mag_r', 'match_objectId', 'match_sep',
-                            'is_good_match', 'is_nearest_neighbor', 'is_unique_truth_entry']
-CATALOG_SORT_COLUMN = 'id'
-CATALOG_RA_COLUMN = 'ra'
-CATALOG_DEC_COLUMN = 'dec'
+CATALOG_SELECTED_COLUMNS = ['objectId', 'detect_isPrimary', 'coord_ra', 'coord_dec', 'u_cModelFlux', 'g_cModelFlux', 'r_cModelFlux',
+                            'i_cModelFlux', 'z_cModelFlux', 'y_cModelFlux', 'u_cModelFluxErr', 'g_cModelFluxErr', 'r_cModelFluxErr',
+                            'i_cModelFluxErr', 'z_cModelFluxErr', 'y_cModelFluxErr']
+CATALOG_SORT_COLUMN = 'objectId'
+CATALOG_RA_COLUMN = 'coord_ra'
+CATALOG_DEC_COLUMN = 'coord_dec'
 ### Tipo de arquivos que serão lidos.
 FILE_TYPE = 'parquet'
-### Nomes do catálogo HiPSCat a ser salvo.
-CATALOG_HIPSCAT_NAME = 'test_truth_hipscat'
+### Nomes do catálogo HATS a ser salvo.
+CATALOG_HATS_NAME = 'DP02_object_hats'
 ###########################################################################################
 
 ################################# CONFIGURAÇÕES DE OUTPUT #################################
 ### Diretório de output para os catálogos.
 OUTPUT_DIR = Path(user_output_dir)
-HIPSCAT_DIR_NAME = 'hipscat'
-HIPSCAT_DIR = OUTPUT_DIR / HIPSCAT_DIR_NAME
+HATS_DIR_NAME = 'hats'
+HATS_DIR = OUTPUT_DIR / HATS_DIR_NAME
 
-### Nomes para os outputs do catalógo e do cache de margem no formato HiPSCat.
-CATALOG_HIPSCAT_DIR = HIPSCAT_DIR / CATALOG_HIPSCAT_NAME
+### Nomes para os outputs do catalógo e do cache de margem no formato HATS.
+CATALOG_HATS_DIR = HATS_DIR / CATALOG_HATS_NAME
 
 ### Caminho para o relatório de desempenho do Dask.
 LOGS_DIR = Path(user_logs_dir) 
 
-PERFORMANCE_REPORT_NAME = 'performance_report_make_hipscat.html'
+PERFORMANCE_REPORT_NAME = 'performance_report_make_hats_object.html'
 PERFORMANCE_DIR = LOGS_DIR / PERFORMANCE_REPORT_NAME
 ###########################################################################################
 
@@ -75,8 +72,8 @@ cluster = SLURMCluster(
     walltime='02:30:00',  # Tempo máximo de execução
     job_extra_directives=[
         '--propagate',
-        f'--output={LOGS_DIR}/make_hipscat_dask_job_%j.out',  # Redireciona a saída para a pasta output
-        f'--error={LOGS_DIR}/make_hipscat_dask_job_%j.err'    # Redireciona o erro para a pasta output
+        f'--output={LOGS_DIR}/make_hats_object_dask_job_%j.out',  # Redireciona a saída para a pasta output
+        f'--error={LOGS_DIR}/make_hats_object_dask_job_%j.err'    # Redireciona o erro para a pasta output
     ],                                             
 )
 
@@ -103,8 +100,8 @@ with performance_report(filename=PERFORMANCE_DIR):
             dec_column=CATALOG_DEC_COLUMN,
             input_file_list=CATALOG_PATHS,
             file_reader=ParquetReader(column_names=CATALOG_SELECTED_COLUMNS),
-            output_artifact_name=CATALOG_HIPSCAT_NAME,
-            output_path=HIPSCAT_DIR,
+            output_artifact_name=CATALOG_HATS_NAME,
+            output_path=HATS_DIR,
         )
         pipeline_with_client(catalog_args, client)
     else:
