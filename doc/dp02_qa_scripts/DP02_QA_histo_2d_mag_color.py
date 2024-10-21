@@ -111,6 +111,8 @@ with performance_report(filename=performance_report_path):
     processed_dfs = [delayed(replace_nan_inf_and_calculate_colors)(df, file) for df, file in zip(dfs, file_list)]
     ddf = dd.from_delayed(processed_dfs)
 
+    ddf = ddf[ddf['detect_isPrimary'] == True]
+    
     all_data = []
     graphs = {
         'u_x_umg': ('mag_u', 'umg'),

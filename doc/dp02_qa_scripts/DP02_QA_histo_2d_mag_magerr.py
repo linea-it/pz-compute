@@ -82,6 +82,8 @@ with performance_report(filename=performance_report_path):
     dfs = [delayed(read_hdf5)(file) for file in file_list]
     ddf = dd.from_delayed(dfs)
 
+    ddf = ddf[ddf['detect_isPrimary'] == True]
+    
     all_data = []
     for band in bins.keys():
         total_histogram = compute_total_histogram(ddf, band)

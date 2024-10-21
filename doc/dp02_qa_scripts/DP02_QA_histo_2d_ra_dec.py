@@ -75,6 +75,8 @@ with performance_report(filename=performance_report_path):
     dfs = [delayed(read_hdf5)(file) for file in file_list]
     ddf = dd.from_delayed(dfs)
 
+    ddf = ddf[ddf['detect_isPrimary'] == True]
+    
     total_histogram_ra_dec = compute_total_histogram(ddf)
     all_data = [
         {'type': 'histogram_ra_dec', 'values': total_histogram_ra_dec.tolist()},

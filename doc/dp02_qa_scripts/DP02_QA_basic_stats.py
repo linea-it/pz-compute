@@ -74,6 +74,8 @@ def read_hdf5(file):
 with performance_report(filename=performance_report_path):
     dfs = [delayed(read_hdf5)(file) for file in file_list]
     ddf = dd.from_delayed(dfs)
+
+    ddf = ddf[ddf['detect_isPrimary'] == True]
     
     basic_stats = compute_basic_stats(ddf)
     basic_stats_filtered = compute_basic_stats_filtered(ddf)

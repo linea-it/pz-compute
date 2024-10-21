@@ -1,5 +1,5 @@
 **Instructions for running the DP02_QA scripts in the Apollo Cluster**
-Last updated: September 4, 2024
+Last updated: October 21, 2024
 
 1. In LIneA's HPC environment, clean your conda and pip:
 ```bash

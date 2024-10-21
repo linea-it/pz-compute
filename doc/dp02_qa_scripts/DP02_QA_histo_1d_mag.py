@@ -79,6 +79,7 @@ def process_file(file, banda):
     coluna = f'mag_{banda}'
     bin_edges = bins[banda]
     df = read_hdf5(file)
+    df = df[df['detect_isPrimary'] == True]
     histogram = compute_histogram(df, file, coluna, bin_edges, banda)
     return histogram
 
