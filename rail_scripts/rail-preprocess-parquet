@@ -9,10 +9,10 @@ Usage:
 Options:
     -h, --help                Show help text.
     --version                 Show version.
-    -f, --flux                Force using the flux columns instead of the
-                              magnitude ones.
-    -r <rows>, --rows=<rows>  Maximum number of rows per output file
-                              [default: 150000].
+    -f, --flux                        Force using the flux columns instead of 
+                                      magnitude ones.
+    -r <rows>, --rows=<rows>          Maximum number of rows per output file
+                                      [default: 150000].
     --output-template=<template>      Set the names of the output files
                                       [default: {fname}-part{idx}{ext}].
     --flux-template=<template>        Set the names of the flux columns
@@ -36,7 +36,11 @@ Options:
                                       Github [default: None]. 
     --round-mags=<n_decimal_cases>    Number of decimal cases for rounding 
                                       magnitudes and errors [default: None].   
-
+    --apply-detect-flag=<False>       Filter out objects with boolean flag
+                                      detect_isPrimary equals False. Use True 
+                                      to include only primary detections, use
+                                      False to include the whole data with no 
+                                      filtering. [default: False]
 
 The following preprocessing steps are currently implemented:
 - Limit number of rows per file to a maximum, splitting the file if necessary.
@@ -50,7 +54,10 @@ The following preprocessing steps are currently implemented:
   package (https://dustmaps.readthedocs.io/en/latest/index.html) (optional). 
 - Round magnitudes and errors to remove fictitious precision and save storage
   space (optional).    
+- Apply data cleaning based on detect_isPrimary flag (optional). 
 
+Future work: 
+- Support to datasets without u-band (DES-like) 
 
 Preprocessing is done as efficiently as possible and memory usage is limited
 even with arbitrarily large files.
@@ -89,7 +96,7 @@ Configuration = namedtuple('Configuration',
                             'flux_error_template', 'mag_template',
                             'mag_error_template', 'rows', 'flux',
                             'output_template', 'ra','dec', 'apply_dered',
-                            'round_mags'))
+                            'round_mags', 'apply_detect_flag'))
 
 def parse_cmdline():
     args = docopt(__doc__, version=VERSION_TEXT)
@@ -111,7 +118,8 @@ def parse_cmdline():
                          ra=args['--ra'], 
                          dec=args['--dec'],
                          apply_dered=args['--apply-dered'],
-                         round_mags=args['--round-mags'])
+                         round_mags=args['--round-mags'],
+                         apply_detect_flag=args['--apply-detect-flag'])
 
 def build_output_name(file_name, index, template, extension=DEFAULT_EXT):
     file_name = basename(file_name)
@@ -126,12 +134,13 @@ def parquet_check_column_presence(parquet, flux, mag, ra, dec):
     has_flux = all(col in columns for col in flux)
     has_ra = ra in columns
     has_dec = dec in columns
+    has_detect = "detect_isPrimary" in columns
 
-    return has_magnitude, has_flux, has_ra, has_dec
+    return has_magnitude, has_flux, has_ra, has_dec, has_detect
 
-def choose_columns(has_ra, has_dec, has_magnitude, has_flux, 
+def choose_columns(has_ra, has_dec, has_detect, has_magnitude, has_flux, 
                     ra, dec, flux, flux_columns, flux_error_columns, 
-                   mag_columns, mag_error_columns):
+                    mag_columns, mag_error_columns):
     
     coord_columns = [] 
 
@@ -144,7 +153,12 @@ def choose_columns(has_ra, has_dec, has_magnitude, has_flux,
         error('Warning: coordinate Dec. not found.')
     else:
         coord_columns.append(dec)
-
+    
+    if not has_detect:
+        info('Warning: detect_isPrimary flag not found.')
+    else:
+        coord_columns.append("detect_isPrimary")
+ 
     if not has_magnitude and not has_flux:
         error('Error: magnitude or flux columns not found.')
         abort()
@@ -221,6 +235,12 @@ def dered(apply_dered, table, values, ra_column, dec_column):
     
     return table
 
+
+def apply_primary_detection_filter(table):
+    table = table.query('detect_isPrimary == True', inplace=True)
+    return table
+
+
 def convert_to_magnitude(table, flux_columns, flux_error_columns, 
                          mag_columns, mag_error_columns):
     
@@ -241,26 +261,29 @@ def preprocess(cfg):
     dec_column = cfg.dec 
     apply_dered = cfg.apply_dered
     round_mags = cfg.round_mags
+    apply_detect_flag = cfg.apply_detect_flag
+    
     try:
         # Note: specifying a buffer size seems to be necessary for
         # iter_batches() to efficiently deal with allocations smaller than 1 row
         # group. The resulting memory allocation reduction, however, is unclear.
         with ParquetFile(cfg.input, buffer_size=BUFFER_SIZE) as f:
             total_rows = f.metadata.num_rows
-
+            
             if total_rows < 1:
                 #print(input_)
                 return
 
-            has_magnitude, has_flux, has_ra, has_dec = parquet_check_column_presence(
+            has_magnitude, has_flux, has_ra, has_dec, has_detect = parquet_check_column_presence(
                     f, flux_columns + flux_error_columns,
                     mag_columns + mag_error_columns, 
                     ra_column, dec_column)
+            
             use_flux, coord_columns, value_columns, error_columns = choose_columns(
-                    has_ra, has_dec, has_magnitude, has_flux, 
+                    has_ra, has_dec, has_detect, has_magnitude, has_flux, 
                     cfg.ra, cfg.dec, cfg.flux, flux_columns, 
                     flux_error_columns, mag_columns, mag_error_columns)
-            
+           
             all_columns = coord_columns + value_columns + error_columns
             num_files = ceil(total_rows/cfg.rows)
             batch_size = ceil(total_rows/num_files)
@@ -281,7 +304,11 @@ def preprocess(cfg):
             
                 if table.index.name == 'objectId':
                     table.reset_index(inplace=True)
-                    
+                  
+                if apply_detect_flag == 'True':
+                    if has_detect:
+                        apply_primary_detection_filter(table)
+
                 if apply_dered != 'None': 
                     dered(apply_dered, table, mag_columns, 
                           ra_column, dec_column)
@@ -307,5 +334,6 @@ def preprocess(cfg):
 def main():
     cfg = parse_cmdline()
     preprocess(cfg)
+    print('Done!') 
 
 if __name__ == '__main__': main()
