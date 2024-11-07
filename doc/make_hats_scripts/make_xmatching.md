@@ -1,5 +1,5 @@
 **Instructions for running the make_xmatching script in the Apollo Cluster**
-Last updated: October 18, 2024
+Last updated: November 01, 2024
 
 **WARNING**
 Before running this script, you must run the make_hats_object, make_hats_truth and make_margin_cache with the default configurations.
@@ -21,22 +21,13 @@ conda config --append channels conda-forge
 
 3. Create a conda virtual environment named "hats_env", activate it and install all the necessary packages:
 ```bash
-conda create -n hats_env
+conda create -n hats_env python=3.12.7
 ```
 ```bash
 conda activate hats_env
 ```
 ```bash
-conda install -c conda-forge numpy dask dask-jobqueue distributed
-```
-```bash
-pip install git+https://github.com/astronomy-commons/hats.git@main
-```
-```bash
-pip install git+https://github.com/astronomy-commons/hats-import.git@main
-```
-```bash
-pip install git+https://github.com/astronomy-commons/lsdb.git@main
+conda install -c conda-forge --override-channels numpy dask dask-jobqueue distributed hats=0.4.2 hats-import=0.4.1 lsdb=0.4.1
 ```
 Note: the name of the environment must be "hats_env". If you choose another name, you must change the .sbatch scripts accordingly.
 

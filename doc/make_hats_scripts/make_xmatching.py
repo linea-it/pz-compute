@@ -74,9 +74,10 @@ client = Client(cluster)
 ############################### EXECUTANDO O PIPELINE ######################################
 with performance_report(filename=PERFORMANCE_DIR):
     ### Lendo os dados salvos no formato HATS.
+    
+    
     left_catalog = lsdb.read_hats(LEFT_HATS_DIR)
-    right_margin_cache_catalog = lsdb.read_hats(RIGHT_MARGIN_CACHE_DIR)
-    right_catalog = lsdb.read_hats(RIGHT_HATS_DIR, margin_cache=right_margin_cache_catalog)
+    right_catalog = lsdb.read_hats(RIGHT_HATS_DIR, margin_cache=RIGHT_MARGIN_CACHE_DIR)
     
     ### Executando o crossmatching.
     xmatched = left_catalog.crossmatch(
@@ -85,7 +86,7 @@ with performance_report(filename=PERFORMANCE_DIR):
         n_neighbors=NEIGHBORS_NUMBER,
         suffixes=(LEFT_CATALOG_HATS_NAME, RIGHT_CATALOG_HATS_NAME),
     )
-    xmatched.to_hats(OUTPUT_HATS_DIR)
+    xmatched.to_hats(OUTPUT_HATS_DIR, overwrite=True)
     
 
 # Fechando o client
