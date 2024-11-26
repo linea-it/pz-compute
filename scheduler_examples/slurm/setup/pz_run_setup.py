@@ -207,7 +207,6 @@ def copy_run_notebook(args):
     notebook_file_origin = f"pz-compute-template.ipynb"
     notebook_file_dest = f"pz_compute_{args.process_id}.ipynb"
     dst = f"./{args.process_id}/{notebook_file_dest}"
-
     
     if ENV == "prod":
         src = f'{APP_PZ_COMPUTE_PATH}/ondemand/{notebook_file_origin}'
