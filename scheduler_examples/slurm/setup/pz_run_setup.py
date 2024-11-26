@@ -203,6 +203,23 @@ def copy_configs_file(args):
         print("Env not defined, not creating the configurations yaml")
         return
 
+def copy_run_notebook(args):
+    notebook_file_origin = f"pz-compute-template.ipynb"
+    notebook_file_dest = f"pz_compute_{args.process_id}.ipynb"
+    dst = f"./{args.process_id}/{notebook_file_dest}"
+
+    
+    if ENV == "prod":
+        src = f'{APP_PZ_COMPUTE_PATH}/ondemand/{notebook_file_origin}'
+        shutil.copy(src, dst)
+
+    elif ENV == "dev":
+        src = f'{SCRATCH}/pz-compute/ondemand/{notebook_file_origin}'
+        shutil.copy(src, dst)
+    else:
+        print("Env not defined, not copying the notebook for the run")
+        return
+    
     
 def main():
     args = parse_cmd() 
@@ -219,5 +236,6 @@ def main():
     
     create_link_to_host_performance(args)
     copy_configs_file(args)
+    copy_run_notebook(args)
     
 if __name__ == '__main__': main()
