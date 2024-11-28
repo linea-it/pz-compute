@@ -25,6 +25,12 @@ conda install -y cython
 conda install -y mpi4py
 conda install -y numexpr
 
+conda install -y bokeh
+conda install -y holoviews
+conda install -y pyviz_comms
+conda install -y jupyter_bokeh
+conda install -y ipykernel
+
 pip install joblib
 pip install scikit-learn
 pip install scikit-learn-intelex
