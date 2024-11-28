@@ -31,6 +31,8 @@ conda install -y pyviz_comms
 conda install -y jupyter_bokeh
 conda install -y ipykernel
 
+conda install -y dask
+
 pip install joblib
 pip install scikit-learn
 pip install scikit-learn-intelex
