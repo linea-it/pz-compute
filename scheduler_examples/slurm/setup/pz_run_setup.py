@@ -60,7 +60,9 @@ def parse_cmd():
     else:
         print("remember to add the .pkl file for your run")
         args.will_train = False
-        
+    
+    args.env = ENV
+    
     return args
 
 
@@ -205,7 +207,7 @@ def copy_configs_file(args):
 
 def copy_run_notebook(args):
     notebook_file_origin = f"pz-compute-template.ipynb"
-    notebook_file_dest = f"pz_compute_{args.process_id}.ipynb"
+    notebook_file_dest = f"{args.process_id}.ipynb"
     dst = f"./{args.process_id}/{notebook_file_dest}"
     
     if ENV == "prod":
@@ -218,7 +220,6 @@ def copy_run_notebook(args):
     else:
         print("Env not defined, not copying the notebook for the run")
         return
-    
     
 def main():
     args = parse_cmd() 

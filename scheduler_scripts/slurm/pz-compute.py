@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from dataclasses import dataclass, replace
-from os import environ, execv
-from os.path import expandvars
+from os import environ, execv, system
+from os.path import expandvars, dirname
 from pathlib import Path
 from shlex import split
 from shutil import which
@@ -120,11 +120,31 @@ def seconds_to_time(seconds):
 
     return '%d:%02d:%02d' % (hours, minutes, seconds)
 
+def activate_environment_for_ondemand(env):
+    if env == "prod":
+        print("we dont have a prod environment yet")
+    elif env == "dev":
+        conda_env_path = dirname(dirname(executable))
+        base_conda_path = dirname(dirname(conda_env_path))
+        
+        command =  f"source {base_conda_path}/etc/profile.d/conda.sh && conda activate {conda_env_path} && export PATH=$PATH:$SCRATCH/bin && export DUSTMAPS_CONFIG_FNAME=$SCRATCH/pz-compute/rail_scripts/dustmaps_config.json && export PATH=$PATH:$SCRATCH/pz-compute/scheduler_examples/slurm"
+        
+        print("Activating env")
+        system(command)
+    else:
+        print("no env, not defined")
+
 def run(config):
     cmd = [config.sbatch]
 
     if config.sbatch_args:
         cmd += config.sbatch_args
+
+    env = environ.get('ENVIRONMENT')
+    print("-----> ENV: ", env, "<-----")
+    env = "dev"
+    if env is not None:
+        activate_environment_for_ondemand(env)
 
     if config.time_limit is not None:
         cmd += ['--time=' + seconds_to_time(config.time_limit)]

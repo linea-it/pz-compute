@@ -59,7 +59,7 @@ def time_profiler(process_dir, file_path):
                 else:
                     raise "error while collecting time os processes"
                     
-    plt.figure(figsize=(16, 12))
+    plt.figure(figsize=(12, 8))
     plt.hlines(process_ids, start_times, end_times, color='k', linewidth=0.2)
 
     plt.scatter(start_times, process_ids, color='teal', label='Start', s=2, zorder=2)
@@ -129,17 +129,45 @@ def run_paralell_post_process(process_dir):
                         for name, item in origin.items():
                             if name == "yvals" or name == "xvals":
                                 continue
+                            elif name == "zmode":
+                                continue
                             elif isinstance(item, h5py.Group):
                                 new_group = destin.create_group(name)
                                 copy_group(item, new_group)
                             else:
                                 destin.create_dataset(name, data=item[()])
-                    
+                            
                     copy_group(f_src, f_dst)
                     f_dst['data']["yvals"] = [yval]
                     f_dst['meta']["xvals"] = [f_src['meta']["xvals"][0]]
                     
             return qp.read(output_file_hdf5)
+        
+        def plot_stack_z(ens):
+            test_xvals = ens.gen_obj.xvals
+            pdfs = ens.pdf(test_xvals)
+            pdfs_stack = pdfs.sum(axis=0)
+            mean = ens.mean()
+
+            peak = pdfs_stack.max()
+            x_peak = test_xvals[np.where(pdfs_stack == peak)][0]
+            peak = round(peak, 2)
+            x_peak = round(x_peak, 2)
+            mean = round(mean[0][0], 2) 
+
+            plt.plot(test_xvals, pdfs_stack)
+
+            plt.vlines(x_peak, 0, peak, label=f'z mean: {mean}', linestyles='dashed')
+            plt.plot(x_peak, peak, marker = 'o', label=f'value of z {x_peak}, peak of data: {peak}')
+
+            plt.xlabel('z values', fontsize=11)
+            plt.ylabel('stack pdfs', fontsize=11)
+            plt.axis([0, test_xvals.max(), 0, x_peak+0.2])
+            
+            plt.legend(loc="upper right")
+
+            output_img_path = os.path.join(process_dir, f'stack_nz.png')
+            plt.savefig(output_img_path)
         
         parts = [delayed(read_hdf5)(file) for file in file_list]
         
@@ -152,33 +180,9 @@ def run_paralell_post_process(process_dir):
         zmode_values=pd.DataFrame(data.drop(['objects'], inplace=True))
 
         stacked_yval = [x for x in data]
+        
         ens = transform_output_to_ensenble(stacked_yval)
-
-        test_xvals = ens.gen_obj.xvals
-        pdfs = ens.pdf(test_xvals)
-        pdfs_stack = pdfs.sum(axis=0)
-        mean = ens.mean()
-
-        peak = pdfs_stack.max()
-        x_peak = test_xvals[np.where(pdfs_stack == peak)][0]
-        peak = round(peak, 2)
-        x_peak = round(x_peak, 2)
-        mean = round(mean[0][0], 2) 
-        
-        output_img_path = os.path.join(process_dir, f'stack_nz.png')
-
-        plt.plot(test_xvals, pdfs_stack)
-
-        plt.vlines(x_peak, 0, mean, label=f'z mean: {mean}', linestyles='dashed')
-        plt.plot(x_peak, peak, marker = 'o', label=f'value of z, peak of data: {x_peak}')
-        
-        plt.xlabel('z values', fontsize=11)
-        plt.ylabel('stack pdfs', fontsize=11)
-        plt.axis([0, test_xvals.max(), 0, x_peak])
-        
-        plt.legend(loc="upper right")
-        
-        plt.savefig(output_img_path)
+        plot_stack_z(ens)
         
         return f'{total_objects:_}'
 
