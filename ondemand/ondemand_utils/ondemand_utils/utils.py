@@ -51,8 +51,6 @@ def run_command(command_text):
     conda_env_path = os.path.dirname(os.path.dirname(current_python))
     base_conda_path = os.path.dirname(os.path.dirname(conda_env_path))
     
-    print(f"Active Conda environment path: {conda_env_path}")
-    
     command = f"source {base_conda_path}/etc/profile.d/conda.sh && conda activate {conda_env_path} && export PATH=$PATH:$SCRATCH/bin && export DUSTMAPS_CONFIG_FNAME=$SCRATCH/pz-compute/rail_scripts/dustmaps_config.json && export PATH=$PATH:$SCRATCH/pz-compute/scheduler_examples/slurm && {command_text}"
     os.system(command)
 
@@ -104,7 +102,7 @@ def run_pz_train(env="dev"):
     else:
         raise NotValidEnvironment("env property should be 'dev' or 'prod'")
         
-def run_pz_compute(env="dev"):    
+def run_pz_compute(env="dev"):
     if env == "dev":
         run_command("pz-compute-dev")
     elif env == "prod":
