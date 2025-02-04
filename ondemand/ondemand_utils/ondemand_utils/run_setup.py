@@ -143,22 +143,6 @@ def create_required_dirs(args):
         os.makedirs(f'{process_dir}/input', exist_ok = True)
     except OSError as error:
         print('Failed to create directories')
-         
-        
-def create_link_to_host_performance(args):
-    rail_path = ""
-   
-    if ENV == "prod":
-        rail_path = f'{APP_PZ_COMPUTE_PATH}/performance'
-    elif ENV == "dev":
-        rail_path = f'{SCRATCH}/pz-compute/performance'
-    else:
-        print("Env not defined, not linking the performance script")
-        return
-
-    os.symlink(f'{rail_path}/slurm/slurm-analyze-host-performance.py', f'{args.creation_path}/{args.process_id}/slurm-analyze-host-performance.py')
-    os.symlink(f'{rail_path}/slurm/slurm-analyze-host-performance.sbatch', f'{args.creation_path}/{args.process_id}/slurm-analyze-host-performance.sbatch')
-
     
 def add_input_data(args):
     if args.use_all_dp0_dataset:
@@ -210,7 +194,22 @@ def copy_configs_file(args):
     else:
         print("Env not defined, not creating the configurations yaml")
         return
+    
+def copy_run_notebook(args):
+    notebook_file_origin = f"pz-compute-template.ipynb"
+    notebook_file_dest = f"{args.process_id}.ipynb"
+    dst = f"{args.creation_path}/{args.process_id}/{notebook_file_dest}"
+    
+    if ENV == "prod":
+        src = f'{APP_PZ_COMPUTE_PATH}/ondemand/{notebook_file_origin}'
+        shutil.copy(src, dst)
 
+    elif ENV == "dev":
+        src = f'{SCRATCH}/pz-compute/ondemand/{notebook_file_origin}'
+        shutil.copy(src, dst)
+    else:
+        print("Env not defined, not copying the notebook for the run")
+        return
     
 def create_run_dir(algorithm=None, process_id=None, comment=None, will_train=False, creation_path=None, use_all_dp0_dataset=False, env="dev"):
     args = define_setup_dir(process_id, comment, algorithm, will_train, creation_path, use_all_dp0_dataset, env) 
@@ -224,5 +223,5 @@ def create_run_dir(algorithm=None, process_id=None, comment=None, will_train=Fal
     
     print_output(args, yaml_file)
     
-    create_link_to_host_performance(args)
     copy_configs_file(args)
+    copy_run_notebook(args)

@@ -111,4 +111,4 @@ def run_pz_compute(env="dev"):
         raise NotValidEnvironment("env property should be 'dev' or 'prod'")
         
 def run_post_process_evaluation():
-    run_command('python slurm-analyze-host-performance.py')
+    run_command('python $SCRATCH/pz-compute/performance/slurm/slurm-analyze-host-performance.py')
