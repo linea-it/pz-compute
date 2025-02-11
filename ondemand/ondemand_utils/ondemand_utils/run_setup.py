@@ -37,9 +37,10 @@ from datetime import datetime
 
 
 ENV = None
-APP_PZ_COMPUTE_PATH = '/lustre/t0/scratch/users/app.photoz/pz-compute'
 SCRATCH = os.environ.get('SCRATCH')
-LSST_DP02 = '/lustre/t1/cl/lsst/dp0.2/secondary/catalogs/skinny/hdf5/'
+
+APP_PZ_COMPUTE_PATH = '/lustre/t0/scratch/users/app.photoz/pz-compute'
+LSST_DP02 = '/lustre/t1/cl/lsst/dp02/secondary/catalogs/skinny/hdf5/'
 
 class SetupDir:
     def __init__(self, process_id, comment, algorithm, will_train, creation_path, use_all_dp0_dataset):
@@ -121,7 +122,7 @@ def create_yaml_pz_compute_train(args):
     
     yaml.add_representer(list, represent_list)
     
-    configs_train = {'algorithm': args.algorithm, 'sbatch_args': ["-N1", "-n1"], 'param_file':f"{args.algorithm}_train.yaml", 'inputfile:':"train-file.hdf5"}
+    configs_train = {'algorithm': args.algorithm, 'sbatch_args': ["-N1", "-n1"], 'param_file':f"{args.algorithm}_train.yaml", 'inputfile':"train-file.hdf5"}
     
     with open(yaml_file_config, 'w') as outfile:
         yaml.dump(configs_train, outfile, default_flow_style=False)
@@ -196,7 +197,7 @@ def copy_configs_file(args):
         return
     
 def copy_run_notebook(args):
-    notebook_file_origin = f"pz-compute-template.ipynb"
+    notebook_file_origin = f"2.pz-compute-template.ipynb"
     notebook_file_dest = f"{args.process_id}.ipynb"
     dst = f"{args.creation_path}/{args.process_id}/{notebook_file_dest}"
     

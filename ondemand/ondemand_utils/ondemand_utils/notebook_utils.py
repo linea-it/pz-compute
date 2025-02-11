@@ -71,20 +71,23 @@ def get_last_job_id():
 def monitor_job(job_id, check_interval=10):
     print(f"Monitoring status Job {job_id}\n", flush=True)
     
+    dots = "."
+    
     while True:
         status = __check_slurm_job_status(job_id)
         
         if status is None:
-            print(f"Job id {job_id} not found or does not exist.")
+            print(f"Job id {job_id} not found or does not exist.", flush=True, end='\r')
             break
         
-        print(f"Job status {job_id}: {status}", flush=True)
         
+        print(f"Job status {job_id}: {status} | {dots}", flush=True, end='\r')
+        dots = dots+'.'
         if status == "COMPLETED":
-            print(f"Job {job_id} completed!")
+            print(f"Job {job_id} completed!", flush=True, end='\r')
             break
         elif status in ["FAILED", "CANCELLED", "TIMEOUT"]:
-            print(f"Job {job_id} failed with status: {status}.")
+            print(f"Job {job_id} failed with status: {status}.", flush=True, end='\r')
             break
         
         time.sleep(check_interval) 
@@ -95,6 +98,7 @@ def run_pz_train(env="dev"):
         print("A train run was not configured to be executed, skipping this step")
         return
     
+    raise Exception("This is not working yet, use your terminal!")
     if env == "dev":
         run_command("pz-train-dev")
     elif env == "prod":
@@ -103,6 +107,7 @@ def run_pz_train(env="dev"):
         raise NotValidEnvironment("env property should be 'dev' or 'prod'")
         
 def run_pz_compute(env="dev"):
+    raise Exception("This is not working yet, use your terminal!")
     if env == "dev":
         run_command("pz-compute-dev")
     elif env == "prod":

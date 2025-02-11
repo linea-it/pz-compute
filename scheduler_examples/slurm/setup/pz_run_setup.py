@@ -39,7 +39,7 @@ from datetime import datetime
 ENV = os.environ.get('ENVIRONMENT') or "prod"
 APP_PZ_COMPUTE_PATH = '/lustre/t0/scratch/users/app.photoz/pz-compute'
 SCRATCH = os.environ.get('SCRATCH')
-LSST_DP02 = '/lustre/t1/cl/lsst/dp0.2/secondary/catalogs/skinny/hdf5/'
+LSST_DP02 = '/lustre/t1/cl/lsst/dp02/secondary/catalogs/skinny/hdf5/'
 
 def parse_cmd():
     parser = argparse.ArgumentParser()
@@ -206,7 +206,7 @@ def copy_configs_file(args):
         return
 
 def copy_run_notebook(args):
-    notebook_file_origin = f"pz-compute-template.ipynb"
+    notebook_file_origin = f"2.pz-compute-template.ipynb"
     notebook_file_dest = f"{args.process_id}.ipynb"
     dst = f"./{args.process_id}/{notebook_file_dest}"
     

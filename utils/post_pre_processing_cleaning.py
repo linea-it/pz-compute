@@ -12,10 +12,11 @@ import time
 import tables_io
 import getpass
 
-# Identificar o path do usuário
 user = getpass.getuser()
 base_path = f'/lustre/t0/scratch/users/{user}/post_pre_processing/'
 bands = ['u','g','r','i','z','y']
+PATH_FOR_SKINNY = '/lustre/t1/cl/lsst/dp02/secondary/catalogs/skinny/hdf5/*.hdf5'
+PATH_OUTPUT_DIR = f'/lustre/t0/scratch/users/{user}/output_post_pre_process'
 
 def apply_validations(df):
     df = df.dropna()
@@ -60,8 +61,8 @@ def main():
     performance_report_path = os.path.join(output_dir, f'performance_report.html')
 
     with performance_report(filename=performance_report_path):
-        file_list = glob.glob('/lustre/t1/cl/lsst/dp02/secondary/catalogs/skinny/hdf5/*.hdf5')
-        files_output_dir = '/lustre/t0/scratch/users/heloisa.mengisztki/hdf5_tpz'
+        file_list = glob.glob(PATH_FOR_SKINNY)
+        files_output_dir = PATH_OUTPUT_DIR
         
         print(f"Quantidade arquivos entrada {len(file_list)}", flush=True)
         
