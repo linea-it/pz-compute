@@ -1,8 +1,7 @@
 # config.yaml
 
 data_path: "None"    
-#columns_file: "test_bpz.columns"
-#spectra_file: "CWWSB4.list"     
+spectra_file: "CWWSB4.list"     
 m0: 20.0 
 nt_array: [1, 2, 3] 
 mmin: 18.0 

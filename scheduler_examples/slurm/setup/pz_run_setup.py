@@ -96,7 +96,7 @@ def create_yaml_pz_compute_train(args):
     
     yaml.add_representer(list, represent_list)
     
-    configs_train = {'algorithm': args.algorithm, 'sbatch_args': ["-N1", "-n1"], 'param_file':f"{args.algorithm}_train.yaml", 'inputfile:':"train-file.hdf5"}
+    configs_train = {'algorithm': args.algorithm, 'sbatch_args': ["-N1", "-n1"], 'param_file':f"{args.algorithm}_train.yaml", 'inputfile':"train-file.hdf5"}
     
     with open(yaml_file_config, 'w') as outfile:
         yaml.dump(configs_train, outfile, default_flow_style=False)
@@ -138,20 +138,6 @@ def create_test_dir(args):
             args.process_id = f'test_pz_compute_{args.algorithm}_0'
          
         
-def create_link_to_host_performance(args):
-    rail_path = ""
-   
-    if ENV == "prod":
-        rail_path = f'{APP_PZ_COMPUTE_PATH}/performance'
-    elif ENV == "dev":
-        rail_path = f'{SCRATCH}/pz-compute/performance'
-    else:
-        print("Env not defined, not linking the performance script")
-        return
-
-    os.symlink(f'{rail_path}/slurm/slurm-analyze-host-performance.py', f'./{args.process_id}/slurm-analyze-host-performance.py')
-    os.symlink(f'{rail_path}/slurm/slurm-analyze-host-performance.sbatch', f'./{args.process_id}/slurm-analyze-host-performance.sbatch')
-
 def add_input_data(args):
     user_input = input("Do you want to use the complete LSST DP0.2 dataset? (yes/no): ").strip().lower()
     
@@ -234,7 +220,6 @@ def main():
     
     print_output(args, yaml_file)
     
-    create_link_to_host_performance(args)
     copy_configs_file(args)
     copy_run_notebook(args)
     
