@@ -125,21 +125,12 @@ def run_paralell_post_process(process_dir):
             
             with h5py.File(file_to_copy, 'r') as f_src:
                 with h5py.File(output_file_hdf5, 'w') as f_dst:
-                    def copy_group(origin, destin):
-                        for name, item in origin.items():
-                            if name == "yvals" or name == "xvals":
-                                continue
-                            elif name == "zmode":
-                                continue
-                            elif isinstance(item, h5py.Group):
-                                new_group = destin.create_group(name)
-                                copy_group(item, new_group)
-                            else:
-                                destin.create_dataset(name, data=item[()])
-                            
-                    copy_group(f_src, f_dst)
-                    f_dst['data']["yvals"] = [yval]
-                    f_dst['meta']["xvals"] = [f_src['meta']["xvals"][0]]
+                    data_group = f_dst.create_group('data')
+                    data_group.create_dataset('yvals', data=[yval], dtype='f8') 
+                    meta_group = f_dst.create_group('meta')
+                    meta_group.create_dataset('pdf_name', data=[f_src['meta']["pdf_name"][0]], dtype=h5py.string_dtype(encoding='ascii', length=6))
+                    meta_group.create_dataset('pdf_version', data=[f_src['meta']["pdf_version"][0]], dtype='i8')
+                    meta_group.create_dataset('xvals', data=[f_src['meta']["xvals"][0]], dtype='f8')
                     
             return qp.read(output_file_hdf5)
         
@@ -157,13 +148,13 @@ def run_paralell_post_process(process_dir):
 
             plt.plot(test_xvals, pdfs_stack)
 
-            plt.vlines(x_peak, 0, peak, label=f'z mean: {mean}', linestyles='dashed')
+            plt.vlines(mean, 0, peak+0.2, label=f'z mean: {mean}', linestyles='dashed')
             plt.plot(x_peak, peak, marker = 'o', label=f'value of z {x_peak}, peak of data: {peak}')
 
             plt.xlabel('z values', fontsize=11)
             plt.ylabel('stack pdfs', fontsize=11)
-            plt.axis([0, test_xvals.max(), 0, x_peak+0.2])
-            
+            plt.axis([0, test_xvals.max(), 0, peak+0.2])
+
             plt.legend(loc="upper right")
 
             output_img_path = os.path.join(process_dir, f'stack_nz.png')
