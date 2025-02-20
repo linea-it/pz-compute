@@ -153,7 +153,7 @@ def create_yaml_pz_compute_train(configs):
     
     yaml.add_representer(list, represent_list)
     
-    configs_train = {'algorithm': configs.algorithm, 'sbatch_args': ["-N1", "-n1"], 'param_file':f"{configs.algorithm}_train.yaml", 'inputfile':"train-file.hdf5"}
+    configs_train = {'algorithm': configs.algorithm, 'sbatch_args': ["-N1", "-n1"], 'param_file':f"{configs.algorithm}.yaml", 'inputfile':"train-file.hdf5"}
     
     with open(yaml_file_config, 'w') as outfile:
         yaml.dump(configs_train, outfile, default_flow_style=False)
@@ -163,7 +163,7 @@ def create_yaml_pz_compute(configs):
     
     yaml.add_representer(list, represent_list)
     
-    configs_pz_compute = {'algorithm': configs.algorithm, 'sbatch_args': ["-N5", "-n140"], 'param_file':f"{configs.algorithm}_estimate.yaml", 'calib_file':f"estimator_{configs.algorithm}.pkl"}
+    configs_pz_compute = {'algorithm': configs.algorithm, 'sbatch_args': ["-N5", "-n140"], 'param_file':f"{configs.algorithm}.yaml", 'calib_file':f"estimator_{configs.algorithm}.pkl"}
     
     with open(yaml_file_config, 'w') as outfile:
         yaml.dump(configs_pz_compute, outfile, default_flow_style=False)
@@ -202,26 +202,21 @@ def add_input_data(configs):
         print()
 
 def copy_configs_file(configs):
-    file_name_train = f"{configs.algorithm}_train.yaml"
-    file_name_estimate = f"{configs.algorithm}_estimate.yaml"
+    file_algoritm_configs = f"{configs.algorithm}.yaml"
     dst = f"{configs.creation_path}/{configs.process_id}/"
     
     if ENV == "prod":
         if configs.will_train:
-            src = f'{APP_PZ_COMPUTE_PATH}/doc/algorithms_config/{file_name_train}'
-            shutil.copy(src, dst)
             create_yaml_pz_compute_train(configs)
 
-        src = f'{APP_PZ_COMPUTE_PATH}/doc/algorithms_config/{file_name_estimate}'
+        src = f'{APP_PZ_COMPUTE_PATH}/doc/algorithms_config/{file_algoritm_configs}'
         shutil.copy(src, dst)
 
     elif ENV == "dev":
         if configs.will_train:
-            src = f'{SCRATCH}/pz-compute/doc/algorithms_config/{file_name_train}'
-            shutil.copy(src, dst)
             create_yaml_pz_compute_train(configs)
 
-        src = f'{SCRATCH}/pz-compute/doc/algorithms_config/{file_name_estimate}'
+        src = f'{SCRATCH}/pz-compute/doc/algorithms_config/{file_algoritm_configs}'
         shutil.copy(src, dst)
     else:
         print("Env not defined, not creating the configurations yaml")

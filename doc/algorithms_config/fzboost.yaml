@@ -1,5 +1,22 @@
 # config.yaml
 
+retrain_full:: true 
+trainfrac: 0.75 
+seed: 1138 
+bumpmin: 0.02 
+bumpmax: 0.35 
+nbump: 20 
+sharpmin: 0.7 
+sharpmax: 2.1 
+nsharp: 15 
+max_basis: 35 
+basis_system: 'cosine' 
+regression_params: 
+    max_depth: 8
+    objective: 'reg:squarederror' 
+zmin: 0.0
+zmax: 3.0 
+redshift_col:  "redshift" 
 qp_representation: "interp"
 nzbins: 301 
 nondetect_val: 99.0 
@@ -12,4 +29,4 @@ mag_limits:
    mag_y: 27.05
 bands: ["mag_u", "mag_g", "mag_r", "mag_i", "mag_z", "mag_y"]  
 err_bands: ["magerr_u", "magerr_g", "magerr_r", "magerr_i", "magerr_z", "magerr_y"]
-ref_band: "mag_i"
+ref_band: "mag_i" 
