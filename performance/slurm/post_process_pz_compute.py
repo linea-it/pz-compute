@@ -105,8 +105,38 @@ def run_paralell_post_process(process_dir):
     with performance_report(filename=performance_report_path):
         file_list = glob.glob(f'{process_dir}/output/*.hdf5')
         file_to_copy = file_list[0]
+        has_zmode = False
+        has_pdfs = False
+        bins = []
         
-        def read_hdf5(file):
+        data = tables_io.read(file_to_copy)
+        total_objects = 0
+        
+        if 'data' in data:
+            if 'yvals' in data['data']:
+                has_pdfs = True
+
+        if 'ancil' in data:
+            if 'zmode' in data['ancil']:
+                has_zmode = True
+        
+        if 'meta' in data:
+            if 'xvals' in data['meta']:
+                bins = data['meta']["xvals"][0]
+            else:
+                bins = np.linspace(0,3,301)
+        else:
+            bins = np.linspace(0,3,301)
+            
+        def read_zmodes(file):
+            data = tables_io.read(file)
+
+            zmodes = data['ancil']['zmode'][:]
+            df = pd.DataFrame(zmodes)
+
+            return df
+        
+        def read_pdfs(file):
             data = tables_io.read(file)
 
             y_vals = data['data']['yvals'][:]
@@ -120,7 +150,7 @@ def run_paralell_post_process(process_dir):
             return df
 
         def transform_output_to_ensenble(yval):
-            output_file_hdf5 = 'stacked_output_values.hdf5'
+            output_file_hdf5 = 'stacked_output_pdfs.hdf5'
             shutil.copy(file_to_copy, output_file_hdf5)
             
             with h5py.File(file_to_copy, 'r') as f_src:
@@ -130,11 +160,11 @@ def run_paralell_post_process(process_dir):
                     meta_group = f_dst.create_group('meta')
                     meta_group.create_dataset('pdf_name', data=[f_src['meta']["pdf_name"][0]], dtype=h5py.string_dtype(encoding='ascii', length=6))
                     meta_group.create_dataset('pdf_version', data=[f_src['meta']["pdf_version"][0]], dtype='i8')
-                    meta_group.create_dataset('xvals', data=[f_src['meta']["xvals"][0]], dtype='f8')
+                    meta_group.create_dataset('xvals', data=[bins], dtype='f8')
                     
             return qp.read(output_file_hdf5)
         
-        def plot_stack_z(ens):
+        def plot_stack_pdfs(ens):
             test_xvals = ens.gen_obj.xvals
             pdfs = ens.pdf(test_xvals)
             pdfs_stack = pdfs.sum(axis=0)
@@ -157,23 +187,47 @@ def run_paralell_post_process(process_dir):
 
             plt.legend(loc="upper right")
 
-            output_img_path = os.path.join(process_dir, f'stack_nz.png')
+            output_img_path = os.path.join(process_dir, f'stack_pdfs.png')
+            plt.savefig(output_img_path)
+            
+        def plot_stack_zmode(zmodes):
+            plt.hist(zmodes, bins)
+            
+            plt.title("Zmode distribuition")
+            plt.xlabel('z values', fontsize=11)
+            plt.ylabel('stack zmodes', fontsize=11)
+
+            output_img_path = os.path.join(process_dir, f'stack_zmode.png')
             plt.savefig(output_img_path)
         
-        parts = [delayed(read_hdf5)(file) for file in file_list]
-        
-        ddf = dd.from_delayed(parts)
-        
-        ddf_computed = ddf.compute()
-        data = ddf_computed.sum(axis=0)
-        
-        total_objects = int(data['objects'])
-        zmode_values=pd.DataFrame(data.drop(['objects'], inplace=True))
 
-        stacked_yval = [x for x in data]
+        if has_zmode:
+            print("Output files have z-modes")
+            parts = [delayed(read_zmodes)(file) for file in file_list]
         
-        ens = transform_output_to_ensenble(stacked_yval)
-        plot_stack_z(ens)
+            ddf = dd.from_delayed(parts)
+            ddf_computed = ddf.compute()
+        
+            total_objects = len(ddf_computed)
+            
+            plot_stack_zmode(ddf_computed)
+        
+        if has_pdfs:
+            print("Output files have yvals (pdfs)")
+        
+            parts = [delayed(read_pdfs)(file) for file in file_list]
+        
+            ddf = dd.from_delayed(parts)
+            ddf_computed = ddf.compute()
+            data = ddf_computed.sum(axis=0)
+        
+            total_objects = int(data['objects'])
+            zmode_values=pd.DataFrame(data.drop(['objects'], inplace=True))
+
+            stacked_yval = [x for x in data]
+
+            ens = transform_output_to_ensenble(stacked_yval)
+            plot_stack_pdfs(ens)
         
         return f'{total_objects:_}'
 
