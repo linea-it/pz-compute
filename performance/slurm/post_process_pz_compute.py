@@ -102,6 +102,7 @@ def run_paralell_post_process(process_dir):
     performance_report_path = os.path.join(process_dir, f'dask_performance_report.html')
     file_to_copy = None
     
+    print("\nBuilding plots...")
     with performance_report(filename=performance_report_path):
         file_list = glob.glob(f'{process_dir}/output/*.hdf5')
         file_to_copy = file_list[0]
@@ -132,7 +133,10 @@ def run_paralell_post_process(process_dir):
             data = tables_io.read(file)
 
             zmodes = data['ancil']['zmode'][:]
-            df = pd.DataFrame(zmodes)
+            
+            n = plt.hist(zmodes, bins)
+            df = pd.DataFrame(n[0]).T
+            df['objects']= int(len(zmodes))
 
             return df
         
@@ -185,13 +189,16 @@ def run_paralell_post_process(process_dir):
             plt.ylabel('stack pdfs', fontsize=11)
             plt.axis([0, test_xvals.max(), 0, peak+0.2])
 
+            plt.title("Pdfs distribuition")
             plt.legend(loc="upper right")
 
             output_img_path = os.path.join(process_dir, f'stack_pdfs.png')
             plt.savefig(output_img_path)
             
+            plt.close('all')
+            
         def plot_stack_zmode(zmodes):
-            plt.hist(zmodes, bins)
+            plt.plot(np.linspace(0,3,len(zmodes)), zmodes)
             
             plt.title("Zmode distribuition")
             plt.xlabel('z values', fontsize=11)
@@ -199,6 +206,8 @@ def run_paralell_post_process(process_dir):
 
             output_img_path = os.path.join(process_dir, f'stack_zmode.png')
             plt.savefig(output_img_path)
+            
+            plt.close('all')
         
 
         if has_zmode:
@@ -207,10 +216,13 @@ def run_paralell_post_process(process_dir):
         
             ddf = dd.from_delayed(parts)
             ddf_computed = ddf.compute()
-        
-            total_objects = len(ddf_computed)
+            data = ddf_computed.sum(axis=0)
             
-            plot_stack_zmode(ddf_computed)
+            total_objects = int(data['objects'])
+            ddf_computed.to_csv("stacked_zmodes.csv", index=False)
+            
+            data.drop(['objects'], inplace=True)
+            plot_stack_zmode(data)
         
         if has_pdfs:
             print("Output files have yvals (pdfs)")
@@ -220,13 +232,14 @@ def run_paralell_post_process(process_dir):
             ddf = dd.from_delayed(parts)
             ddf_computed = ddf.compute()
             data = ddf_computed.sum(axis=0)
-        
+            ddf_computed.to_csv("stacked_pdfs.csv", index=False)
+            
             total_objects = int(data['objects'])
-            zmode_values=pd.DataFrame(data.drop(['objects'], inplace=True))
+            data.drop(['objects'], inplace=True)
 
-            stacked_yval = [x for x in data]
+            #stacked_yval = [x for x in data]
 
-            ens = transform_output_to_ensenble(stacked_yval)
+            ens = transform_output_to_ensenble(data)
             plot_stack_pdfs(ens)
         
         return f'{total_objects:_}'
