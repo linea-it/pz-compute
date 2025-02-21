@@ -55,6 +55,7 @@ else
   
   ln -s  $SCRATCH/pz-compute/rail_scripts/rail-estimate $SCRATCH/bin/rail-estimate
   ln -s  $SCRATCH/pz-compute/rail_scripts/rail-train $SCRATCH/bin/rail-train 
+  ln -s  $SCRATCH/pz-compute/rail_scripts/rail-preprocess-parquet $SCRATCH/bin/rail-preprocess-parquet 
   
   echo "installing other dependencies"
   

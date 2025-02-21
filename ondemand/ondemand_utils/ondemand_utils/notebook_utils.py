@@ -84,10 +84,10 @@ def monitor_job(job_id, check_interval=10):
         print(f"Job status {job_id}: {status} | {dots}", flush=True, end='\r')
         dots = dots+'.'
         if status == "COMPLETED":
-            print(f"Job {job_id} completed!", flush=True, end='\r')
+            print(f"\nJob {job_id} completed!", flush=True)
             break
         elif status in ["FAILED", "CANCELLED", "TIMEOUT"]:
-            print(f"Job {job_id} failed with status: {status}.", flush=True, end='\r')
+            print(f"\nJob {job_id} failed with status: {status}.", flush=True)
             break
         
         time.sleep(check_interval) 
