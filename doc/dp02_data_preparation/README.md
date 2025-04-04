@@ -1,7 +1,7 @@
-# Conda Environment and Kernel Configuration for Open OnDemand (LIneA) - LSST DP0.2 Object Data Preparation Scripts
+# Conda Environment and Kernel Configuration for Open OnDemand (LIneA) - Data Preparation Scripts
 
 Author: Luigi Silva  
-Last reviewed: 28/03/2025
+Last reviewed: Apr. 03, 2025
 
 ## Accessing Open OnDemand
 To access the Open OnDemand platform, follow the steps below:
@@ -74,6 +74,18 @@ fetch()
 > 💡 You may need to adjust the Python version (e.g., `python3.11`) in the path above depending on your environment.
 
 This will download the necessary SFD dust maps into the environment's internal `site-packages` directory, making them available to your notebooks.
+
+### 5. Configure your YAML before running the notebook
+Before executing the notebook, make sure to:
+
+1. Rename your YAML configuration file to config.yaml
+2. Open the YAML file and edit the field user_base_path to reflect your username, for example:
+
+```python
+"/lustre/t0/scratch/users/<your-user>/dp02_object_data_preparation"
+```
+
+Replace ```<your-user>``` with your actual user directory name on the system.
 
 ---
 
