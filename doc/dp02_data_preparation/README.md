@@ -76,16 +76,18 @@ fetch()
 This will download the necessary SFD dust maps into the environment's internal `site-packages` directory, making them available to your notebooks.
 
 ### 5. Configure your YAML before running the notebook
-Before executing the notebook, make sure to:
+Before executing the ```1_Data_Preparation``` notebook, make sure to:
 
-1. Rename your YAML configuration file to config.yaml
-2. Open the YAML file and edit the field user_base_path to reflect your username, for example:
+1. Rename your YAML configuration file to ```config.yaml```
+2. Open the YAML file and edit the field ```user_base_path``` to reflect your username, for example:
 
 ```python
 "/lustre/t0/scratch/users/<your-user>/dp02_object_data_preparation"
 ```
 
 Replace ```<your-user>``` with your actual user directory name on the system.
+
+The other notebooks do not have a ```.yaml``` configuration file implemented yet. All the configuration must be done inside the notebooks themselves.
 
 ---
 
