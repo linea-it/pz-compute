@@ -1,7 +1,7 @@
 # Conda Environment and Kernel Configuration for Open OnDemand (LIneA) - Data Preparation Scripts
 
 Author: Luigi Silva  
-Last reviewed: Apr. 03, 2025
+Last reviewed: Apr. 04, 2025
 
 ## Accessing Open OnDemand
 To access the Open OnDemand platform, follow the steps below:
@@ -26,12 +26,20 @@ conda deactivate  # Necessary to deactivate the "base" environment
 ```
 
 ### 2. Create the Conda environment and install required packages
+First of all, add the following channels to your environment:
+```bash
+conda config --add channels conda-forge
+conda config --add channels defaults
+conda config --add channels anaconda
+conda config --add channels pyviz
+```
+I also strongly recomend you to use the mamba solver. See instructions in the following web page:
+https://conda.github.io/conda-libmamba-solver/user-guide/
+
 To create the environment:
 
 ```bash
-conda create -p $SCRATCH/data_preparation -c conda-forge \
-  numpy pandas dask dask-jobqueue ipykernel \
-  astropy dustmaps -y
+conda env create -p $SCRATCH/data_preparation -f environment.yaml
 ```
 
 To activate the environment:
@@ -67,11 +75,14 @@ import dustmaps.config
 from dustmaps.sfd import fetch
 
 user = getpass.getuser()
-dustmaps.config.config['data_dir'] = f"/lustre/t0/scratch/users/{user}/miniconda3/envs/data_preparation/lib/python3.*/site-packages/dustmaps/data"
+dustmaps.config.config['data_dir'] = f'/lustre/t0/scratch/users/{user}/data_preparation/lib/python3.12/site-packages/dustmaps/data'
 fetch()
 ```
 
-> 💡 You may need to adjust the Python version (e.g., `python3.11`) in the path above depending on your environment.
+To exit the python shell, just type:
+```python
+exit()
+```
 
 This will download the necessary SFD dust maps into the environment's internal `site-packages` directory, making them available to your notebooks.
 
