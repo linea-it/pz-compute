@@ -50,8 +50,22 @@ else
   ln -s $SCRATCH/pz-compute/scheduler_examples/slurm/setup/pz_run_setup.py $SCRATCH/bin/pz_run_setup_dev.py
   chmod +x $SCRATCH/bin/pz_run_setup_dev.py
   
+  ln -s $SCRATCH/pz-compute/performance/slurm/slurm-analyze-host-performance.py $SCRATCH/bin/slurm-analyze-host-performance.py
+  chmod +x $SCRATCH/bin/slurm-analyze-host-performance.py
+  
   ln -s  $SCRATCH/pz-compute/rail_scripts/rail-estimate $SCRATCH/bin/rail-estimate
   ln -s  $SCRATCH/pz-compute/rail_scripts/rail-train $SCRATCH/bin/rail-train 
+  ln -s  $SCRATCH/pz-compute/rail_scripts/rail-preprocess-parquet $SCRATCH/bin/rail-preprocess-parquet 
+  
+  echo "installing other dependencies"
+  
+  conda install -y jupyter_bokeh
+  conda install -y ipykernel
+  conda install -y bokeh
+  conda install -y holoviews
+  
+  pip install -e $SCRATCH/pz-compute/ondemand/ondemand_utils/.
+  pip install pzserver
 fi
 
 export ENVIRONMENT="dev"

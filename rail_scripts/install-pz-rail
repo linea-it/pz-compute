@@ -22,8 +22,12 @@ conda install -y pandas
 conda install -y matplotlib
 conda install -y psutil
 conda install -y cython
+pip install mpi==1.0
 conda install -y mpi4py
 conda install -y numexpr
+
+conda install -y pyviz_comms
+conda install -c conda-forge dask dask-jobqueue
 
 pip install joblib
 pip install scikit-learn
@@ -33,6 +37,8 @@ CFLAGS="-O2 -DNDEBUG -std=gnu99" pip install pytdigest
 pip install flexcode
 pip install docopt 
 pip install pyxdg
+pip install scipy==1.14.1
+pip install mpi==1.0
 
 # Install RAIL after all dependencies are installed
 pip install pz-rail

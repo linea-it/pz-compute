@@ -1,11 +1,20 @@
 # config.yaml
 
+data_path: "None"    
+spectra_file: "CWWSB4.list"     
+m0: 20.0 
+nt_array: [1, 2, 3] 
+mmin: 18.0 
+mmax: 29.0 
+init_kt: 0.3  
+init_zo: 0.4  
+init_alpha: 1.8  
+init_km: 0.1  
+type_file: "" 
 dz:  0.01
 unobserved_val:  -99.0
-#columns_file:  "test_bpz.columns"
-#spectra_file:  "CWWSB4.list"
+spectra_file:  "CWWSB4.list"
 madau_flag:  "no"
-#no_prior:  False
 p_min:  0.005
 gauss_kernel:  0.0
 zp_errors:  [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]

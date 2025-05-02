@@ -1,19 +1,23 @@
 # config.yaml
 
-data_path: "None"    
-#columns_file: "test_bpz.columns"
-#spectra_file: "CWWSB4.list"     
-m0: 20.0 
-nt_array: [1, 2, 3] 
-mmin: 18.0 
-mmax: 29.0 
-init_kt: 0.3  
-init_zo: 0.4  
-init_alpha: 1.8  
-init_km: 0.1  
-type_file: "" 
+retrain_full:: true 
+trainfrac: 0.75 
+seed: 1138 
+bumpmin: 0.02 
+bumpmax: 0.35 
+nbump: 20 
+sharpmin: 0.7 
+sharpmax: 2.1 
+nsharp: 15 
+max_basis: 35 
+basis_system: 'cosine' 
+regression_params: 
+    max_depth: 8
+    objective: 'reg:squarederror' 
 zmin: 0.0
 zmax: 3.0 
+redshift_col:  "redshift" 
+qp_representation: "interp"
 nzbins: 301 
 nondetect_val: 99.0 
 mag_limits: 
@@ -26,4 +30,3 @@ mag_limits:
 bands: ["mag_u", "mag_g", "mag_r", "mag_i", "mag_z", "mag_y"]  
 err_bands: ["magerr_u", "magerr_g", "magerr_r", "magerr_i", "magerr_z", "magerr_y"]
 ref_band: "mag_i" 
-redshift_col:  "redshift" 

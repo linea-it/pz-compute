@@ -1,0 +1,34 @@
+# config.yaml
+
+nondetect_val: 99.0 
+mag_limits: 
+   mag_u: 27.79
+   mag_g: 29.04
+   mag_r: 29.06
+   mag_i: 28.62
+   mag_z: 27.98
+   mag_y: 27.05
+bands: ["mag_u", "mag_g", "mag_r", "mag_i", "mag_z", "mag_y"]  
+err_bands: ["magerr_u", "magerr_g", "magerr_r", "magerr_i", "magerr_z", "magerr_y"]
+ref_band: "mag_i"
+redshift_col:  "redshift"
+output_keys: ["Z_BEST", "CHI_BEST", "ZQ_BEST", "CHI_QSO", "MOD_STAR", "CHI_STAR"]
+run_dir: "None"
+offsets: []
+zmin: 0.0
+zmax: 3.0 
+nzbins: 301 
+star_config:
+     LIB_ASCII: "YES"
+gal_config:
+    LIB_ASCII: "YES"
+    MOD_EXTINC: "18,26,26,33,26,33,26,33"
+    EXTINC_LAW: "SMC_prevot.dat,SB_calzetti.dat,SB_calzetti_bump1.dat,SB_calzetti_bump2.dat"
+    EM_LINES: "EMP_UV"
+    EM_DISPERSION: "0.5,0.75,1.,1.5,2."
+qso_config:
+    LIB_ASCII: "YES"
+    MOD_EXTINC: "0,1000"
+    EB_V: "0.,0.1,0.2,0.3"
+    EXTINC_LAW: "SB_calzetti.dat"
+    

@@ -1,8 +1,9 @@
+## credits to https://github.com/LSSTDESC/rail/blob/main/examples/evaluation_examples/utils.py
+
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from qp.metrics.pit import PIT
 from IPython.display import Markdown
 import h5py
@@ -12,138 +13,43 @@ from qp.ensemble import Ensemble
 from qp import interp
 
 
-def read_pz_output(pdfs_file, ztrue_file, pdfs_key="photoz_pdf", zgrid_key="zgrid",
-                   photoz_mode_key="photoz_mode", ztrue_key="redshift"):
-    _, ext = os.path.splitext(pdfs_file)
+def photoz_specz_plot(ztrue_data, output_pdfs):
+    plt.figure(figsize=(8,8))
+    plt.scatter(ztrue_data.data['redshift'],output_pdfs.data.ancil['zmode'],s=1,c='k')
+    plt.plot([0,3],[0,3],'r--')
+    plt.xlim([0,3])
+    plt.ylim([0,3])
+    plt.xlabel("specz")
+    plt.ylabel("photoz")
 
-    if ext == ".hdf5":
-        with h5py.File(ztrue_file, 'r') as zf:
-            try:
-                ztrue = np.array(zf['photometry'][ztrue_key])
-            except:
-                try:
-                    ztrue = np.array(zf[ztrue_key])
-                except:
-                    raise ValueError('Invalid key for true redshift column in ztrue file.')
-        with h5py.File(pdfs_file, 'r') as pf:
-            pdfs = np.array(pf[pdfs_key])
-            zgrid = np.array(pf[zgrid_key]).flatten()
-            photoz_mode = np.array(pf[photoz_mode_key])
-    elif ext == ".out":
-        print("Validation file from DC1 paper (ascii format).")
-        ztrue = np.loadtxt(ztrue_file, unpack=True, usecols=[2])
-        pdfs = np.loadtxt(pdfs_file)
-        path = "/".join(pdfs_file.split("/")[:-1])
-        zgrid = np.loadtxt(path + "/zarrayfile.out")
-        photoz_mode = np.array([zgrid[np.argmax(pdf)] for pdf in pdfs])  # qp mode?
+    plt.show()
+
+
+def add_zmodes(table, pdfs_file_output):
+    if 'ancil' in table:
+        if 'zmode' in table['ancil']:
+            print('file already has zmodes')
     else:
-        raise ValueError(f"PDFs input file format {ext} is not supported.")
+        print('inserting zmodes')
+        
+        def zmode(df):
+            results = []
+            for index, row in df.iterrows():
+                #mode_y = row.max()
+                mode_x = row.idxmax()
+                results.append(mode_x/100)
+            return results
 
-    return pdfs, zgrid, ztrue, photoz_mode
+        zvalues_df = pd.DataFrame(table['data']['yvals'])
+        z_modes = zmode(zvalues_df)
 
+        def write_hdf5_file(file_name, z_modes):
+            with h5py.File(file_name, 'r+') as hdf5_file:
+                photometry_group = hdf5_file.create_group('ancil')
+                photometry_group['zmode'] = z_modes
 
-def plot_pdfs(sample, gals, show_ztrue=True, show_photoz_mode=False):
-    """Plot a list of individual PDFs using qp plotting function for illustration.
-    Ancillary function to be used by class Sample.
-
-    Parameters
-    ----------
-    gals: `list`
-        list of galaxies' indexes
-    show_ztrue: `bool`, optional
-        if True (default=True), show ztrue as dashed vertical line
-    show_photoz_mode: `bool`, optional
-        if True (default=False), show photoz_mode as dotted vertical line
-
-    Returns
-    -------
-    colors: `list`
-        list of HTML codes for colors used in the plot lines
-    """
-    colors = []
-    peaks = []
-    for i, gal in enumerate(gals):
-        peaks.append(sample.pdf(sample.photoz_mode[gal])[gal])
-        if i == 0:
-            axes = sample.plot(key=gal, xlim=(0., 2.2), label=f"Galaxy {gal}")
-        else:
-            _ = sample.plot(key=gal, axes=axes, label=f"Galaxy {gal}")
-        colors.append(axes.get_lines()[-1].get_color())
-        if show_ztrue:
-            axes.vlines(sample.ztrue[gal], ymin=0, ymax=100, colors=colors[-1], ls='--')
-        if show_photoz_mode:
-            axes.vlines(sample.photoz_mode[gal], ymin=0, ymax=100, colors=colors[-1], ls=':')
-    plt.ylim(0, np.max(peaks) * 1.05)
-    axes.figure.legend()
-    return colors
-
-
-def plot_old_valid(photoz, ztrue, gals=None, colors=None, code=""):
-    """Plot traditional Zphot X Zspec and N(z) plots for illustration
-    Ancillary function to be used by class Sample.
-
-    Parameters
-    ----------
-    gals: `list`, (optional)
-        list of galaxies' indexes
-    colors: `list`, (optional)
-        list of HTML codes for colors used in the plot highlighted points
-    """
-    df = pd.DataFrame({'z$_{true}$': ztrue,
-                       'z$_{phot}$': photoz})
-    fig = plt.figure(figsize=(10, 4), dpi=100)
-    #fig.suptitle(name, fontsize=16)
-    ax = plt.subplot(121)
-    # sns.jointplot(data=df, x='z$_{true}$', y='z$_{phot}$', kind="kde")
-    plt.plot(ztrue, photoz, 'k,', label=code)
-    leg = ax.legend(fancybox=True, handlelength=0, handletextpad=0, loc="upper left")
-    for item in leg.legendHandles:
-        item.set_visible(False)
-    if gals:
-        if not colors:
-            colors = ['r'] * len(gals)
-        for i, gal in enumerate(gals):
-            plt.plot(ztrue[gal], photoz[gal], 'o', color=colors[i], label=f'Galaxy {gal}')
-    zmax = np.max(ztrue) * 1.01
-    plt.xlim(0, zmax)
-    plt.ylim(0, zmax)
-    plt.xlabel('z$_{true}$')
-    plt.ylabel('z$_{phot}$')
-    plt.subplot(122)
-    sns.kdeplot(ztrue, shade=True, label='z$_{true}$')
-    sns.kdeplot(photoz, shade=True, label='z$_{phot}$')
-    plt.xlim(0, zmax)
-    plt.xlabel('z')
-    plt.legend()
-    plt.tight_layout()
-
-
-def old_metrics(photoz, ztrue):
-    point = EvaluatePointStats(photoz, ztrue)
-    sigma_iqr = point.CalculateSigmaIQR()
-    bias = point.CalculateBias()
-    frac = point.CalculateOutlierRate()
-    sigma_mad = point.CalculateSigmaMAD()
-    return sigma_iqr, bias, frac, sigma_mad
-
-
-def old_metrics_table(photoz, ztrue, name="", show_dc1=True):
-    rows = ["|Metric |", "|:---|", "|scatter |", "|bias |", "|outlier rate |"]
-    sigma_iqr, bias, frac, sigma_mad = old_metrics(photoz, ztrue)
-    rows[0] += f"{name} |"
-    rows[1] += "---:|"
-    rows[2] += f"{sigma_iqr:11.4f} |"
-    rows[3] += f"{bias:11.5f} |"
-    rows[4] += f"{frac:11.3f} |"
-    if show_dc1:
-        rows[0] += "DC1 paper"
-        rows[1] += "---:"
-        rows[2] += f"  0.0154"
-        rows[3] += f" -0.00027"
-        rows[4] += f"  0.020"
-    table = ("\n").join(rows)
-    return Markdown(table)
-
+        write_hdf5_file(pdfs_file_output, z_modes)
+        
 
 def plot_pit_qq(pdfs, zgrid, ztrue, bins=None, title=None, code=None,
                 show_pit=True, show_qq=True,
@@ -250,7 +156,7 @@ def plot_pit_qq(pdfs, zgrid, ztrue, bins=None, title=None, code=None,
     else:
         fig_filename = None
 
-    return fig_filename
+    plt.show()
 
 
 def ks_plot(pitobj, n_quant=100):
@@ -286,8 +192,7 @@ def ks_plot(pitobj, n_quant=100):
     plt.ylim(0, 1)
     plt.legend()
     plt.tight_layout()
-
-
+    plt.show()
 
 
 class EvaluatePointStats(object):
@@ -505,7 +410,7 @@ class Sample(Ensemble):
                    f'qp representation: {self.gen_class.name} \n' +
                    f'z grid: {len(self.zgrid)} z values from {np.min(self.zgrid)} to {np.max(self.zgrid)} inclusive')
         return text
-
+    
     def plot_pdfs(self, gals, show_ztrue=True, show_photoz_mode=False):
         colors = plot_pdfs(self, gals, show_ztrue=show_ztrue,
                                  show_photoz_mode=show_photoz_mode)

@@ -141,3 +141,5 @@ dmypy.json
 *.err
 *.out
 
+# pzserver
+ondemand/.token.txt
