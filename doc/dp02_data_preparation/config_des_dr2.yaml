@@ -1,7 +1,7 @@
 # ============================
 # PART 1 — RUN PATH SETTINGS
 # ============================
-user_base_path: "/lustre/t0/scratch/users/<your-user>/des_dr2_data_preparation"
+user_base_path: "/scratch/users/<your-user>/des_dr2_data_preparation"
 
 # ============================
 # PART 2 — RUN CONFIGURATIONS
@@ -12,74 +12,12 @@ DP_which_release: "DES_DR2"
 DP_filter_by_detect_isPrimary: false
 DP_is_objectId_in_the_index: false
 
-# --- Magnitude and dereddening ---
-DP_compute_magnitude: false
-DP_compute_dereddening: false
-
-# --- Rounding options ---
-DP_round_mag: false
-DP_round_mag_decimal_cases: 5
-DP_round_magerr: false
-DP_round_magerr_decimal_cases: 5
-
-# --- Invalid value handling ---
-# Set false in both to not replace any mag value at all.
-DP_replace_all_mag_invalid_values: true
-DP_replace_only_mag_with_invalid_magerr: false
-
-# Set false in both to not replace any magerr value at all.
-DP_replace_all_magerr_invalid_values: false
-DP_replace_only_magerr_with_invalid_mag: true
-
-# If you choose DP_replace_all_mag_invalid_values: true and DP_replace_all_magerr_invalid_values: true,
-# define if you want to "cross-invalidate", that is, if mag is invalid, we replace magerr by value_to_replace,
-# and if magerr is invalid, we replace mag by value_to_replace.
-DP_cross_invalidate: false
-
-# Use "null" if you want to replace by np.nan
-DP_mag_value_to_replace: 99.0
-DP_magerr_value_to_replace: 99.0
-
-# --- Invalidity pattern ---
-DP_is_nan_and_inf_invalid_for_mag: true
-DP_is_nan_and_inf_invalid_for_magerr: true
-
-DP_set_some_limit_as_invalid_for_mag: true
-DP_invalid_limit_value_for_mag: 99.0
-
-DP_set_some_limit_as_invalid_for_magerr: true
-DP_invalid_limit_value_for_magerr: 99.0
-
-# --- Output magnitude column name customization ---
-DP_personalized_final_names: true
-DP_pesonalized_which_band_case: "lower_case"
-DP_mag_final_name_pattern: "mag_BAND"
-DP_magerr_final_name_pattern: "magerr_BAND"
-
-# --- Output options ---
-DP_save_the_data: true
-DP_repartition_files: true
-DP_target_rows_per_part: 130000
-
-# --- Input column name patterns ---
-flux_col_pattern: null
-err_col_pattern: null
-magerr_col_pattern: "MAGERR_AUTO_BAND"
-mag_col_pattern: null
-mag_dered_col_pattern: "MAG_AUTO_BAND_DERED" 
-
-# --- ID and coordinate columns ---
-id_col: "COADD_OBJECT_ID"
-ra_col: "RA"
-dec_col: "DEC"
-
-# --- Magnitude bands and conversion ---
-selected_bands: ["G", "R", "I", "Z", "Y"]
-MAG_OFFSET: null
-A_EBV: null
+# ============================
+# INPUT CONFIGURATIONS
+# ============================
 
 # --- Input catalog paths ---
-input_catalog_folder: '/lustre/t1/public/des/dr2/primary/catalogs/coadd'
+input_catalog_folder: '/data/public/des/dr2/primary/catalogs/coadd'
 input_catalog_pattern: '*.fits'
 
 # --- Selected columns from the input catalog ---
@@ -99,6 +37,68 @@ input_user_selected_cols:
   - MAGERR_AUTO_Y
   - EXTENDED_CLASS_COADD
   - FLAGS_I
+
+# --- Input column name patterns ---
+flux_col_pattern: null
+err_col_pattern: null
+mag_col_pattern: null
+magerr_col_pattern: "MAGERR_AUTO_BAND"
+mag_dered_col_pattern: "MAG_AUTO_BAND_DERED"
+
+# --- ID and coordinate columns ---
+id_col: "COADD_OBJECT_ID"
+ra_col: "RA"
+dec_col: "DEC"
+
+# --- Magnitude bands and conversion ---
+selected_bands: ["G", "R", "I", "Z", "Y"]
+MAG_OFFSET: null
+A_EBV: null
+
+# ============================
+# OUTPUT CONFIGURATIONS
+# ============================
+
+# --- Output options ---
+DP_save_the_data: true
+save_output_as: "parquet"  # options: "parquet", "csv", "hdf5"
+DP_repartition_files: true
+DP_target_rows_per_part: 130000
+
+# --- Output magnitude column name customization ---
+DP_personalized_final_names: true
+DP_pesonalized_which_band_case: "lower_case"
+DP_mag_final_name_pattern: "mag_BAND"
+DP_magerr_final_name_pattern: "magerr_BAND"
+
+# --- Magnitude and dereddening ---
+DP_compute_magnitude: false
+DP_compute_dereddening: false
+
+# --- Rounding options ---
+DP_round_mag: false
+DP_round_mag_decimal_cases: 5
+DP_round_magerr: false
+DP_round_magerr_decimal_cases: 5
+
+# --- Invalid value handling ---
+DP_replace_all_mag_invalid_values: true
+DP_replace_only_mag_with_invalid_magerr: false
+DP_replace_all_magerr_invalid_values: false
+DP_replace_only_magerr_with_invalid_mag: true
+DP_cross_invalidate: false
+
+# Use "null" if you want to replace by np.nan
+DP_mag_value_to_replace: 99.0
+DP_magerr_value_to_replace: 99.0
+
+# --- Invalidity pattern ---
+DP_is_nan_and_inf_invalid_for_mag: true
+DP_is_nan_and_inf_invalid_for_magerr: true
+DP_set_some_limit_as_invalid_for_mag: true
+DP_invalid_limit_value_for_mag: 99.0
+DP_set_some_limit_as_invalid_for_magerr: true
+DP_invalid_limit_value_for_magerr: 99.0
 
 # ============================
 # PART 3 — CLUSTER CONFIGURATIONS
