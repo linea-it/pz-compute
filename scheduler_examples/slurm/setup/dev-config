@@ -4,7 +4,7 @@
 
 echo "DEV - setting environment"
 
-cd $SCRATCH
+cd $SCRIPTS
 
 if [ -d "pz-compute" ] || [ -L "pz-compute" ]; then
   echo "pz-compute dir ok"
@@ -20,53 +20,55 @@ if conda info --envs | grep -q pz_compute_dev; then
   read -p "Would you like to reinstall pz_compute package? (y/n):" resposta
 
   if [[ "$resposta" == "y" || "$resposta" == "Y" ]]; then
-    $SCRATCH/pz-compute/rail_scripts/install-pz-rail
+    $SCRIPTS/pz-compute/rail_scripts/install-pz-rail
   fi
 
-  export PATH=$PATH:$SCRATCH/bin
-  export DUSTMAPS_CONFIG_FNAME=$SCRATCH/pz-compute/rail_scripts/dustmaps_config.json
-  export PATH=$PATH:$SCRATCH/pz-compute/scheduler_examples/slurm
+  export PATH=$PATH:$SCRIPTS/bin
+  export DUSTMAPS_CONFIG_FNAME=$SCRIPTS/pz-compute/rail_scripts/dustmaps_config.json
+  export PATH=$PATH:$SCRIPTS/pz-compute/scheduler_examples/slurm
 
-  chmod +x $SCRATCH/bin/pz_run_setup_dev.py
+  chmod +x $SCRIPTS/bin/pz_run_setup_dev.py
 else 
   echo "pz_compute_dev env does not exist ): creating it"
   
   conda create --name pz_compute_dev python=3.11
-  conda activate pz_compute_dev 
-
-  mkdir $SCRATCH/bin
-  ln -s $SCRATCH/pz-compute/scheduler_scripts/slurm/pz-compute $SCRATCH/bin/pz-compute-dev
-  chmod +x $SCRATCH/bin/pz-compute-dev
-  
-  ln -s $SCRATCH/pz-compute/scheduler_scripts/slurm/pz-train $SCRATCH/bin/pz-train-dev
-  chmod +x $SCRATCH/bin/pz-train-dev
-
-  export PATH=$PATH:$SCRATCH/bin
-  export DUSTMAPS_CONFIG_FNAME=$SCRATCH/pz-compute/rail_scripts/dustmaps_config.json
-  
-  mkdir -p $ALTHOME/data
-  $SCRATCH/pz-compute/rail_scripts/install-pz-rail
-
-  ln -s $SCRATCH/pz-compute/scheduler_examples/slurm/setup/pz_run_setup.py $SCRATCH/bin/pz_run_setup_dev.py
-  chmod +x $SCRATCH/bin/pz_run_setup_dev.py
-  
-  ln -s $SCRATCH/pz-compute/performance/slurm/slurm-analyze-host-performance.py $SCRATCH/bin/slurm-analyze-host-performance.py
-  chmod +x $SCRATCH/bin/slurm-analyze-host-performance.py
-  
-  ln -s  $SCRATCH/pz-compute/rail_scripts/rail-estimate $SCRATCH/bin/rail-estimate
-  ln -s  $SCRATCH/pz-compute/rail_scripts/rail-train $SCRATCH/bin/rail-train 
-  ln -s  $SCRATCH/pz-compute/rail_scripts/rail-preprocess-parquet $SCRATCH/bin/rail-preprocess-parquet 
-  
-  echo "installing other dependencies"
-  
-  conda install -y jupyter_bokeh
-  conda install -y ipykernel
-  conda install -y bokeh
-  conda install -y holoviews
-  
-  pip install -e $SCRATCH/pz-compute/ondemand/ondemand_utils/.
-  pip install pzserver
 fi
+
+conda activate pz_compute_dev 
+
+mkdir $SCRIPTS/bin
+ln -s $SCRIPTS/pz-compute/scheduler_scripts/slurm/pz-compute $SCRIPTS/bin/pz-compute-dev
+chmod +x $SCRIPTS/bin/pz-compute-dev
+
+ln -s $SCRIPTS/pz-compute/scheduler_scripts/slurm/pz-train $SCRIPTS/bin/pz-train-dev
+chmod +x $SCRIPTS/bin/pz-train-dev
+
+export PATH=$PATH:$SCRIPTS/bin
+export DUSTMAPS_CONFIG_FNAME=$SCRIPTS/pz-compute/rail_scripts/dustmaps_config.json
+
+mkdir -p $ALTHOME/data
+$SCRIPTS/pz-compute/rail_scripts/install-pz-rail
+
+ln -s $SCRIPTS/pz-compute/scheduler_examples/slurm/setup/pz_run_setup.py $SCRIPTS/bin/pz_run_setup_dev.py
+chmod +x $SCRIPTS/bin/pz_run_setup_dev.py
+
+ln -s $SCRIPTS/pz-compute/performance/slurm/slurm-analyze-host-performance.py $SCRIPTS/bin/slurm-analyze-host-performance.py
+chmod +x $SCRIPTS/bin/slurm-analyze-host-performance.py
+
+ln -s  $SCRIPTS/pz-compute/rail_scripts/rail-estimate $SCRIPTS/bin/rail-estimate
+ln -s  $SCRIPTS/pz-compute/rail_scripts/rail-train $SCRIPTS/bin/rail-train 
+ln -s  $SCRIPTS/pz-compute/rail_scripts/rail-preprocess-parquet $SCRIPTS/bin/rail-preprocess-parquet 
+
+echo "installing other dependencies"
+
+conda install -y jupyter_bokeh
+conda install -y ipykernel
+conda install -y bokeh
+conda install -y holoviews
+
+pip install -e $SCRIPTS/pz-compute/ondemand/ondemand_utils/.
+#pip install pzserver
+
 
 export ENVIRONMENT="dev"
 
