@@ -89,10 +89,11 @@ def parse_cmdline():
                          extra_args=extra_args)
 
 def load_slow_modules(estimator):
+    
     global DEF_MAGLIMS, DS, TableHandle, Trainer, RailStage
 
     from rail.core.common_params import lsst_def_maglims as DEF_MAGLIMS
-    from rail.core.data import TableHandle
+    from rail.core.data import TableHandle, DataStore
     from rail.core.stage import RailStage
 
     if estimator == 'bpz':
@@ -112,12 +113,14 @@ def load_slow_modules(estimator):
 
     elif estimator == 'gpz':
         from rail.estimation.algos.gpz import GPzInformer as Trainer
+
     elif estimator == 'lephare':
         from rail.estimation.algos.lephare import LephareInformer as Trainer
+
     else:
         raise ValueError('Invalid estimator identifier: %s' % estimator)
 
-    DS = RailStage.data_store
+    DS = DataStore()
 
 def setup_trainer(estimator, output, column_template, column_template_error,
                   extra_args, hdf5_group='', num_bins=301):
