@@ -41,7 +41,7 @@ from datetime import datetime
 from glob import glob
 from os import P_NOWAIT, WNOHANG, chdir, environ, getcwd, kill, makedirs, \
         spawnv, waitpid, sched_getaffinity
-from os.path import dirname, getsize, isfile, join, relpath
+from os.path import dirname, getsize, isfile, join, relpath, splitext
 from shutil import which
 from signal import SIGHUP
 from subprocess import run
@@ -108,7 +108,8 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks):
         while len(children) < slots and len(files) > 0:
             relative_path = files.pop()
             input_file = join(input_dir, relative_path)
-            output_file = join(output_base_dir, relative_path)
+            relative_output_path = splitext(relative_path)[0] + ".hdf5"
+            output_file = join(output_base_dir, relative_output_path)
             output_dir = dirname(output_file)
             stdout_file = stdout_name(task_id)
             stderr_file = stderr_name(task_id)
@@ -146,7 +147,7 @@ def parallel(files, slots, input_dir, output_base_dir, algorithm, masks):
                     raise RuntimeError('Error: too many failed attempts.')
                 else:
                     info('Will retry again later.')
-                    files.appendleft(relative_path)
+                    files.appendleft(prev_relative_path)
                     sleep(0.2)
             else:
                 info('%s: Finished: %s %s id=%d' % (datetime.now(), ESTIMATE,
