@@ -13,8 +13,8 @@ ssh loginapl01
 #### Add the code below to your `~/.bashrc`:
 
 ```bash
-if [ -d /scratch/users/`whoami` ]; then
-  export ALTHOME=/scratch/users/`whoami`/slurm-home
+if [ -d /scripts/`whoami` ]; then
+  export ALTHOME=/scripts/`whoami`/slurm-home
   export PATH=$PATH:${ALTHOME}/bin
   export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+${LD_LIBRARY_PATH}:}${ALTHOME}/lib
   export XDG_DATA_HOME=${ALTHOME}/share
@@ -30,16 +30,16 @@ fi
 git clone https://github.com/linea-it/pz-compute && cd pz-compute
 export REPO_DIR=`pwd`
 
-mkdir -p /scratch/users/$(whoami)/ondemand/conda_pkgs
-export CONDA_PKGS_DIRS=/scratch/users/$(whoami)/ondemand/conda_pkgs
+mkdir -p /scripts/$(whoami)/ondemand/conda_pkgs
+export CONDA_PKGS_DIRS=/scripts/$(whoami)/ondemand/conda_pkgs
 
-conda create --prefix /scratch/users/$(whoami)/ondemand/pz_compute python=3.12 pip
-conda activate /scratch/users/$(whoami)/ondemand/pz_compute
+conda create --prefix /scripts/$(whoami)/ondemand/pz_compute python=3.12 pip
+conda activate /scripts/$(whoami)/ondemand/pz_compute
 
 bash ./rail_scripts/install-pz-rail
 
 cat <<EOF > env.sh
-conda activate /scratch/users/\$(whoami)/ondemand/pz_compute
+conda activate /scripts/\$(whoami)/ondemand/pz_compute
 export PZPATH=$REPO_DIR/rail_scripts/
 export PATH=\$PATH:\$PZPATH
 EOF

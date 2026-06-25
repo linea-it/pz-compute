@@ -17,7 +17,7 @@ if [ "${CONDA_DEFAULT_ENV:-}" = "base" ]; then
 fi
 
 # Use a writable conda package cache under /scratch
-export CONDA_PKGS_DIRS="/scratch/users/$(whoami)/ondemand/conda_pkgs"
+export CONDA_PKGS_DIRS="/scripts/$(whoami)/ondemand/conda_pkgs"
 mkdir -p "$CONDA_PKGS_DIRS"
 
 echo "The following conda environment is active: ${CONDA_PREFIX}"
