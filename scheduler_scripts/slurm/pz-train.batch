@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --time=16:00:00
+#SBATCH --time=12:00:00
 #SBATCH -J pz-train
 #SBATCH -p cpu
 #SBATCH --propagate=NPROC

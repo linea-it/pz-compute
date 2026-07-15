@@ -20,7 +20,7 @@ SBATCH_ARGS = {
 
 TIME_LIMITS = {
         'gpz': 4*3600,
-        'fzboost': 16*3600,
+        'fzboost': 12*3600,
         None: None,
 }
 

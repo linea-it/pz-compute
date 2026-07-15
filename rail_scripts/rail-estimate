@@ -114,7 +114,7 @@ def load_slow_modules(estimator):
     global DEF_MAGLIMS, DS, Estimator, TableHandle, RailStage, parallel_config
 
     from rail.core.common_params import lsst_def_maglims as DEF_MAGLIMS
-    from rail.core.data import TableHandle
+    from rail.core.data import TableHandle, DataStore
     from rail.core.stage import RailStage
     from joblib import parallel_config
 
@@ -137,7 +137,7 @@ def load_slow_modules(estimator):
     else:
         raise ValueError("Invalid estimator identifier: %s" % estimator)
 
-    DS = RailStage.data_store
+    DS = DataStore()
 
 
 def setup_estimator(

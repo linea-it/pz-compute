@@ -1,49 +1,64 @@
-#!/bin/sh
-set -e
+#!/bin/bash
+set -eo pipefail
 
-# This script is for conda, test that it works.
+# This script assumes that the target conda environment is already active.
 conda --version
 
-echo The following conda environment is active: $CONDA_PREFIX
-read -p "Type yes to confirm installing RAIL in this environment: " input
-
-if [ "$input" != "yes" ]; then
-	echo Exiting...
-	exit 1
+if [ -z "${CONDA_PREFIX:-}" ]; then
+    echo "Error: no active conda environment detected."
+    echo "Activate the target environment before running this script."
+    exit 1
 fi
 
-set -xe
+if [ "${CONDA_DEFAULT_ENV:-}" = "base" ]; then
+    echo "Error: the active environment is 'base'."
+    echo "Activate a dedicated environment before installing RAIL."
+    exit 1
+fi
 
-# These packages should pull many important dependencies, like BLAS,
-# numpy, Pillow and MPI.
-conda install -y h5py
-conda install -y pyyaml
-conda install -y pandas
-conda install -y matplotlib
-conda install -y psutil
-conda install -y cython
-pip install mpi==1.0
-conda install -y mpi4py
-conda install -y numexpr
+# Use a writable conda package cache under /scratch
+export CONDA_PKGS_DIRS="/scripts/$(whoami)/ondemand/conda_pkgs"
+mkdir -p "$CONDA_PKGS_DIRS"
 
-conda install -y pyviz_comms
-conda install -c conda-forge dask dask-jobqueue
+echo "The following conda environment is active: ${CONDA_PREFIX}"
+echo "Conda package cache: ${CONDA_PKGS_DIRS}"
+read -r -p "Type yes to confirm installing RAIL in this environment: " input
 
-pip install joblib
-pip install scikit-learn
-pip install scikit-learn-intelex
-CFLAGS="-L $CONDA_PREFIX/lib -I $CONDA_PREFIX/include" pip install fitsio
-CFLAGS="-O2 -DNDEBUG -std=gnu99" pip install pytdigest
-pip install flexcode
-pip install docopt 
-pip install pyxdg
-pip install scipy==1.14.1
-pip install mpi==1.0
+if [ "$input" != "yes" ]; then
+    echo "Exiting..."
+    exit 1
+fi
 
-# Install RAIL after all dependencies are installed
-pip install pz-rail
-pip install pz-rail-bpz
-pip install pz-rail-flexzboost
-pip install pz-rail-tpz
-pip install pz-rail-gpz-v1
-pip install pz-rail-lephare
+set -x
+
+conda install -y -c conda-forge \
+    h5py \
+    pyyaml \
+    pandas \
+    matplotlib \
+    psutil \
+    cython \
+    mpi4py \
+    numexpr \
+    pyviz_comms \
+    dask \
+    distributed \
+    dask-jobqueue \
+    joblib \
+    scikit-learn \
+    scikit-learn-intelex \
+    fitsio \
+    pytdigest \
+    scipy \
+    docopt \
+    pyxdg \
+    pip
+
+pip install \
+    pz-rail \
+    pz-rail-bpz \
+    pz-rail-flexzboost \
+    pz-rail-tpz \
+    pz-rail-gpz-v1 \
+    pz-rail-lephare \
+    flexcode

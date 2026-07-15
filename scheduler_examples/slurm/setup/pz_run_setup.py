@@ -38,9 +38,10 @@ from datetime import datetime
 
 ENV = os.environ.get('ENVIRONMENT') or "dev"
 SCRATCH = os.environ.get('SCRATCH')
+SCRIPTS = os.environ.get('SCRIPTS')
 
-APP_PZ_COMPUTE_PATH = '/lustre/t0/scratch/users/app.photoz/pz-compute'
-LSST_DP02 = '/lustre/t1/cl/lsst/dp02/secondary/catalogs/skinny/hdf5/'
+APP_PZ_COMPUTE_PATH = '/scratch/users/app.photoz/pz-compute'
+LSST_DP02 = '/data/cl/lsst/dp02/secondary/catalogs/skinny/hdf5/'
 
 class SetupDir:
     def __init__(self, process_id, comment, algorithm, will_train, creation_path, use_all_dp0_dataset):
@@ -216,7 +217,7 @@ def copy_configs_file(configs):
         if configs.will_train:
             create_yaml_pz_compute_train(configs)
 
-        src = f'{SCRATCH}/pz-compute/doc/algorithms_config/{file_algoritm_configs}'
+        src = f'{SCRIPTS}/pz-compute/doc/algorithms_config/{file_algoritm_configs}'
         shutil.copy(src, dst)
     else:
         print("Env not defined, not creating the configurations yaml")
@@ -253,7 +254,7 @@ def create_process_dir(algorithm=None, process_id=None, comment=None, will_train
     print_output(configs, yaml_file)
     
     copy_configs_file(configs)
-    copy_run_notebook(configs)
+    #copy_run_notebook(configs)
 
 def main():
     args = parse_cmd() 

@@ -1,22 +1,20 @@
-Step by step of running Pz Compute in LIneA Slurm
-=================================================
+# Step by step of running Pz Compute in LIneA Slurm
 
-Installation
-------------
+## Installation
 
 Access the HPC environment via ssh (on Jupyter Hub Terminal or from a Linux Terminal, via srvlogin).
-```
-ssh loginapl01 
+
+```bash
+ssh loginapl01
 ```
 
-***It is a requirement to have conda or [miniconda](https://docs.anaconda.com/free/miniconda/#quick-command-line-install) loaded on the system.*
-
+***It is a requirement to have conda or [miniconda](https://docs.anaconda.com/free/miniconda/#quick-command-line-install) loaded on the system.***
 
 #### Add the code below to your `~/.bashrc`:
 
 ```bash
-if [ -d /lustre/t0/scratch/users/`whoami` ]; then
-  export ALTHOME=/lustre/t0/scratch/users/`whoami`/slurm-home
+if [ -d /scripts/`whoami` ]; then
+  export ALTHOME=/scripts/`whoami`/slurm-home
   export PATH=$PATH:${ALTHOME}/bin
   export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+${LD_LIBRARY_PATH}:}${ALTHOME}/lib
   export XDG_DATA_HOME=${ALTHOME}/share
@@ -31,13 +29,17 @@ fi
 ```bash
 git clone https://github.com/linea-it/pz-compute && cd pz-compute
 export REPO_DIR=`pwd`
-conda create --name pz_compute python=3.10
-conda activate pz_compute
-. ./rail_scripts/install-pz-rail
-pip install -r rail_scripts/requirements.txt
+
+mkdir -p /scripts/$(whoami)/ondemand/conda_pkgs
+export CONDA_PKGS_DIRS=/scripts/$(whoami)/ondemand/conda_pkgs
+
+conda create --prefix /scripts/$(whoami)/ondemand/pz_compute python=3.12 pip
+conda activate /scripts/$(whoami)/ondemand/pz_compute
+
+bash ./rail_scripts/install-pz-rail
 
 cat <<EOF > env.sh
-conda activate pz_compute
+conda activate /scripts/\$(whoami)/ondemand/pz_compute
 export PZPATH=$REPO_DIR/rail_scripts/
 export PATH=\$PATH:\$PZPATH
 EOF
