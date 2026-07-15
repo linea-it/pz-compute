@@ -50,7 +50,8 @@ Define installation and run roots:
 export SCRIPTS=/scripts/$(whoami)
 export SCRATCH=/scratch/users/$(whoami)
 export PZ_INSTALL_ROOT=$SCRIPTS/ondemand
-export PZ_SRC_DIR=$PZ_INSTALL_ROOT/src
+export PZ_SRC_DIR=$SCRIPTS
+export PZ_COMPUTE_DIR=$PZ_SRC_DIR/pz-compute
 export PZ_RUN_ROOT=$SCRATCH/pz-compute-runs
 export PZ_CONDA_ENV=$PZ_INSTALL_ROOT/pz_compute_hats_e2e
 
@@ -70,7 +71,7 @@ if [ ! -d pz-compute ]; then
     git clone https://github.com/linea-it/pz-compute
 fi
 
-cd pz-compute
+cd "$PZ_COMPUTE_DIR"
 git status --short
 ```
 
@@ -84,7 +85,7 @@ conda activate "$PZ_CONDA_ENV"
 Install the base RAIL dependencies:
 
 ```bash
-PZ_INSTALL_ROOT="$PZ_INSTALL_ROOT" ./rail_scripts/install-pz-rail
+PZ_INSTALL_ROOT="$PZ_INSTALL_ROOT" "$PZ_COMPUTE_DIR/rail_scripts/install-pz-rail"
 ```
 
 When prompted by `install-pz-rail`, type:
@@ -112,10 +113,10 @@ pip install lsdb hats-import hats
 Create script links under `/scripts/$(whoami)/bin`:
 
 ```bash
-ln -sfn "$PZ_SRC_DIR/pz-compute/rail_scripts/rail-estimate" "$SCRIPTS/bin/rail-estimate"
-ln -sfn "$PZ_SRC_DIR/pz-compute/rail_scripts/rail-train" "$SCRIPTS/bin/rail-train"
-ln -sfn "$PZ_SRC_DIR/pz-compute/rail_scripts/rail-preprocess-parquet" "$SCRIPTS/bin/rail-preprocess-parquet"
-ln -sfn "$PZ_SRC_DIR/pz-compute/rail_scripts/pz-build-hats" "$SCRIPTS/bin/pz-build-hats"
+ln -sfn "$PZ_COMPUTE_DIR/rail_scripts/rail-estimate" "$SCRIPTS/bin/rail-estimate"
+ln -sfn "$PZ_COMPUTE_DIR/rail_scripts/rail-train" "$SCRIPTS/bin/rail-train"
+ln -sfn "$PZ_COMPUTE_DIR/rail_scripts/rail-preprocess-parquet" "$SCRIPTS/bin/rail-preprocess-parquet"
+ln -sfn "$PZ_COMPUTE_DIR/rail_scripts/pz-build-hats" "$SCRIPTS/bin/pz-build-hats"
 
 chmod +x "$SCRIPTS/bin/rail-estimate"
 chmod +x "$SCRIPTS/bin/rail-train"
@@ -130,14 +131,15 @@ cat > "$PZ_INSTALL_ROOT/env-hats-e2e.sh" <<'EOF'
 export SCRIPTS=/scripts/$(whoami)
 export SCRATCH=/scratch/users/$(whoami)
 export PZ_INSTALL_ROOT=$SCRIPTS/ondemand
-export PZ_SRC_DIR=$PZ_INSTALL_ROOT/src
+export PZ_SRC_DIR=$SCRIPTS
+export PZ_COMPUTE_DIR=$PZ_SRC_DIR/pz-compute
 export PZ_RUN_ROOT=$SCRATCH/pz-compute-runs
 export PZ_CONDA_ENV=$PZ_INSTALL_ROOT/pz_compute_hats_e2e
 export CONDA_PKGS_DIRS=$PZ_INSTALL_ROOT/conda_pkgs
 export PIP_CACHE_DIR=$PZ_INSTALL_ROOT/pip_cache
-export PATH=$SCRIPTS/bin:$PZ_SRC_DIR/pz-compute/rail_scripts:$PATH
-export PYTHONPATH=$PZ_SRC_DIR/pz-compute/rail_scripts:$PZ_SRC_DIR/pz-compute/scheduler_scripts/slurm:${PYTHONPATH:-}
-export DUSTMAPS_CONFIG_FNAME=$PZ_SRC_DIR/pz-compute/rail_scripts/dustmaps_config.json
+export PATH=$SCRIPTS/bin:$PZ_COMPUTE_DIR/rail_scripts:$PATH
+export PYTHONPATH=$PZ_COMPUTE_DIR/rail_scripts:$PZ_COMPUTE_DIR/scheduler_scripts/slurm:${PYTHONPATH:-}
+export DUSTMAPS_CONFIG_FNAME=$PZ_COMPUTE_DIR/rail_scripts/dustmaps_config.json
 conda activate "$PZ_CONDA_ENV"
 EOF
 
@@ -180,8 +182,8 @@ cd "$PZ_APOLLO_RUN"
 Link the repository fixtures into the scratch run:
 
 ```bash
-export PZ_TINY_TRAINING_HDF5="$PZ_SRC_DIR/pz-compute/data/tiny_training_set_for_tests_des_dr2.hdf5"
-export PZ_TINY_OBJECT_HDF5="$PZ_SRC_DIR/pz-compute/data/tiny_object_catalog_for_tests_des_dr2.hdf5"
+export PZ_TINY_TRAINING_HDF5="$PZ_COMPUTE_DIR/data/tiny_training_set_for_tests_des_dr2.hdf5"
+export PZ_TINY_OBJECT_HDF5="$PZ_COMPUTE_DIR/data/tiny_object_catalog_for_tests_des_dr2.hdf5"
 
 ln -sfn "$PZ_TINY_OBJECT_HDF5" input/tiny_object_catalog_for_tests_des_dr2.hdf5
 ```
@@ -231,9 +233,9 @@ Copy the Slurm launcher files into the scratch run:
 
 ```bash
 cd "$PZ_APOLLO_RUN"
-ln -sfn "$PZ_SRC_DIR/pz-compute/scheduler_examples/slurm/rail-slurm/rail-slurm.batch" .
-ln -sfn "$PZ_SRC_DIR/pz-compute/scheduler_examples/slurm/rail-slurm/rail-slurm.py" .
-cc -o slurm-shield "$PZ_SRC_DIR/pz-compute/utils/slurm/slurm-shield.c"
+ln -sfn "$PZ_COMPUTE_DIR/scheduler_examples/slurm/rail-slurm/rail-slurm.batch" .
+ln -sfn "$PZ_COMPUTE_DIR/scheduler_examples/slurm/rail-slurm/rail-slurm.py" .
+cc -o slurm-shield "$PZ_COMPUTE_DIR/utils/slurm/slurm-shield.c"
 ```
 
 Submit a small Slurm job. The fixture has one input file, so this test does not

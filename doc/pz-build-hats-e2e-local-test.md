@@ -194,22 +194,12 @@ sets every local Dask cluster option explicitly.
 cd "$PZ_LOCAL_RUN"
 pz-build-hats \
     --overwrite \
-    --input-group="" \
-    --id-column=coadd_object_id \
-    --ra-column=ra \
-    --dec-column=dec \
-    --staging-dir=pz-summary-hats-local.parquet_staging \
-    --pdf-output-dir=pz-summary-hats-local.pdf \
-    --pdf-dtype=float32 \
-    --batch-size=1000 \
     --fast-path-size-mb=0 \
-    --catalog-name=pz_summary \
     --use-hats-import \
     --dask-cluster=local \
     --local-n-workers=1 \
     --local-threads-per-worker=2 \
     --local-memory-limit=6GB \
-    --local-processes \
     input \
     output \
     pz-summary-hats-local
