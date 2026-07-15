@@ -185,10 +185,10 @@ meta/xvals
 data/yvals
 ```
 
-## Build HATS With hats-import and Local Dask
+## Build HATS With Dask Staging and hats-import
 
-Force the `hats-import` path by setting `--fast-path-size-mb=0`. This command
-sets every local Dask cluster option explicitly.
+Force the Dask path by setting `--fast-path-size-mb=0`. The same local Dask
+cluster is used for HDF5-to-parquet staging and for `hats-import`.
 
 ```bash
 cd "$PZ_LOCAL_RUN"
@@ -279,7 +279,8 @@ The local e2e test is successful when:
 
 - `rail-train` writes `estimator_fzboost.pkl`.
 - `rail-estimate` writes an HDF5 output with `meta/xvals` and `data/yvals`.
-- `pz-build-hats` logs `Starting local Dask cluster for hats-import`.
+- `pz-build-hats` logs `Starting local Dask cluster for pz-build-hats`.
+- `pz-build-hats` logs `Converting ... HDF5 pairs with Dask staging tasks`.
 - `lsdb.read_hats("pz-summary-hats-local/pz_summary")` returns rows.
 - `pz-summary-hats-local.pdf` contains PDF parquet parts and `xvals.parquet`.
 - the HATS summary row count matches the PDF product row count.

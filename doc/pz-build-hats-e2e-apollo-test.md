@@ -288,10 +288,12 @@ meta/xvals
 data/yvals
 ```
 
-## Build HATS With hats-import and Slurm Dask
+## Build HATS With Dask Staging and hats-import
 
 Force the `hats-import` path by setting `--fast-path-size-mb=0`. This command
-sets the Slurm Dask options that are required or useful for this e2e test.
+sets the Slurm Dask options that are required or useful for this e2e test. The
+same Slurm Dask cluster is used for HDF5-to-parquet staging and for
+`hats-import`.
 
 Adjust `--slurm-queue`, `--slurm-account`, memory, and walltime if your Apollo
 allocation requires different values.
@@ -436,7 +438,8 @@ The Apollo e2e test is successful when:
   are under `/scratch/users/$(whoami)/pz-compute-runs/$RUN_ID`.
 - `rail-train` writes `estimator_fzboost.pkl`.
 - the Slurm `rail-slurm.batch` job writes the expected HDF5 output.
-- `pz-build-hats` logs `Starting Slurm Dask cluster for hats-import`.
+- `pz-build-hats` logs `Starting Slurm Dask cluster for pz-build-hats`.
+- `pz-build-hats` logs `Converting ... HDF5 pairs with Dask staging tasks`.
 - `lsdb.read_hats("pz-summary-hats-apollo/pz_summary")` returns rows.
 - `pz-summary-hats-apollo.pdf` contains PDF parquet parts and `xvals.parquet`.
 - the HATS summary row count matches the PDF product row count.

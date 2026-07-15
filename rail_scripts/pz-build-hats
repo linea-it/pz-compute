@@ -28,14 +28,14 @@ Options:
     --fast-path-size-mb=<mb>  Max staged parquet size to build with LSDB
                               in memory before using hats-import [default: 100].
     --catalog-name=<name>  HATS catalog artifact name [default: pz_summary].
-    --use-hats-import      Use hats-import for staged parquet larger than the
-                           LSDB fast-path threshold.
-    --dask-scheduler=<address>  Connect hats-import to an existing Dask
+    --use-hats-import      Use Dask for HDF5-to-parquet staging and hats-import
+                           for HATS collection generation.
+    --dask-scheduler=<address>  Connect pz-build-hats to an existing Dask
                                 scheduler. Mutually exclusive with creating a
                                 local or Slurm cluster.
-    --dask-cluster=<mode>  Cluster to create for hats-import when no scheduler
+    --dask-cluster=<mode>  Cluster to create for pz-build-hats when no scheduler
                            is provided. Choices: local, slurm [default: local].
-    --local-n-workers=<n>  Local fallback workers for hats-import [default: 1].
+    --local-n-workers=<n>  Local fallback workers for pz-build-hats [default: 1].
     --local-threads-per-worker=<n>  Threads per local fallback worker
                                     [default: 2].
     --local-memory-limit=<limit>  Memory per local fallback worker
@@ -137,6 +137,13 @@ class FilePair:
     num_bins: int
 
 
+@dataclass
+class ConvertResult:
+    relative_path: str
+    num_rows: int
+    xvals: np.ndarray
+
+
 def info(msg: str) -> None:
     print(msg, file=stderr, flush=True)
 
@@ -144,11 +151,11 @@ def info(msg: str) -> None:
 def parse_cmdline() -> Configuration:
     args = docopt(__doc__, version=VERSION_TEXT)
 
-    input_dir = Path(args["<input_dir>"])
-    output_dir = Path(args["<output_dir>"])
-    hats_dir = Path(args["<hats_dir>"])
-    staging_dir = Path(args["--staging-dir"] or f"{hats_dir}.parquet_staging")
-    pdf_output_dir = Path(args["--pdf-output-dir"] or f"{hats_dir}.pdf")
+    input_dir = Path(args["<input_dir>"]).resolve()
+    output_dir = Path(args["<output_dir>"]).resolve()
+    hats_dir = Path(args["<hats_dir>"]).resolve()
+    staging_dir = Path(args["--staging-dir"] or f"{hats_dir}.parquet_staging").resolve()
+    pdf_output_dir = Path(args["--pdf-output-dir"] or f"{hats_dir}.pdf").resolve()
 
     try:
         batch_size = int(args["--batch-size"])
@@ -460,7 +467,7 @@ def write_summary_parts(
     cfg: Configuration,
     pair: FilePair,
     xvals_reference: np.ndarray | None,
-) -> np.ndarray:
+) -> ConvertResult:
     with (
         h5py.File(pair.input_path, "r") as input_handle,
         h5py.File(pair.output_path, "r") as output_handle,
@@ -515,7 +522,67 @@ def write_summary_parts(
                 pdf_path = cfg.pdf_output_dir / pdf_part_name(pair.relative_path, batch_index)
                 pq.write_table(pdf_table, pdf_path)
 
-    return xvals
+    return ConvertResult(pair.relative_path, num_rows, xvals)
+
+
+def convert_pair_to_parquet(cfg: Configuration, pair: FilePair) -> ConvertResult:
+    try:
+        return write_summary_parts(cfg, pair, None)
+    except Exception as err:
+        raise RuntimeError(f"failed converting {pair.relative_path}: {err}") from err
+
+
+def write_summary_parts_sequential(
+    cfg: Configuration,
+    pairs: list[FilePair],
+) -> list[ConvertResult]:
+    results = []
+    xvals_reference = None
+    for pair in pairs:
+        result = write_summary_parts(cfg, pair, xvals_reference)
+        if xvals_reference is None:
+            xvals_reference = result.xvals
+        results.append(result)
+    return results
+
+
+def write_summary_parts_dask(
+    cfg: Configuration,
+    pairs: list[FilePair],
+    client,
+) -> list[ConvertResult]:
+    try:
+        from distributed import as_completed
+    except Exception as err:
+        raise RuntimeError("distributed is required for Dask staging.") from err
+
+    info("Converting %d HDF5 pairs with Dask staging tasks" % len(pairs))
+    futures = client.map(convert_pair_to_parquet, [cfg] * len(pairs), pairs)
+    results = []
+    try:
+        for future in as_completed(futures):
+            result = future.result()
+            info("Converted %s rows=%d" % (result.relative_path, result.num_rows))
+            results.append(result)
+    finally:
+        for future in futures:
+            if not future.done():
+                future.cancel()
+
+    results.sort(key=lambda result: result.relative_path)
+    return results
+
+
+def validate_xvals(results: list[ConvertResult]) -> np.ndarray:
+    if not results:
+        raise RuntimeError("no conversion results were produced")
+
+    xvals_reference = results[0].xvals
+    for result in results[1:]:
+        if not np.array_equal(xvals_reference, result.xvals):
+            raise RuntimeError(f"meta/xvals differs between output files at {result.relative_path}")
+
+    return xvals_reference
 
 
 def write_xvals_metadata(directory: Path, xvals: np.ndarray, file_name: str) -> None:
@@ -533,7 +600,7 @@ def create_hats_import_client(cfg: Configuration):
         from distributed import Client, LocalCluster
     except Exception as err:
         raise RuntimeError(
-            "distributed is required to create a Dask client for hats-import."
+            "distributed is required to create a Dask client for pz-build-hats."
         ) from err
 
     if cfg.dask_scheduler:
@@ -542,7 +609,7 @@ def create_hats_import_client(cfg: Configuration):
 
     if cfg.dask_cluster == "local":
         info(
-            "Starting local Dask cluster for hats-import: "
+        "Starting local Dask cluster for pz-build-hats: "
             "n_workers=%d threads_per_worker=%d memory_limit=%s processes=%s"
             % (
                 cfg.local_n_workers,
@@ -615,7 +682,7 @@ def create_hats_import_client(cfg: Configuration):
         wait_count = max(1, ceil(cfg.slurm_scale_down_delay / cfg.slurm_adapt_interval))
 
         info(
-            "Starting Slurm Dask cluster for hats-import: "
+            "Starting Slurm Dask cluster for pz-build-hats: "
             "initial_jobs=%d max_jobs=%d cores=%s processes=%s memory=%s "
             "walltime=%s queue=%s account=%s"
             % (
@@ -646,7 +713,7 @@ def create_hats_import_client(cfg: Configuration):
     raise RuntimeError(f"unsupported Dask cluster mode: {cfg.dask_cluster}")
 
 
-def build_hats_collection(cfg: Configuration) -> None:
+def build_hats_collection(cfg: Configuration, client=None) -> None:
     input_files = sorted(path for path in cfg.staging_dir.glob("*.parquet")
                          if path.name != "pz_pdf_xvals.parquet")
     if not input_files:
@@ -730,14 +797,11 @@ def build_hats_collection(cfg: Configuration) -> None:
         dec_column="coord_dec",
     )
 
+    if client is None:
+        raise RuntimeError("internal error: hats-import requires a Dask client")
+
     info("Building HATS collection: %s" % collection_path)
-    client, cluster = create_hats_import_client(cfg)
-    try:
-        run_collection_import(args, client)
-    finally:
-        client.close()
-        if cluster is not None:
-            cluster.close()
+    run_collection_import(args, client)
 
 
 def setup_output_dirs(cfg: Configuration) -> None:
@@ -786,21 +850,35 @@ def run(cfg: Configuration) -> None:
     validate_expected_staging_size(cfg, pairs)
     setup_output_dirs(cfg)
 
-    xvals_reference = None
-    for pair in pairs:
-        xvals_reference = write_summary_parts(cfg, pair, xvals_reference)
+    client = None
+    cluster = None
+    if cfg.use_hats_import:
+        client, cluster = create_hats_import_client(cfg)
 
-    write_xvals_metadata(cfg.staging_dir, xvals_reference, "pz_pdf_xvals.parquet")
-    info("Wrote summary parquet staging files: %s" % cfg.staging_dir)
-    if cfg.write_pdf_product:
-        write_xvals_metadata(cfg.pdf_output_dir, xvals_reference, "xvals.parquet")
-        info("Wrote full PDF parquet product: %s" % cfg.pdf_output_dir)
+    try:
+        if client is not None:
+            results = write_summary_parts_dask(cfg, pairs, client)
+        else:
+            results = write_summary_parts_sequential(cfg, pairs)
 
-    if cfg.staging_only:
-        return
+        xvals_reference = validate_xvals(results)
 
-    build_hats_collection(cfg)
-    info("Done: %s" % cfg.hats_dir)
+        write_xvals_metadata(cfg.staging_dir, xvals_reference, "pz_pdf_xvals.parquet")
+        info("Wrote summary parquet staging files: %s" % cfg.staging_dir)
+        if cfg.write_pdf_product:
+            write_xvals_metadata(cfg.pdf_output_dir, xvals_reference, "xvals.parquet")
+            info("Wrote full PDF parquet product: %s" % cfg.pdf_output_dir)
+
+        if cfg.staging_only:
+            return
+
+        build_hats_collection(cfg, client)
+        info("Done: %s" % cfg.hats_dir)
+    finally:
+        if client is not None:
+            client.close()
+        if cluster is not None:
+            cluster.close()
 
 
 def main() -> None:

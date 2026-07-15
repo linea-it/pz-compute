@@ -8,7 +8,8 @@ parallelization still writes one `rail-estimate` HDF5 output per input file.
 `pz-build-hats` then reads the matching input/output pairs, derives scalar
 photo-z summary columns from the output PDFs, writes a separate full PDF
 parquet product, stages a tabular parquet summary, and builds a HATS collection
-from that staging.
+from that staging. When `--use-hats-import` is enabled, the same Dask client is
+used for both HDF5-to-parquet staging and `hats-import` collection generation.
 
 ## Products
 
@@ -187,9 +188,14 @@ For large runs, use one of these paths:
 --fast-path-size-mb=<larger_limit_for_local_testing>
 ```
 
-## hats-import With Local Dask
+With `--use-hats-import`, the HDF5-to-parquet staging phase is also distributed
+with Dask. Each Dask task converts one matching input/output HDF5 pair into
+summary parquet and, unless disabled, full PDF parquet. The same Dask client is
+then reused by `hats-import`.
 
-Force `hats-import` locally by setting the fast-path threshold to zero:
+## Dask Staging and hats-import With Local Dask
+
+Force the Dask path locally by setting the fast-path threshold to zero:
 
 ```bash
 pz-build-hats \
@@ -216,7 +222,7 @@ thread-based workers
 
 Pass `--local-processes` if you need separate worker processes.
 
-## hats-import With Slurm Dask
+## Dask Staging and hats-import With Slurm Dask
 
 For LIneA Slurm validation, pass the Slurm Dask resources explicitly:
 
@@ -261,12 +267,13 @@ Optional Slurm options include:
 
 The Slurm path creates a `dask-jobqueue` `SLURMCluster`, submits
 `minimum_jobs * processes` initial workers, and enables adaptive scaling up to
-`maximum_jobs`.
+`maximum_jobs`. The cluster is used first for staging and then reused by
+`hats-import`.
 
 ## Existing Dask Scheduler
 
 If you start a Dask scheduler yourself, connect to it instead of creating a
-cluster:
+cluster. The scheduler is used for both staging and `hats-import`:
 
 ```bash
 pz-build-hats \
