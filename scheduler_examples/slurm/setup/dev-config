@@ -7,7 +7,7 @@ echo "DEV - setting environment"
 export SCRIPTS="${SCRIPTS:-/scripts/$(whoami)}"
 export SCRATCH="${SCRATCH:-/scratch/users/$(whoami)}"
 export PZ_INSTALL_ROOT="${PZ_INSTALL_ROOT:-$SCRIPTS/ondemand}"
-export PZ_SRC_DIR="${PZ_SRC_DIR:-$PZ_INSTALL_ROOT/src}"
+export PZ_SRC_DIR="${PZ_SRC_DIR:-$SCRIPTS}"
 export PZ_RUN_ROOT="${PZ_RUN_ROOT:-$SCRATCH/pz-compute-runs}"
 export PZ_CONDA_ENV="${PZ_CONDA_ENV:-$PZ_INSTALL_ROOT/pz_compute_dev}"
 

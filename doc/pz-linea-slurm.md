@@ -28,15 +28,18 @@ fi
 
 ```bash
 export PZ_INSTALL_ROOT=/scripts/$(whoami)/ondemand
-export PZ_SRC_DIR=$PZ_INSTALL_ROOT/src
+export PZ_SRC_DIR=/scripts/$(whoami)
+export PZ_COMPUTE_DIR=$PZ_SRC_DIR/pz-compute
 export PZ_RUN_ROOT=/scratch/users/$(whoami)/pz-compute-runs
 
 mkdir -p "$PZ_SRC_DIR" "$PZ_RUN_ROOT" "$PZ_INSTALL_ROOT/conda_pkgs"
 export CONDA_PKGS_DIRS=$PZ_INSTALL_ROOT/conda_pkgs
 
 cd "$PZ_SRC_DIR"
-git clone https://github.com/linea-it/pz-compute
-cd pz-compute
+if [ ! -d pz-compute ]; then
+  git clone https://github.com/linea-it/pz-compute
+fi
+cd "$PZ_COMPUTE_DIR"
 
 conda create --prefix "$PZ_INSTALL_ROOT/pz_compute" python=3.12 pip
 conda activate "$PZ_INSTALL_ROOT/pz_compute"
@@ -45,10 +48,11 @@ PZ_INSTALL_ROOT="$PZ_INSTALL_ROOT" bash ./rail_scripts/install-pz-rail
 
 cat <<EOF > "$PZ_INSTALL_ROOT/env.sh"
 export PZ_INSTALL_ROOT=/scripts/\$(whoami)/ondemand
-export PZ_SRC_DIR=\$PZ_INSTALL_ROOT/src
+export PZ_SRC_DIR=/scripts/\$(whoami)
+export PZ_COMPUTE_DIR=\$PZ_SRC_DIR/pz-compute
 export PZ_RUN_ROOT=/scratch/users/\$(whoami)/pz-compute-runs
 conda activate \$PZ_INSTALL_ROOT/pz_compute
-export PZPATH=\$PZ_SRC_DIR/pz-compute/rail_scripts/
+export PZPATH=\$PZ_COMPUTE_DIR/rail_scripts/
 export PATH=\$PATH:\$PZPATH
 EOF
 
@@ -66,8 +70,8 @@ RUN_ID=test-001
 mkdir -p "$PZ_RUN_ROOT/$RUN_ID"
 cd "$PZ_RUN_ROOT/$RUN_ID"
 
-ln -s "$PZ_SRC_DIR/pz-compute/scheduler_examples/slurm/rail-slurm/rail-slurm.batch" .
-ln -s "$PZ_SRC_DIR/pz-compute/scheduler_examples/slurm/rail-slurm/rail-slurm.py" .
+ln -s "$PZ_COMPUTE_DIR/scheduler_examples/slurm/rail-slurm/rail-slurm.batch" .
+ln -s "$PZ_COMPUTE_DIR/scheduler_examples/slurm/rail-slurm/rail-slurm.py" .
 
 ## copy or create symbolic links to the input files (pre-processing outputs)
 mkdir input output
@@ -78,7 +82,7 @@ mkdir input output
 ## copy or create symbolic link to the estimator_{algorithm}.pkl file
 cp <your estimator_{algorithm}.pkl> .
 
-cc -o slurm-shield "$PZ_SRC_DIR/pz-compute/utils/slurm/slurm-shield.c"
+cc -o slurm-shield "$PZ_COMPUTE_DIR/utils/slurm/slurm-shield.c"
 ```
 
 #### Execute pz-compute:
