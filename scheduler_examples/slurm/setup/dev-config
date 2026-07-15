@@ -4,60 +4,71 @@
 
 echo "DEV - setting environment"
 
-cd $SCRIPTS
+export SCRIPTS="${SCRIPTS:-/scripts/$(whoami)}"
+export SCRATCH="${SCRATCH:-/scratch/users/$(whoami)}"
+export PZ_INSTALL_ROOT="${PZ_INSTALL_ROOT:-$SCRIPTS/ondemand}"
+export PZ_SRC_DIR="${PZ_SRC_DIR:-$PZ_INSTALL_ROOT/src}"
+export PZ_RUN_ROOT="${PZ_RUN_ROOT:-$SCRATCH/pz-compute-runs}"
+export PZ_CONDA_ENV="${PZ_CONDA_ENV:-$PZ_INSTALL_ROOT/pz_compute_dev}"
 
-if [ -d "pz-compute" ] || [ -L "pz-compute" ]; then
-  echo "pz-compute dir ok"
+mkdir -p "$PZ_INSTALL_ROOT" "$PZ_SRC_DIR" "$PZ_RUN_ROOT" "$SCRIPTS/bin"
+
+if [ -d "$PZ_SRC_DIR/pz-compute" ] || [ -L "$PZ_SRC_DIR/pz-compute" ]; then
+  PZ_COMPUTE_DIR="$PZ_SRC_DIR/pz-compute"
+elif [ -d "$SCRIPTS/pz-compute" ] || [ -L "$SCRIPTS/pz-compute" ]; then
+  PZ_COMPUTE_DIR="$SCRIPTS/pz-compute"
 else
-  echo "pz-compute dir does not exist, please clone or link it"
+  echo "pz-compute dir does not exist, please clone or link it at $PZ_SRC_DIR/pz-compute"
   exit 1
 fi
 
-if conda info --envs | grep -q pz_compute_dev; then 
-  conda activate pz_compute_dev
+export PZ_COMPUTE_DIR
+echo "pz-compute dir ok: $PZ_COMPUTE_DIR"
+
+if [ -d "$PZ_CONDA_ENV" ]; then
+  conda activate "$PZ_CONDA_ENV"
   echo "pz_compute_dev env already exists (: activating it" 
 
   read -p "Would you like to reinstall pz_compute package? (y/n):" resposta
 
   if [[ "$resposta" == "y" || "$resposta" == "Y" ]]; then
-    $SCRIPTS/pz-compute/rail_scripts/install-pz-rail
+    PZ_INSTALL_ROOT="$PZ_INSTALL_ROOT" "$PZ_COMPUTE_DIR/rail_scripts/install-pz-rail"
   fi
 
   export PATH=$PATH:$SCRIPTS/bin
-  export DUSTMAPS_CONFIG_FNAME=$SCRIPTS/pz-compute/rail_scripts/dustmaps_config.json
-  export PATH=$PATH:$SCRIPTS/pz-compute/scheduler_examples/slurm
+  export DUSTMAPS_CONFIG_FNAME=$PZ_COMPUTE_DIR/rail_scripts/dustmaps_config.json
+  export PATH=$PATH:$PZ_COMPUTE_DIR/scheduler_examples/slurm
 
   chmod +x $SCRIPTS/bin/pz_run_setup_dev.py
 else 
   echo "pz_compute_dev env does not exist ): creating it"
   
-  conda create --name pz_compute_dev python=3.11
+  conda create --prefix "$PZ_CONDA_ENV" python=3.11
 fi
 
-conda activate pz_compute_dev 
+conda activate "$PZ_CONDA_ENV"
 
-mkdir $SCRIPTS/bin
-ln -s $SCRIPTS/pz-compute/scheduler_scripts/slurm/pz-compute $SCRIPTS/bin/pz-compute-dev
+ln -sfn "$PZ_COMPUTE_DIR/scheduler_scripts/slurm/pz-compute" "$SCRIPTS/bin/pz-compute-dev"
 chmod +x $SCRIPTS/bin/pz-compute-dev
 
-ln -s $SCRIPTS/pz-compute/scheduler_scripts/slurm/pz-train $SCRIPTS/bin/pz-train-dev
+ln -sfn "$PZ_COMPUTE_DIR/scheduler_scripts/slurm/pz-train" "$SCRIPTS/bin/pz-train-dev"
 chmod +x $SCRIPTS/bin/pz-train-dev
 
 export PATH=$PATH:$SCRIPTS/bin
-export DUSTMAPS_CONFIG_FNAME=$SCRIPTS/pz-compute/rail_scripts/dustmaps_config.json
+export DUSTMAPS_CONFIG_FNAME=$PZ_COMPUTE_DIR/rail_scripts/dustmaps_config.json
 
 mkdir -p $ALTHOME/data
-$SCRIPTS/pz-compute/rail_scripts/install-pz-rail
+PZ_INSTALL_ROOT="$PZ_INSTALL_ROOT" "$PZ_COMPUTE_DIR/rail_scripts/install-pz-rail"
 
-ln -s $SCRIPTS/pz-compute/scheduler_examples/slurm/setup/pz_run_setup.py $SCRIPTS/bin/pz_run_setup_dev.py
+ln -sfn "$PZ_COMPUTE_DIR/scheduler_examples/slurm/setup/pz_run_setup.py" "$SCRIPTS/bin/pz_run_setup_dev.py"
 chmod +x $SCRIPTS/bin/pz_run_setup_dev.py
 
-ln -s $SCRIPTS/pz-compute/performance/slurm/slurm-analyze-host-performance.py $SCRIPTS/bin/slurm-analyze-host-performance.py
+ln -sfn "$PZ_COMPUTE_DIR/performance/slurm/slurm-analyze-host-performance.py" "$SCRIPTS/bin/slurm-analyze-host-performance.py"
 chmod +x $SCRIPTS/bin/slurm-analyze-host-performance.py
 
-ln -s  $SCRIPTS/pz-compute/rail_scripts/rail-estimate $SCRIPTS/bin/rail-estimate
-ln -s  $SCRIPTS/pz-compute/rail_scripts/rail-train $SCRIPTS/bin/rail-train 
-ln -s  $SCRIPTS/pz-compute/rail_scripts/rail-preprocess-parquet $SCRIPTS/bin/rail-preprocess-parquet 
+ln -sfn "$PZ_COMPUTE_DIR/rail_scripts/rail-estimate" "$SCRIPTS/bin/rail-estimate"
+ln -sfn "$PZ_COMPUTE_DIR/rail_scripts/rail-train" "$SCRIPTS/bin/rail-train"
+ln -sfn "$PZ_COMPUTE_DIR/rail_scripts/rail-preprocess-parquet" "$SCRIPTS/bin/rail-preprocess-parquet"
 
 echo "installing other dependencies"
 
@@ -66,9 +77,9 @@ conda install -y ipykernel
 conda install -y bokeh
 conda install -y holoviews
 
-pip install -e $SCRIPTS/pz-compute/ondemand/ondemand_utils/.
+pip install -e "$PZ_COMPUTE_DIR/ondemand/ondemand_utils/."
 #pip install pzserver
 
 
 export ENVIRONMENT="dev"
-
+cd "$PZ_RUN_ROOT"
