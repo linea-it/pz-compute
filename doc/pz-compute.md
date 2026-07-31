@@ -26,7 +26,9 @@ ssh loginapl01
 
 2. Logout and login again to **loginapl01**. 
 
-3. Type pz-prod, this is going to send you to your t0 scratch area. Once you are here, everytime you login, just need to run this command.
+3. Type pz-prod. This configures the production environment and sends you to
+   `$PZ_RUN_ROOT`, which defaults to `$SCRATCH/pz-compute-runs`. Run
+   directories created from this point will stay under scratch.
 
     ```shell
     pz-prod
@@ -36,18 +38,13 @@ ssh loginapl01
 ### Execution  
 
 
-1. Add test setup where you are going to run pz-compute:
-    ```shell
-     ln -s ~app.photoz/pz-compute/scheduler_examples_slurm/pz_run_setup.py
-    ```
-
-2. Execute 
+1. Create the run directory from `$PZ_RUN_ROOT`:
      ```shell
     python pz_run_setup.py -a=algorithm -c="comments" -p=dir-process
     ```
 
 
-3. Run the pipeline inside the created dir
+2. Run the pipeline inside the created dir
 
     Default configuration: 
 
@@ -76,7 +73,12 @@ ssh loginapl01
     
 2. Logout and login again to **loginapl01**. 
 
-3. Type pz-dev, first time that you run it, it will create a pz-compute-dev env, do the installing and setup for pz-compute, then send you to your t0 scratch area. Ps: make sure that your bashrc is configured to use the miniconda path intalled inside the lustre env. Once you are here, everytime you login, just need to run this command.
+3. Type pz-dev. The first time that you run it, it will create the
+   pz-compute-dev env under `$PZ_INSTALL_ROOT`, install and set up pz-compute,
+   then send you to `$PZ_RUN_ROOT`, which defaults to
+   `$SCRATCH/pz-compute-runs`. Ps: make sure that your bashrc is configured to
+   use the miniconda path installed inside the lustre env. Once you are here,
+   everytime you login, just need to run this command.
 
     ```shell
     pz-dev
@@ -84,7 +86,7 @@ ssh loginapl01
 
 ### Execution  
 
-1. Inside the bin dir, there is a alias to pz_run_setup.py. To create a run dir execute: 
+1. Create the run directory from `$PZ_RUN_ROOT`:
      ```shell
     python pz_run_setup.py -a=algorithm -c="comments" -p=dir-process
     ```
@@ -92,7 +94,7 @@ ssh loginapl01
 2. Remember to add a estimate.pkl file for the algorithm that you are going to run, or train the algorithm.
 
 
-3. Run the pipeline 
+3. Run the pipeline inside the created dir
 
     Default configuration: 
 
