@@ -1,4 +1,4 @@
-# DP2 PSF FlexZBoost Stage 2
+# DP2 PSF FlexZBoost Stage 2: Full Model
 
 This document describes how to run photo-z estimation on Apollo/LIneA after the
 PSF-trained FlexZBoost pickle has been generated.
@@ -153,7 +153,8 @@ mkdir -p "$PZ_APOLLO_RUN/model" "$PZ_APOLLO_RUN/output" "$PZ_APOLLO_RUN/log"
 cd "$PZ_APOLLO_RUN"
 ```
 
-Copy or link the model pickle produced by Stage 1 into the run directory:
+Copy or link the model pickle produced by
+`dp2_stage1_train_instructions_full.md` into the run directory:
 
 ```bash
 cp /path/to/model_dp2_v3p1_fzboost_psf_baseline_gold.pickle \
