@@ -119,13 +119,29 @@ export PZ_RUN_ROOT=$SCRATCH/pz-compute-runs
 export PZ_CONDA_ENV=$PZ_INSTALL_ROOT/pz_compute_dp2_psf
 export CONDA_PKGS_DIRS=$PZ_INSTALL_ROOT/conda_pkgs
 export PIP_CACHE_DIR=$PZ_INSTALL_ROOT/pip_cache
-export PATH=$SCRIPTS/bin:$PZ_COMPUTE_DIR/rail_scripts:$PATH
+export PATH=$PZ_CONDA_ENV/bin:$SCRIPTS/bin:$PZ_COMPUTE_DIR/rail_scripts:$PATH
 export PYTHONPATH=$PZ_COMPUTE_DIR/rail_scripts:${PYTHONPATH:-}
-conda activate "$PZ_CONDA_ENV"
 EOF
 
 chmod +x "$PZ_INSTALL_ROOT/env-dp2-psf-estimate.sh"
 source "$PZ_INSTALL_ROOT/env-dp2-psf-estimate.sh"
+```
+
+The environment loader intentionally avoids `conda activate` and instead puts
+the conda environment's `bin` directory at the front of `PATH`. This is more
+robust for Slurm batch jobs, where non-interactive shells may fail with:
+
+```text
+CondaError: Run 'conda init' before 'conda activate'
+```
+
+Verify that the loader does not contain `conda activate`:
+
+```bash
+if grep -n "conda activate" "$PZ_INSTALL_ROOT/env-dp2-psf-estimate.sh"; then
+    echo "ERROR: remove conda activate from env-dp2-psf-estimate.sh"
+    exit 1
+fi
 ```
 
 Check imports:
@@ -205,13 +221,44 @@ PY
 This verifies that `rail-estimate`, the model pickle, and the PSF column
 templates work together before launching the full dataset.
 
+In this Apollo environment, direct parquet input can be exposed to RAIL as a
+`pyarrow.Table`, which may fail inside `rail-estimate` with:
+
+```text
+AttributeError: 'pyarrow.lib.Table' object has no attribute 'items'
+```
+
+For that reason, convert each parquet input to a temporary HDF5 file before
+calling `rail-estimate`.
+
 ```bash
 cd "$PZ_APOLLO_RUN"
 
 export PZ_FIRST_INPUT=$(cat first-input.txt)
+mkdir -p tmp
+
+python - <<'PY'
+import os
+from pathlib import Path
+
+import pandas as pd
+import tables_io
+
+inp = Path(os.environ["PZ_FIRST_INPUT"])
+out = Path("tmp/smoke-test-input.hdf5")
+
+cols = []
+cols += [f"{band}_psfMag_dered" for band in "ugrizy"]
+cols += [f"{band}_psfMagErr_dered" for band in "ugrizy"]
+
+df = pd.read_parquet(inp, columns=cols)
+tables_io.write(df, str(out))
+
+print("wrote:", out, df.shape)
+PY
 
 rail-estimate \
-  "$PZ_FIRST_INPUT" \
+  tmp/smoke-test-input.hdf5 \
   "$PZ_OUTPUT_DIR/smoke-test.hdf5" \
   --algorithm=fzboost \
   --calibration-file="$PZ_MODEL" \
@@ -258,9 +305,9 @@ echo "Number of parquet files: $PZ_NFILES"
 ## 6. Create the Slurm array script
 
 Create a small array-job runner. Each array task processes exactly one parquet
-file and writes one HDF5 output file. The output path preserves the input
-directory structure below the DP2 dataset root, replacing `.parquet` with
-`.hdf5`.
+file, converts it to a temporary HDF5 input, and writes one final HDF5 output
+file. The output path preserves the input directory structure below the DP2
+dataset root, replacing `.parquet` with `.hdf5`.
 
 ```bash
 cd "$PZ_APOLLO_RUN"
@@ -269,7 +316,7 @@ cat > run-one-dp2-psf-estimate.sh <<'EOF'
 #!/usr/bin/env bash
 #SBATCH --job-name=dp2-pz-psf
 #SBATCH --partition=cpu
-#SBATCH --mem-per-cpu=2140M
+#SBATCH --mem=16G
 #SBATCH --time=12:00:00
 #SBATCH --output=log/slurm-%A_%a.out
 #SBATCH --error=log/slurm-%A_%a.err
@@ -288,20 +335,47 @@ if [ -z "$input_file" ]; then
     echo "No input file for SLURM_ARRAY_TASK_ID=$SLURM_ARRAY_TASK_ID" >&2
     exit 1
 fi
+export input_file
 
 relative_path="${input_file#$PZ_DP2_INPUT_DATASET/}"
 output_file="$PZ_OUTPUT_DIR/${relative_path%.parquet}.hdf5"
+tmp_dir="${TMPDIR:-$PWD/tmp}/dp2-psf-estimate-${SLURM_JOB_ID}-${SLURM_ARRAY_TASK_ID}"
+tmp_input="$tmp_dir/input.hdf5"
+export tmp_input
 
 mkdir -p "$(dirname "$output_file")"
+mkdir -p "$tmp_dir"
+trap 'rm -rf "$tmp_dir"' EXIT
 
 echo "SLURM_JOB_ID=$SLURM_JOB_ID"
 echo "SLURM_ARRAY_TASK_ID=$SLURM_ARRAY_TASK_ID"
 echo "input_file=$input_file"
+echo "tmp_input=$tmp_input"
 echo "output_file=$output_file"
 echo "model=$PZ_MODEL"
 
+python - <<'PY'
+import os
+from pathlib import Path
+
+import pandas as pd
+import tables_io
+
+inp = Path(os.environ["input_file"])
+out = Path(os.environ["tmp_input"])
+
+cols = []
+cols += [f"{band}_psfMag_dered" for band in "ugrizy"]
+cols += [f"{band}_psfMagErr_dered" for band in "ugrizy"]
+
+df = pd.read_parquet(inp, columns=cols)
+tables_io.write(df, str(out))
+
+print("converted:", inp, "->", out, df.shape)
+PY
+
 rail-estimate \
-  "$input_file" \
+  "$tmp_input" \
   "$output_file" \
   --algorithm=fzboost \
   --calibration-file="$PZ_MODEL" \
@@ -310,6 +384,7 @@ rail-estimate \
 EOF
 
 chmod +x run-one-dp2-psf-estimate.sh
+bash -n run-one-dp2-psf-estimate.sh
 ```
 
 ## 7. Submit a pilot array job
@@ -337,6 +412,12 @@ sbatch \
   run-one-dp2-psf-estimate.sh
 ```
 
+Save the job id printed by `sbatch`:
+
+```bash
+export PZ_ARRAY_JOB_ID=<jobid>
+```
+
 If Apollo requires an account, include it in the `sbatch` command:
 
 ```bash
@@ -352,8 +433,9 @@ squeue -u "$(whoami)"
 After the pilot finishes, inspect the pilot outputs:
 
 ```bash
+sacct -j "$PZ_ARRAY_JOB_ID" --format=JobID%30,JobName%25,State,ExitCode,Elapsed,MaxRSS
 find "$PZ_APOLLO_RUN/output-pilot" -name '*.hdf5' | sort
-grep -R "Traceback\\|Error:" log || true
+grep -R "Traceback\\|Error:\\|CondaError\\|Killed\\|OOM\\|out of memory" log || true
 ```
 
 Before submitting production, reset `PZ_OUTPUT_DIR` to the production output
@@ -365,8 +447,12 @@ export PZ_OUTPUT_DIR=$PZ_APOLLO_RUN/output
 
 ## 8. Submit the full-cluster production job
 
-For the final run over the complete DP2 catalog, scale the array concurrency to
-fill Apollo in the same spirit as the historical large `pz-compute` runs.
+For the final run over the complete DP2 catalog, scale the array concurrency
+using three inputs:
+
+- the historical large `pz-compute` defaults documented in this repository;
+- the current Apollo partition layout documented by LIneA;
+- the observed memory requirement from the pilot run.
 
 The previous production defaults in this repository used:
 
@@ -375,21 +461,37 @@ The previous production defaults in this repository used:
 ```
 
 for `fzboost` and similar single-process estimators. That corresponds to about
-78 concurrent `rail-estimate` processes per node. If the current Apollo
-allocation has 28 CPU nodes available, a conservative scaled target is:
+78 concurrent `rail-estimate` processes per node.
+
+The current Apollo documentation states that the cluster has 28 compute nodes,
+but the standard `cpu` partition exposes 25 nodes, `apl[01-25]`; `apl26`,
+`apl27`, and `apl28` are reserved for Jupyter notebooks and other LIneA platform
+pipelines. The `cpu` partition includes:
+
+- 16 nodes `apl[01-16]` with 128 GB RAM each;
+- 9 nodes `apl[17-25]` with 256 GB RAM each.
+
+In this DP2 PSF parquet-to-HDF5 workflow, a pilot task processing a large shard
+failed with the default 2140 MiB memory request and completed with `--mem=8G`.
+A full-catalog run later showed that some larger shards can still exceed 8 GB,
+so use `--mem=16G` for the production array unless a newer pilot over the
+largest shards shows that a smaller request is enough. The memory-limited
+capacity of the `cpu` partition with 16 GB per task is approximately:
 
 ```text
-28 nodes * 78 slots per node = 2184 concurrent tasks
+16 nodes * (128 GB / 16 GB) = 128 tasks
+ 9 nodes * (256 GB / 16 GB) = 144 tasks
+total theoretical memory capacity = 272 concurrent tasks
 ```
 
-Use this as the first full-cluster target:
+Use a conservative first full-cluster target below the theoretical limit:
 
 ```bash
 cd "$PZ_APOLLO_RUN"
 
 export PZ_FILE_LIST=$PZ_APOLLO_RUN/input-parquet-files.txt
 export PZ_NFILES=$(wc -l < "$PZ_FILE_LIST")
-export PZ_MAX_CONCURRENT=2184
+export PZ_MAX_CONCURRENT=200
 
 sbatch \
   --array=0-$((PZ_NFILES - 1))%$PZ_MAX_CONCURRENT \
@@ -397,21 +499,29 @@ sbatch \
   run-one-dp2-psf-estimate.sh
 ```
 
+Save the job id printed by `sbatch`:
+
+```bash
+export PZ_ARRAY_JOB_ID=<jobid>
+```
+
 If the cluster is busy, or if the run shows memory pressure or filesystem
 contention, reduce only the concurrency cap, for example:
 
 ```bash
-export PZ_MAX_CONCURRENT=1000
+export PZ_MAX_CONCURRENT=100
 ```
 
 If the run is stable and Apollo policy allows a higher active array limit, the
-cap can be increased after confirming the current hardware and queue limits with
-the operations team.
+cap can be increased toward `250`, still staying below the approximate
+memory-limited capacity of `272`.
 
 This document uses a Slurm array rather than the legacy `pz-compute.batch`
-dispatcher because each array task writes an output path ending in `.hdf5` while
-preserving the input `Norder=*/Dir=*/Npix=*` tree. The historical `pz-compute`
-defaults are still used here to choose a full-cluster concurrency target.
+dispatcher because each array task converts its input parquet to temporary HDF5,
+writes a final output path ending in `.hdf5`, and preserves the input
+`Norder=*/Dir=*/Npix=*` tree. The historical `pz-compute` defaults are useful as
+a CPU-scale reference, but the final concurrency must be capped by the current
+Apollo `cpu` partition memory and by the observed per-task memory requirement.
 
 ## 9. Resume failed or missing outputs
 
@@ -445,7 +555,7 @@ If `missing outputs` is greater than zero, resubmit only the missing files:
 ```bash
 export PZ_FILE_LIST=$PZ_APOLLO_RUN/missing-parquet-files.txt
 export PZ_NFILES=$(wc -l < "$PZ_FILE_LIST")
-export PZ_MAX_CONCURRENT=2184
+export PZ_MAX_CONCURRENT=200
 
 if [ "$PZ_NFILES" -gt 0 ]; then
   sbatch \
@@ -456,6 +566,75 @@ fi
 ```
 
 ## 10. Inspect outputs
+
+While the job is still running, summarize the active array state without
+treating `RUNNING` or `PENDING` tasks as failures:
+
+```bash
+cd "$PZ_APOLLO_RUN"
+
+: "${PZ_ARRAY_JOB_ID:?set PZ_ARRAY_JOB_ID to the Slurm array job id}"
+
+squeue -j "$PZ_ARRAY_JOB_ID" || true
+sacct -j "$PZ_ARRAY_JOB_ID" --format=JobID%30,JobName%25,State,ExitCode,Elapsed,MaxRSS
+
+sacct -j "$PZ_ARRAY_JOB_ID" --parsable2 --noheader \
+  --format=JobID%30,State,ExitCode,Elapsed,MaxRSS |
+awk -F'|' -v job="$PZ_ARRAY_JOB_ID" '
+  $1 ~ "^" job "_[0-9]+$" {
+    total += 1
+    states[$2] += 1
+    if ($2 !~ /^(COMPLETED|RUNNING|PENDING)$/) {
+      failed += 1
+      print "failed or terminal non-success array task:", $0 > "/dev/stderr"
+    }
+  }
+  END {
+    print "array tasks seen by sacct:", total
+    for (state in states) {
+      print state, states[state]
+    }
+    if (failed > 0) {
+      exit 1
+    }
+  }
+'
+```
+
+Check that every Slurm array task completed successfully. For an array job
+`181552`, this checks task records such as `181552_0` through
+`181552_<number of input files - 1>`:
+
+```bash
+cd "$PZ_APOLLO_RUN"
+
+: "${PZ_ARRAY_JOB_ID:?set PZ_ARRAY_JOB_ID to the Slurm array job id}"
+
+squeue -j "$PZ_ARRAY_JOB_ID" || true
+sacct -j "$PZ_ARRAY_JOB_ID" --format=JobID%30,JobName%25,State,ExitCode,Elapsed,MaxRSS
+
+sacct -j "$PZ_ARRAY_JOB_ID" --parsable2 --noheader \
+  --format=JobID%30,State,ExitCode,Elapsed,MaxRSS |
+awk -F'|' -v job="$PZ_ARRAY_JOB_ID" '
+  $1 ~ "^" job "_[0-9]+$" {
+    total += 1
+    states[$2] += 1
+    if ($2 != "COMPLETED" || $3 != "0:0") {
+      bad += 1
+      print "non-success array task:", $0 > "/dev/stderr"
+    }
+  }
+  END {
+    print "array tasks:", total
+    for (state in states) {
+      print state, states[state]
+    }
+    if (total == 0 || bad > 0) {
+      exit 1
+    }
+  }
+'
+```
 
 Count output HDF5 files:
 
@@ -492,7 +671,7 @@ Check recent failures:
 ```bash
 cd "$PZ_APOLLO_RUN"
 
-grep -R "Traceback\\|Error:" log || true
+grep -R "Traceback\\|Error:\\|CondaError\\|Killed\\|OOM\\|out of memory" log || true
 ```
 
 ## 11. Expected outputs
