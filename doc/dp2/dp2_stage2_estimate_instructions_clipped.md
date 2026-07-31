@@ -687,6 +687,19 @@ $PZ_APOLLO_RUN/log/slurm-*.out
 $PZ_APOLLO_RUN/log/slurm-*.err
 ```
 
+These outputs can be passed to `pz-build-hats` with the original DP2 parquet
+dataset as the input directory and the stage 2 HDF5 tree as the output
+directory. `pz-build-hats` matches files by relative path, for example:
+
+```text
+input:  $PZ_DP2_INPUT_DATASET/Norder=3/Dir=0/Npix=448.parquet
+output: $PZ_OUTPUT_DIR/Norder=3/Dir=0/Npix=448.hdf5
+```
+
+The association with `objectId`, `coord_ra`, and `coord_dec` is positional:
+row `i` in the input parquet is matched to row `i` in `data/yvals` from the
+corresponding HDF5 output.
+
 The estimation stage is successful when:
 
 - the single-file smoke test writes `output/smoke-test.hdf5`;

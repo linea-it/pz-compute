@@ -90,10 +90,19 @@ directories:
 ```text
 input/a/b/file.hdf5
 output/a/b/file.hdf5
+
+input/a/b/file.parquet
+output/a/b/file.hdf5
 ```
 
-The input HDF5 must contain object identifiers and coordinates. The output HDF5
-must be a `rail-estimate` output with:
+Input files may be HDF5 or parquet. The input file must contain object
+identifiers and coordinates. For parquet input, `pz-build-hats` reads only the
+identifier and coordinate columns needed to associate each PDF with the original
+object. Metadata files in partitioned parquet datasets, such as `_metadata` and
+`_common_metadata`, are ignored because only `.hdf5`, `.h5`, `.parquet`, and
+`.pq` input shards are considered.
+
+The output HDF5 must be a `rail-estimate` output with:
 
 ```text
 meta/xvals
@@ -105,6 +114,8 @@ If input columns live inside an HDF5 group, pass:
 ```bash
 --input-group=<group>
 ```
+
+`--input-group` is only valid for HDF5 input files.
 
 ## Staging
 

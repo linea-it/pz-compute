@@ -280,7 +280,7 @@ The local e2e test is successful when:
 - `rail-train` writes `estimator_fzboost.pkl`.
 - `rail-estimate` writes an HDF5 output with `meta/xvals` and `data/yvals`.
 - `pz-build-hats` logs `Starting local Dask cluster for pz-build-hats`.
-- `pz-build-hats` logs `Converting ... HDF5 pairs with Dask staging tasks`.
+- `pz-build-hats` logs `Converting ... input/output pairs with Dask staging tasks`.
 - `lsdb.read_hats("pz-summary-hats-local/pz_summary")` returns rows.
 - `pz-summary-hats-local.pdf` contains PDF parquet parts and `xvals.parquet`.
 - the HATS summary row count matches the PDF product row count.

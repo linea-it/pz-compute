@@ -88,6 +88,7 @@ ID_CANDIDATES = ("objectId", "object_id", "coadd_object_id", "id")
 RA_CANDIDATES = ("coord_ra", "ra")
 DEC_CANDIDATES = ("coord_dec", "dec")
 SUMMARY_STAGING_BYTES_PER_ROW_ESTIMATE = 96
+INPUT_FILE_EXTENSIONS = (".hdf5", ".h5", ".parquet", ".pq")
 
 
 @dataclass
@@ -281,7 +282,7 @@ def find_input_files(input_dir: Path) -> list[str]:
     files = [
         relpath(path, cwd)
         for path in glob(join(cwd, "**", "*"), recursive=True)
-        if isfile(path)
+        if isfile(path) and splitext(path)[1] in INPUT_FILE_EXTENSIONS
     ]
     files.sort()
     return files
@@ -307,6 +308,27 @@ def choose_column(group, requested: str | None, candidates: tuple[str, ...], lab
 
     for candidate in candidates:
         if candidate in group:
+            return candidate
+
+    raise RuntimeError(
+        "%s column not found. Tried: %s. Use --%s-column to set it explicitly."
+        % (label, ", ".join(candidates), label)
+    )
+
+
+def choose_column_from_names(
+    names: set[str],
+    requested: str | None,
+    candidates: tuple[str, ...],
+    label: str,
+) -> str:
+    if requested:
+        if requested not in names:
+            raise RuntimeError(f"{label} column not found: {requested}")
+        return requested
+
+    for candidate in candidates:
+        if candidate in names:
             return candidate
 
     raise RuntimeError(
@@ -463,28 +485,95 @@ def pdf_array(yvals: np.ndarray, dtype: str) -> pa.FixedSizeListArray:
     return pa.FixedSizeListArray.from_arrays(flat_values, values.shape[1])
 
 
-def write_summary_parts(
+def read_hdf5_identity_columns(
     cfg: Configuration,
     pair: FilePair,
-    xvals_reference: np.ndarray | None,
-) -> ConvertResult:
-    with (
-        h5py.File(pair.input_path, "r") as input_handle,
-        h5py.File(pair.output_path, "r") as output_handle,
-    ):
+    num_rows: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, str, str, str]:
+    with h5py.File(pair.input_path, "r") as input_handle:
         input_group = hdf5_table_group(input_handle, cfg.input_group)
         id_column = choose_column(input_group, cfg.id_column, ID_CANDIDATES, "id")
         ra_column = choose_column(input_group, cfg.ra_column, RA_CANDIDATES, "ra")
         dec_column = choose_column(input_group, cfg.dec_column, DEC_CANDIDATES, "dec")
-        xvals, yvals = validate_output(output_handle)
 
-        num_rows = yvals.shape[0]
         for column in (id_column, ra_column, dec_column):
             if input_group[column].shape[0] != num_rows:
                 raise RuntimeError(
                     "%s row count does not match output rows for %s: %d != %d"
                     % (column, pair.relative_path, input_group[column].shape[0], num_rows)
                 )
+
+        return (
+            input_group[id_column][:],
+            input_group[ra_column][:],
+            input_group[dec_column][:],
+            id_column,
+            ra_column,
+            dec_column,
+        )
+
+
+def parquet_column_to_numpy(table: pa.Table, column: str) -> np.ndarray:
+    return table[column].combine_chunks().to_numpy(zero_copy_only=False)
+
+
+def read_parquet_identity_columns(
+    cfg: Configuration,
+    pair: FilePair,
+    num_rows: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, str, str, str]:
+    if cfg.input_group:
+        raise RuntimeError("--input-group is only supported for HDF5 input files")
+
+    schema = pq.read_schema(pair.input_path)
+    names = set(schema.names)
+    id_column = choose_column_from_names(names, cfg.id_column, ID_CANDIDATES, "id")
+    ra_column = choose_column_from_names(names, cfg.ra_column, RA_CANDIDATES, "ra")
+    dec_column = choose_column_from_names(names, cfg.dec_column, DEC_CANDIDATES, "dec")
+
+    columns = [id_column, ra_column, dec_column]
+    table = pq.read_table(pair.input_path, columns=columns)
+    if table.num_rows != num_rows:
+        raise RuntimeError(
+            "input row count does not match output rows for %s: %d != %d"
+            % (pair.relative_path, table.num_rows, num_rows)
+        )
+
+    return (
+        parquet_column_to_numpy(table, id_column),
+        parquet_column_to_numpy(table, ra_column),
+        parquet_column_to_numpy(table, dec_column),
+        id_column,
+        ra_column,
+        dec_column,
+    )
+
+
+def read_identity_columns(
+    cfg: Configuration,
+    pair: FilePair,
+    num_rows: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, str, str, str]:
+    ext = pair.input_path.suffix
+    if ext in (".hdf5", ".h5"):
+        return read_hdf5_identity_columns(cfg, pair, num_rows)
+    if ext in (".parquet", ".pq"):
+        return read_parquet_identity_columns(cfg, pair, num_rows)
+    raise RuntimeError(f"unsupported input file type: {pair.input_path}")
+
+
+def write_summary_parts(
+    cfg: Configuration,
+    pair: FilePair,
+    xvals_reference: np.ndarray | None,
+) -> ConvertResult:
+    with h5py.File(pair.output_path, "r") as output_handle:
+        xvals, yvals = validate_output(output_handle)
+
+        num_rows = yvals.shape[0]
+        object_ids, coord_ra, coord_dec, id_column, ra_column, dec_column = read_identity_columns(
+            cfg, pair, num_rows
+        )
 
         if xvals_reference is not None and not np.array_equal(xvals_reference, xvals):
             raise RuntimeError(f"meta/xvals differs between output files at {pair.relative_path}")
@@ -497,14 +586,14 @@ def write_summary_parts(
         for batch_index, start in enumerate(range(0, num_rows, cfg.batch_size)):
             stop = min(start + cfg.batch_size, num_rows)
             batch_yvals = yvals[start:stop, :]
-            object_ids = input_group[id_column][start:stop]
-            coord_ra = input_group[ra_column][start:stop]
-            coord_dec = input_group[dec_column][start:stop]
+            batch_object_ids = object_ids[start:stop]
+            batch_coord_ra = coord_ra[start:stop]
+            batch_coord_dec = coord_dec[start:stop]
             stats = summarize_pdf(xvals, batch_yvals)
             data = {
-                "objectId": object_ids,
-                "coord_ra": coord_ra,
-                "coord_dec": coord_dec,
+                "objectId": batch_object_ids,
+                "coord_ra": batch_coord_ra,
+                "coord_dec": batch_coord_dec,
                 **stats,
             }
             table = pa.Table.from_pydict(data)
@@ -514,9 +603,9 @@ def write_summary_parts(
             if cfg.write_pdf_product:
                 pdf_table = pa.Table.from_pydict(
                     {
-                        "objectId": object_ids,
-                        "coord_ra": coord_ra,
-                        "coord_dec": coord_dec,
+                        "objectId": batch_object_ids,
+                        "coord_ra": batch_coord_ra,
+                        "coord_dec": batch_coord_dec,
                     }
                 ).append_column("pdf", pdf_array(batch_yvals, cfg.pdf_dtype))
                 pdf_path = cfg.pdf_output_dir / pdf_part_name(pair.relative_path, batch_index)
@@ -556,7 +645,7 @@ def write_summary_parts_dask(
     except Exception as err:
         raise RuntimeError("distributed is required for Dask staging.") from err
 
-    info("Converting %d HDF5 pairs with Dask staging tasks" % len(pairs))
+    info("Converting %d input/output pairs with Dask staging tasks" % len(pairs))
     futures = client.map(convert_pair_to_parquet, [cfg] * len(pairs), pairs)
     results = []
     try:

@@ -439,7 +439,7 @@ The Apollo e2e test is successful when:
 - `rail-train` writes `estimator_fzboost.pkl`.
 - the Slurm `rail-slurm.batch` job writes the expected HDF5 output.
 - `pz-build-hats` logs `Starting Slurm Dask cluster for pz-build-hats`.
-- `pz-build-hats` logs `Converting ... HDF5 pairs with Dask staging tasks`.
+- `pz-build-hats` logs `Converting ... input/output pairs with Dask staging tasks`.
 - `lsdb.read_hats("pz-summary-hats-apollo/pz_summary")` returns rows.
 - `pz-summary-hats-apollo.pdf` contains PDF parquet parts and `xvals.parquet`.
 - the HATS summary row count matches the PDF product row count.
