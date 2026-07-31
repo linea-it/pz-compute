@@ -636,6 +636,63 @@ awk -F'|' -v job="$PZ_ARRAY_JOB_ID" '
 '
 ```
 
+Summarize the total elapsed time for the array. `wall-clock elapsed` is the
+real time from the first task start to the last task end; `sum task elapsed` is
+the accumulated runtime across all array tasks:
+
+```bash
+cd "$PZ_APOLLO_RUN"
+
+: "${PZ_ARRAY_JOB_ID:?set PZ_ARRAY_JOB_ID to the Slurm array job id}"
+
+sacct -j "$PZ_ARRAY_JOB_ID" --parsable2 --noheader \
+  --format=JobID%30,State,ExitCode,Start,End,ElapsedRaw \
+  > array-sacct-timing.txt
+
+python - <<'PY'
+from datetime import datetime
+import os
+from pathlib import Path
+
+job = os.environ["PZ_ARRAY_JOB_ID"]
+starts = []
+ends = []
+sum_elapsed = 0
+tasks = 0
+
+for line in Path("array-sacct-timing.txt").read_text(encoding="utf-8").splitlines():
+    if not line:
+        continue
+    parts = line.rstrip("\n").split("|")
+    if len(parts) != 6:
+        continue
+    jobid, state, exit_code, start, end, elapsed_raw = parts
+    if not jobid.startswith(f"{job}_") or "." in jobid:
+        continue
+    suffix = jobid.rsplit("_", 1)[-1]
+    if not suffix.isdigit():
+        continue
+    if state != "COMPLETED" or exit_code != "0:0":
+        continue
+    if start in ("Unknown", "None") or end in ("Unknown", "None"):
+        continue
+    starts.append(datetime.fromisoformat(start))
+    ends.append(datetime.fromisoformat(end))
+    sum_elapsed += int(elapsed_raw)
+    tasks += 1
+
+if tasks == 0:
+    raise SystemExit("No completed array tasks found in sacct output")
+
+wall = int((max(ends) - min(starts)).total_seconds())
+print("completed array tasks:", tasks)
+print("first task start:", min(starts).isoformat(sep=" "))
+print("last task end:", max(ends).isoformat(sep=" "))
+print("wall-clock elapsed seconds:", wall)
+print("sum task elapsed seconds:", sum_elapsed)
+PY
+```
+
 Count output HDF5 files:
 
 ```bash
