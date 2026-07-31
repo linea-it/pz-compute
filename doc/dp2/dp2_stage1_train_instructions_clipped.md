@@ -1,9 +1,9 @@
-# DP2 PSF FlexZBoost Stage 1
+# DP2 PSF FlexZBoost Stage 1: Clipped RTN-124 Training Set
 
 This document describes how to generate a RAIL/FlexZBoost model pickle trained
-with DP2 dereddened PSF magnitudes. The resulting model is intended for object
-catalogs that contain columns named `{band}_psfMag_dered` and
-`{band}_psfMagErr_dered`.
+with the clipped RTN-124 training set and DP2 PSF magnitudes. The resulting
+model is intended for object catalogs that contain columns named
+`{band}_psfMag_dered` and `{band}_psfMagErr_dered`.
 
 The instructions are written to be portable. Run them from the root directory of
 the `pz-compute` repository.
@@ -41,33 +41,34 @@ for module in ["pandas", "pyarrow", "tables_io", "rail", "flexcode", "xgboost"]:
 PY
 ```
 
-## 1. Generate the training parquet with LSST PZ Server
+## 1. Get the clipped training parquet
 
-Use the LSST PZ Server web application to create:
-
-```text
-training-model/dp2_train_clean_no_desi_lss_psf.parquet
-```
-
-Generate this file by crossmatching:
-
-- `REF_Z_CLEAN_NO_DESI_LSS`: https://pzserver.linea.org.br/product/342_ref_z_clean_no_desi_lss
-- `LSST DP2 Skinny Object Catalog with Magnitudes`
-
-`REF_Z_CLEAN_NO_DESI_LSS` is the spectroscopic reference compilation with DESI
-LSS removed. `LSST DP2 Skinny Object Catalog with Magnitudes` provides the DP2
-PSF magnitude columns used by this training.
-
-The exported parquet must contain at least:
+Use the LSST PZ Server product:
 
 ```text
-z
-u_psfMag_dered, g_psfMag_dered, r_psfMag_dered, i_psfMag_dered, z_psfMag_dered, y_psfMag_dered
-u_psfMagErr_dered, g_psfMagErr_dered, r_psfMagErr_dered, i_psfMagErr_dered, z_psfMagErr_dered, y_psfMagErr_dered
+CLIPPED_TRAIN RTN-124 (PARQUET)
+https://pzserver.linea.org.br/product/415_clipped_train_rtn124_parquet
 ```
 
-Extra crossmatch columns may be present in the original parquet. They will be
-removed before training.
+Download the parquet file and place it at:
+
+```text
+training-model/train_clipped_v3.parquet
+```
+
+The clipped training parquet is expected to contain at least:
+
+```text
+redshift
+ebv
+u_psfMag, g_psfMag, r_psfMag, i_psfMag, z_psfMag, y_psfMag
+u_psfMagErr, g_psfMagErr, r_psfMagErr, i_psfMagErr, z_psfMagErr, y_psfMagErr
+```
+
+The production inference catalog uses dereddened PSF columns with names like
+`u_psfMag_dered`. The clipped training file stores PSF magnitudes without the
+`_dered` suffix and includes `ebv`, so the conversion step below creates
+matching dereddened columns.
 
 Run a quick validation:
 
@@ -76,34 +77,36 @@ $PZ_PY - <<'PY'
 import numpy as np
 import pandas as pd
 
-path = "training-model/dp2_train_clean_no_desi_lss_psf.parquet"
+path = "training-model/train_clipped_v3.parquet"
 df = pd.read_parquet(path)
 
-required = ["z"]
-required += [f"{band}_psfMag_dered" for band in "ugrizy"]
-required += [f"{band}_psfMagErr_dered" for band in "ugrizy"]
+required = ["redshift", "ebv"]
+required += [f"{band}_psfMag" for band in "ugrizy"]
+required += [f"{band}_psfMagErr" for band in "ugrizy"]
 
 missing = [col for col in required if col not in df.columns]
 if missing:
     raise SystemExit(f"Missing required columns: {missing}")
 
 print("shape:", df.shape)
-print("z range:", df["z"].min(), df["z"].max())
+print("redshift range:", df["redshift"].min(), df["redshift"].max())
+print("ebv range:", df["ebv"].min(), df["ebv"].max())
+print("rows with ebv > 1:", int((df["ebv"] > 1).sum()))
 
 for band in "ugrizy":
-    col = f"{band}_psfMag_dered"
-    valid = np.isfinite(df[col]) & (df[col] != 99.0) & (df[col] > -90) & (df[col] < 90)
+    col = f"{band}_psfMag"
+    valid = np.isfinite(df[col]) & (df[col] > -90) & (df[col] < 90)
     print(col, "valid fraction:", f"{valid.mean():.3f}")
 PY
 ```
 
-## 2. Convert the training data to HDF5
+## 2. Convert the clipped training data to HDF5
 
 `rail-train` can read parquet, but in this workflow parquet input may be exposed
 as read-only arrays through PyArrow/tables_io. FlexZBoost modifies the input
-arrays during training: it replaces non-detections marked as `99` with band
-magnitude limits and sets the corresponding errors to `1.0`. With read-only
-parquet-backed arrays, training can fail with:
+arrays during training: it replaces non-detections with band magnitude limits
+and sets the corresponding errors to `1.0`. With read-only parquet-backed
+arrays, training can fail with:
 
 ```text
 ValueError: assignment destination is read-only
@@ -111,52 +114,85 @@ ValueError: assignment destination is read-only
 
 For this reason, use HDF5 as the effective input format for training.
 
-This conversion step also filters the redshift domain to match the model grid
-(`0 <= z <= 6`) and keeps only the columns required by FlexZBoost.
+This conversion step:
+
+- filters the redshift domain to match the model grid (`0 <= redshift <= 6`);
+- keeps only the columns required by FlexZBoost;
+- creates `{band}_psfMag_dered` from `{band}_psfMag - A_band * ebv`;
+- creates `{band}_psfMagErr_dered` by copying `{band}_psfMagErr`;
+- preserves `NaN` values as non-detections for the clipped training set.
 
 ```bash
 $PZ_PY - <<'PY'
+import numpy as np
 import pandas as pd
 import tables_io
 from pathlib import Path
 
-inp = Path("training-model/dp2_train_clean_no_desi_lss_psf.parquet")
-out_parquet = Path("training-model/dp2_train_clean_no_desi_lss_psf_z0_6_fzboost.parquet")
-out_hdf5 = Path("training-model/dp2_train_clean_no_desi_lss_psf_z0_6_fzboost.hdf5")
+inp = Path("training-model/train_clipped_v3.parquet")
+out_parquet = Path("training-model/train_clipped_v3_psf_dered_z0_6_fzboost.parquet")
+out_hdf5 = Path("training-model/train_clipped_v3_psf_dered_z0_6_fzboost.hdf5")
 
-cols = ["z"]
-cols += [f"{band}_psfMag_dered" for band in "ugrizy"]
-cols += [f"{band}_psfMagErr_dered" for band in "ugrizy"]
+a_ebv = {
+    "u": 4.81,
+    "g": 3.64,
+    "r": 2.70,
+    "i": 2.06,
+    "z": 1.58,
+    "y": 1.31,
+}
 
-df = pd.read_parquet(inp, columns=cols)
-df = df.loc[df["z"].between(0.0, 6.0, inclusive="both")].copy()
+cols = ["redshift", "ebv"]
+cols += [f"{band}_psfMag" for band in "ugrizy"]
+cols += [f"{band}_psfMagErr" for band in "ugrizy"]
+
+raw = pd.read_parquet(inp, columns=cols)
+raw = raw.loc[raw["redshift"].between(0.0, 6.0, inclusive="both")].copy()
+raw = raw.loc[np.isfinite(raw["ebv"])].copy()
+
+df = pd.DataFrame({"redshift": raw["redshift"].to_numpy()})
+
+for band in "ugrizy":
+    mag = raw[f"{band}_psfMag"]
+    err = raw[f"{band}_psfMagErr"]
+    df[f"{band}_psfMag_dered"] = mag - raw["ebv"] * a_ebv[band]
+    df[f"{band}_psfMagErr_dered"] = err
 
 df.to_parquet(out_parquet, index=False)
 tables_io.write(df, str(out_hdf5))
 
 print("wrote:", out_parquet, df.shape)
 print("wrote:", out_hdf5, df.shape)
-print("z min/max:", df["z"].min(), df["z"].max())
+print("redshift min/max:", df["redshift"].min(), df["redshift"].max())
+
+for band in "ugrizy":
+    col = f"{band}_psfMag_dered"
+    valid = np.isfinite(df[col]) & (df[col] > -90) & (df[col] < 90)
+    print(col, "valid fraction:", f"{valid.mean():.3f}")
 PY
 ```
+
+The clipped parquet inspected during development had NaNs for missing PSF
+magnitudes rather than a `99` sentinel. This is expected for this flow and is
+handled by the clipped YAML configuration below.
 
 ## 3. Create the FlexZBoost configuration file
 
 Create:
 
 ```text
-training-model/fzboost_psf.yaml
+training-model/fzboost_psf_clipped.yaml
 ```
 
 with:
 
 ```bash
-cat > training-model/fzboost_psf.yaml <<'YAML'
+cat > training-model/fzboost_psf_clipped.yaml <<'YAML'
 zmin: 0.0
 zmax: 6.0
 nzbins: 301
-nondetect_val: 99.0
-redshift_col: z
+nondetect_val: .nan
+redshift_col: redshift
 retrain_full: true
 trainfrac: 0.75
 seed: 1138
@@ -179,16 +215,18 @@ Parameter rationale:
 
 These settings are intentionally based on the existing DP2 GAaP baseline model
 pickle, `model_dp2_v3p1_fzboost_baseline_gold.pickle`, while changing the
-training photometry to DP2 PSF magnitudes.
+training photometry to the clipped RTN-124 DP2 PSF training set.
 
 - `zmin: 0.0` and `zmax: 6.0`: define the redshift grid for the model. Use the
   same interval used by `model_dp2_v3p1_fzboost_baseline_gold.pickle` if the
   goal is a comparable replacement model.
 - `nzbins: 301`: keeps the standard RAIL output grid resolution used by this
   repository.
-- `nondetect_val: 99.0`: matches the DP2 magnitude sentinel for non-detections.
-- `redshift_col: z`: the spectroscopic reference export stores redshift in the
-  `z` column.
+- `nondetect_val: .nan`: matches the clipped training file, where missing PSF
+  magnitudes are represented as `NaN`. FlexZBoost replaces these values with
+  band magnitude limits during training.
+- `redshift_col: redshift`: the clipped RTN-124 parquet stores redshift in the
+  `redshift` column.
 - `retrain_full: true`, `trainfrac: 0.75`, `bump*`, and `sharp*`: use the full
   FlexZBoost calibration procedure. The model first uses a validation split to
   select `bump_threshold` and `sharpen_alpha`, then retrains on the full dataset.
@@ -210,8 +248,8 @@ import pandas as pd
 import tables_io
 from pathlib import Path
 
-inp = Path("training-model/dp2_train_clean_no_desi_lss_psf_z0_6_fzboost.parquet")
-out = Path("training-model/dp2_train_psf_fzboost_smoke_5000.hdf5")
+inp = Path("training-model/train_clipped_v3_psf_dered_z0_6_fzboost.parquet")
+out = Path("training-model/train_clipped_v3_psf_dered_smoke_5000.hdf5")
 
 df = pd.read_parquet(inp)
 df = df.sample(n=5000, random_state=1138)
@@ -221,12 +259,12 @@ print("wrote:", out, df.shape)
 PY
 
 $PZ_PY rail_scripts/rail-train \
-  training-model/dp2_train_psf_fzboost_smoke_5000.hdf5 \
-  training-model/estimator_fzboost_psf_smoke.pkl \
+  training-model/train_clipped_v3_psf_dered_smoke_5000.hdf5 \
+  training-model/estimator_fzboost_psf_clipped_smoke.pkl \
   --algorithm=fzboost \
   --column-template='{band}_psfMag_dered' \
   --column-template-error='{band}_psfMagErr_dered' \
-  --param-file=training-model/fzboost_psf.yaml
+  --param-file=training-model/fzboost_psf_clipped.yaml
 ```
 
 If this command finishes with `Training done.`, the setup is functional.
@@ -237,12 +275,12 @@ Run:
 
 ```bash
 $PZ_PY rail_scripts/rail-train \
-  training-model/dp2_train_clean_no_desi_lss_psf_z0_6_fzboost.hdf5 \
-  training-model/model_dp2_v3p1_fzboost_psf_baseline_gold.pickle \
+  training-model/train_clipped_v3_psf_dered_z0_6_fzboost.hdf5 \
+  training-model/model_dp2_v3p1_fzboost_psf_clipped_rtn124.pickle \
   --algorithm=fzboost \
   --column-template='{band}_psfMag_dered' \
   --column-template-error='{band}_psfMagErr_dered' \
-  --param-file=training-model/fzboost_psf.yaml
+  --param-file=training-model/fzboost_psf_clipped.yaml
 ```
 
 ### 5.1. Submit the training with Slurm
@@ -268,9 +306,9 @@ configuration.
 Create the batch script:
 
 ```bash
-cat > training-model/train-fzboost-psf.sbatch <<'SBATCH'
+cat > training-model/train-fzboost-psf-clipped.sbatch <<'SBATCH'
 #!/usr/bin/env bash
-#SBATCH --job-name=dp2-fzboost-psf-train
+#SBATCH --job-name=dp2-fzboost-psf-clipped
 #SBATCH --partition=cpu
 #SBATCH --account=hpc-public
 #SBATCH --nodes=1
@@ -278,8 +316,8 @@ cat > training-model/train-fzboost-psf.sbatch <<'SBATCH'
 #SBATCH --cpus-per-task=49
 #SBATCH --mem=112G
 #SBATCH --time=03:00:00
-#SBATCH --output=training-model/train-fzboost-psf-%j.out
-#SBATCH --error=training-model/train-fzboost-psf-%j.err
+#SBATCH --output=training-model/train-fzboost-psf-clipped-%j.out
+#SBATCH --error=training-model/train-fzboost-psf-clipped-%j.err
 
 set -euo pipefail
 
@@ -293,19 +331,19 @@ export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 
 "$PZ_PY" rail_scripts/rail-train \
-  training-model/dp2_train_clean_no_desi_lss_psf_z0_6_fzboost.hdf5 \
-  training-model/model_dp2_v3p1_fzboost_psf_baseline_gold.pickle \
+  training-model/train_clipped_v3_psf_dered_z0_6_fzboost.hdf5 \
+  training-model/model_dp2_v3p1_fzboost_psf_clipped_rtn124.pickle \
   --algorithm=fzboost \
   --column-template='{band}_psfMag_dered' \
   --column-template-error='{band}_psfMagErr_dered' \
-  --param-file=training-model/fzboost_psf.yaml
+  --param-file=training-model/fzboost_psf_clipped.yaml
 SBATCH
 ```
 
 Submit it from the repository root:
 
 ```bash
-sbatch --export=ALL,PZ_PY="$PZ_PY" training-model/train-fzboost-psf.sbatch
+sbatch --export=ALL,PZ_PY="$PZ_PY" training-model/train-fzboost-psf-clipped.sbatch
 ```
 
 Watch the job:
@@ -317,9 +355,9 @@ squeue -u "$(whoami)"
 Inspect the logs after it starts or finishes:
 
 ```bash
-ls -lh training-model/train-fzboost-psf-*.out training-model/train-fzboost-psf-*.err
-tail -n 80 training-model/train-fzboost-psf-*.out
-tail -n 80 training-model/train-fzboost-psf-*.err
+ls -lh training-model/train-fzboost-psf-clipped-*.out training-model/train-fzboost-psf-clipped-*.err
+tail -n 80 training-model/train-fzboost-psf-clipped-*.out
+tail -n 80 training-model/train-fzboost-psf-clipped-*.err
 ```
 
 This step can take a long time. FlexZBoost performs:
@@ -333,19 +371,19 @@ This step can take a long time. FlexZBoost performs:
 The expected output is:
 
 ```text
-training-model/model_dp2_v3p1_fzboost_psf_baseline_gold.pickle
+training-model/model_dp2_v3p1_fzboost_psf_clipped_rtn124.pickle
 ```
 
 ## 6. Run inference with the new model
 
-For a DP2 object-catalog parquet with PSF magnitudes:
+For a DP2 object-catalog parquet with dereddened PSF magnitudes:
 
 ```bash
 $PZ_PY rail_scripts/rail-estimate \
   path/to/input_catalog.parquet \
   path/to/output_photoz.hdf5 \
   --algorithm=fzboost \
-  --calibration-file=training-model/model_dp2_v3p1_fzboost_psf_baseline_gold.pickle \
+  --calibration-file=training-model/model_dp2_v3p1_fzboost_psf_clipped_rtn124.pickle \
   --column-template='{band}_psfMag_dered' \
   --column-template-error='{band}_psfMagErr_dered'
 ```
