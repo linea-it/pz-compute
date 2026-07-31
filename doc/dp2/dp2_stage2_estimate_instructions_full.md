@@ -314,16 +314,22 @@ chmod +x run-one-dp2-psf-estimate.sh
 
 ## 7. Submit a pilot array job
 
-Before using the whole cluster, run a pilot job with a moderate concurrency
-limit. The example below allows at most 200 files to run at the same time.
+Before using the whole cluster, run a pilot job with only 10 parquet files. This
+checks the Slurm array script, model loading, output layout, and logs without
+starting the full catalog run.
 
 Adjust `--account` if your allocation requires a Slurm account.
 
 ```bash
 cd "$PZ_APOLLO_RUN"
 
-export PZ_FILE_LIST=$PZ_APOLLO_RUN/input-parquet-files.txt
-export PZ_MAX_CONCURRENT=200
+head -10 input-parquet-files.txt > pilot-parquet-files.txt
+mkdir -p "$PZ_APOLLO_RUN/output-pilot"
+
+export PZ_FILE_LIST=$PZ_APOLLO_RUN/pilot-parquet-files.txt
+export PZ_NFILES=$(wc -l < "$PZ_FILE_LIST")
+export PZ_OUTPUT_DIR=$PZ_APOLLO_RUN/output-pilot
+export PZ_MAX_CONCURRENT=10
 
 sbatch \
   --array=0-$((PZ_NFILES - 1))%$PZ_MAX_CONCURRENT \
@@ -341,6 +347,20 @@ Watch the job:
 
 ```bash
 squeue -u "$(whoami)"
+```
+
+After the pilot finishes, inspect the pilot outputs:
+
+```bash
+find "$PZ_APOLLO_RUN/output-pilot" -name '*.hdf5' | sort
+grep -R "Traceback\\|Error:" log || true
+```
+
+Before submitting production, reset `PZ_OUTPUT_DIR` to the production output
+directory:
+
+```bash
+export PZ_OUTPUT_DIR=$PZ_APOLLO_RUN/output
 ```
 
 ## 8. Submit the full-cluster production job
