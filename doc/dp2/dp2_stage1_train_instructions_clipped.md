@@ -60,15 +60,15 @@ The clipped training parquet is expected to contain at least:
 
 ```text
 redshift
-ebv
 u_psfMag, g_psfMag, r_psfMag, i_psfMag, z_psfMag, y_psfMag
 u_psfMagErr, g_psfMagErr, r_psfMagErr, i_psfMagErr, z_psfMagErr, y_psfMagErr
 ```
 
 The production inference catalog uses dereddened PSF columns with names like
-`u_psfMag_dered`. The clipped training file stores PSF magnitudes without the
-`_dered` suffix and includes `ebv`, so the conversion step below creates
-matching dereddened columns.
+`u_psfMag_dered`. Despite not having the `_dered` suffix, the PSF magnitudes in
+the clipped training file are **already dereddened**. The conversion step below
+only renames/copies the columns to match the inference schema. Do not subtract
+an extinction correction from these values again.
 
 Run a quick validation:
 
@@ -80,7 +80,7 @@ import pandas as pd
 path = "training-model/train_clipped_v3.parquet"
 df = pd.read_parquet(path)
 
-required = ["redshift", "ebv"]
+required = ["redshift"]
 required += [f"{band}_psfMag" for band in "ugrizy"]
 required += [f"{band}_psfMagErr" for band in "ugrizy"]
 
@@ -90,8 +90,6 @@ if missing:
 
 print("shape:", df.shape)
 print("redshift range:", df["redshift"].min(), df["redshift"].max())
-print("ebv range:", df["ebv"].min(), df["ebv"].max())
-print("rows with ebv > 1:", int((df["ebv"] > 1).sum()))
 
 for band in "ugrizy":
     col = f"{band}_psfMag"
@@ -118,9 +116,13 @@ This conversion step:
 
 - filters the redshift domain to match the model grid (`0 <= redshift <= 6`);
 - keeps only the columns required by FlexZBoost;
-- creates `{band}_psfMag_dered` from `{band}_psfMag - A_band * ebv`;
+- creates `{band}_psfMag_dered` by copying the already-dereddened
+  `{band}_psfMag` values without applying another extinction correction;
 - creates `{band}_psfMagErr_dered` by copying `{band}_psfMagErr`;
 - preserves `NaN` values as non-detections for the clipped training set.
+
+If these output files were produced with an earlier version of these
+instructions, rerun this conversion cell to overwrite them before retraining.
 
 ```bash
 $PZ_PY - <<'PY'
@@ -133,30 +135,20 @@ inp = Path("training-model/train_clipped_v3.parquet")
 out_parquet = Path("training-model/train_clipped_v3_psf_dered_z0_6_fzboost.parquet")
 out_hdf5 = Path("training-model/train_clipped_v3_psf_dered_z0_6_fzboost.hdf5")
 
-a_ebv = {
-    "u": 4.81,
-    "g": 3.64,
-    "r": 2.70,
-    "i": 2.06,
-    "z": 1.58,
-    "y": 1.31,
-}
-
-cols = ["redshift", "ebv"]
+cols = ["redshift"]
 cols += [f"{band}_psfMag" for band in "ugrizy"]
 cols += [f"{band}_psfMagErr" for band in "ugrizy"]
 
 raw = pd.read_parquet(inp, columns=cols)
 raw = raw.loc[raw["redshift"].between(0.0, 6.0, inclusive="both")].copy()
-raw = raw.loc[np.isfinite(raw["ebv"])].copy()
 
 df = pd.DataFrame({"redshift": raw["redshift"].to_numpy()})
 
 for band in "ugrizy":
     mag = raw[f"{band}_psfMag"]
     err = raw[f"{band}_psfMagErr"]
-    df[f"{band}_psfMag_dered"] = mag - raw["ebv"] * a_ebv[band]
-    df[f"{band}_psfMagErr_dered"] = err
+    df[f"{band}_psfMag_dered"] = mag.to_numpy()
+    df[f"{band}_psfMagErr_dered"] = err.to_numpy()
 
 df.to_parquet(out_parquet, index=False)
 tables_io.write(df, str(out_hdf5))
