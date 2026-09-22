@@ -623,7 +623,9 @@ import pyarrow.parquet as pq
 root = Path(os.environ["PZ_DP1_INPUT_DATASET"])
 out_root = Path(os.environ["PZ_OUTPUT_DIR"])
 
-input_path = Path("input-parquet-files.txt").read_text(encoding="utf-8").splitlines()[0]
+input_path = Path(
+    Path("input-parquet-files.txt").read_text(encoding="utf-8").splitlines()[0]
+)
 relative = input_path.relative_to(root)
 output_path = out_root / relative.with_suffix(".hdf5")
 
