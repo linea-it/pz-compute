@@ -16,12 +16,27 @@ if [ "${CONDA_DEFAULT_ENV:-}" = "base" ]; then
     exit 1
 fi
 
-# Use a writable conda package cache under /scratch
-export CONDA_PKGS_DIRS="/scripts/$(whoami)/ondemand/conda_pkgs"
-mkdir -p "$CONDA_PKGS_DIRS"
+# Keep installation caches and small support files under /scripts.
+PZ_INSTALL_ROOT="${PZ_INSTALL_ROOT:-/scripts/$(whoami)/ondemand}"
+
+if [ -z "${CONDA_PKGS_DIRS:-}" ]; then
+    export CONDA_PKGS_DIRS="${PZ_INSTALL_ROOT}/conda_pkgs"
+fi
+
+if [ -z "${PIP_CACHE_DIR:-}" ]; then
+    export PIP_CACHE_DIR="${PZ_INSTALL_ROOT}/pip_cache"
+fi
+
+IFS=':' read -r -a conda_pkg_dirs <<< "$CONDA_PKGS_DIRS"
+for conda_pkg_dir in "${conda_pkg_dirs[@]}"; do
+    mkdir -p "$conda_pkg_dir"
+done
+mkdir -p "$PIP_CACHE_DIR"
 
 echo "The following conda environment is active: ${CONDA_PREFIX}"
+echo "PZ install root: ${PZ_INSTALL_ROOT}"
 echo "Conda package cache: ${CONDA_PKGS_DIRS}"
+echo "Pip package cache: ${PIP_CACHE_DIR}"
 read -r -p "Type yes to confirm installing RAIL in this environment: " input
 
 if [ "$input" != "yes" ]; then

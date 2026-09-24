@@ -1,0 +1,982 @@
+#!/usr/bin/env python3
+"""Build a HATS photo-z summary catalog from pz-compute outputs.
+
+Usage:
+    pz-build-hats [options] <input_dir> <output_dir> <hats_dir>
+    pz-build-hats -h | --help
+    pz-build-hats --version
+
+Options:
+    -h --help   Show help text.
+    --version   Show version.
+    --input-group=<group>  HDF5 group containing input object columns
+                           [default: ].
+    --id-column=<name>     Input object identifier column. If not set, common
+                           names are tried automatically.
+    --ra-column=<name>     Input R.A. column. If not set, common names are
+                           tried automatically.
+    --dec-column=<name>    Input Dec. column. If not set, common names are
+                           tried automatically.
+    --staging-dir=<dir>    Directory where intermediate parquet files are
+                           written [default: ].
+    --pdf-output-dir=<dir> Directory where the full PDF parquet product is
+                           written [default: ].
+    --pdf-dtype=<dtype>    Numeric dtype for stored PDF values. Choices:
+                           float32, float64 [default: float32].
+    --no-pdf-product       Do not write the separate full PDF parquet product.
+    --batch-size=<rows>    Number of rows converted per batch [default: 50000].
+    --fast-path-size-mb=<mb>  Max staged parquet size to build with LSDB
+                              in memory before using hats-import [default: 100].
+    --catalog-name=<name>  HATS catalog artifact name [default: pz_summary].
+    --use-hats-import      Use Dask for HDF5-to-parquet staging and hats-import
+                           for HATS collection generation.
+    --dask-scheduler=<address>  Connect pz-build-hats to an existing Dask
+                                scheduler. Mutually exclusive with creating a
+                                local or Slurm cluster.
+    --dask-cluster=<mode>  Cluster to create for pz-build-hats when no scheduler
+                           is provided. Choices: local, slurm [default: local].
+    --local-n-workers=<n>  Local fallback workers for pz-build-hats [default: 1].
+    --local-threads-per-worker=<n>  Threads per local fallback worker
+                                    [default: 2].
+    --local-memory-limit=<limit>  Memory per local fallback worker
+                                  [default: 6GB].
+    --local-processes      Run local fallback workers as separate processes.
+                           The default is thread-based workers.
+    --slurm-queue=<name>   Slurm partition/queue for Slurm Dask mode.
+    --slurm-account=<name> Slurm account for Slurm Dask mode.
+    --slurm-cores=<n>      Cores per Slurm Dask job. Required for
+                           Slurm Dask mode.
+    --slurm-processes=<n>  Worker processes per Slurm Dask job [default: 1].
+    --slurm-memory=<mem>   Memory per Slurm Dask job, for example 64GB.
+                           Required for Slurm Dask mode.
+    --slurm-walltime=<time>  Walltime per Slurm Dask job, for example 02:00:00.
+                             Required for Slurm Dask mode.
+    --slurm-minimum-jobs=<n>  Minimum Slurm Dask jobs submitted initially and
+                              kept by adaptive scaling. Required for Slurm
+                              Dask mode.
+    --slurm-maximum-jobs=<n>  Maximum Slurm Dask jobs allowed by adaptive
+                              scaling. Required for Slurm Dask mode.
+    --slurm-adapt-interval=<seconds>  Adaptive scaling interval [default: 10].
+    --slurm-scale-down-delay=<seconds>  Approximate adaptive scale-down delay
+                                        [default: 180].
+    --slurm-log-dir=<dir>  Directory for Slurm Dask worker stdout/stderr logs.
+    --overwrite            Replace existing staging and HATS directories.
+    --staging-only         Stop after writing summary parquet staging files.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from glob import glob
+from math import ceil
+from os import makedirs
+from os.path import isfile, join, relpath, splitext
+from pathlib import Path
+from shutil import rmtree
+from sys import stderr
+
+import h5py
+import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
+from docopt import docopt
+
+from rail_scripts import VERSION_TEXT
+
+
+ID_CANDIDATES = ("objectId", "object_id", "coadd_object_id", "id")
+RA_CANDIDATES = ("coord_ra", "ra")
+DEC_CANDIDATES = ("coord_dec", "dec")
+SUMMARY_STAGING_BYTES_PER_ROW_ESTIMATE = 96
+INPUT_FILE_EXTENSIONS = (".hdf5", ".h5", ".parquet", ".pq")
+
+
+@dataclass
+class Configuration:
+    input_dir: Path
+    output_dir: Path
+    hats_dir: Path
+    input_group: str
+    id_column: str | None
+    ra_column: str | None
+    dec_column: str | None
+    staging_dir: Path
+    pdf_output_dir: Path
+    pdf_dtype: str
+    write_pdf_product: bool
+    batch_size: int
+    fast_path_size_mb: float
+    catalog_name: str
+    use_hats_import: bool
+    dask_scheduler: str | None
+    dask_cluster: str
+    local_n_workers: int
+    local_threads_per_worker: int
+    local_memory_limit: str
+    local_processes: bool
+    slurm_queue: str | None
+    slurm_account: str | None
+    slurm_cores: int | None
+    slurm_processes: int
+    slurm_memory: str | None
+    slurm_walltime: str | None
+    slurm_minimum_jobs: int | None
+    slurm_maximum_jobs: int | None
+    slurm_adapt_interval: float
+    slurm_scale_down_delay: float
+    slurm_log_dir: Path | None
+    overwrite: bool
+    staging_only: bool
+
+
+@dataclass
+class FilePair:
+    relative_path: str
+    input_path: Path
+    output_path: Path
+    num_rows: int
+    num_bins: int
+
+
+@dataclass
+class ConvertResult:
+    relative_path: str
+    num_rows: int
+    xvals: np.ndarray
+
+
+def info(msg: str) -> None:
+    print(msg, file=stderr, flush=True)
+
+
+def parse_cmdline() -> Configuration:
+    args = docopt(__doc__, version=VERSION_TEXT)
+
+    input_dir = Path(args["<input_dir>"]).resolve()
+    output_dir = Path(args["<output_dir>"]).resolve()
+    hats_dir = Path(args["<hats_dir>"]).resolve()
+    staging_dir = Path(args["--staging-dir"] or f"{hats_dir}.parquet_staging").resolve()
+    pdf_output_dir = Path(args["--pdf-output-dir"] or f"{hats_dir}.pdf").resolve()
+
+    try:
+        batch_size = int(args["--batch-size"])
+    except ValueError:
+        raise SystemExit("Error: --batch-size must be an integer.")
+
+    if batch_size < 1:
+        raise SystemExit("Error: --batch-size must be positive.")
+
+    try:
+        fast_path_size_mb = float(args["--fast-path-size-mb"])
+    except ValueError:
+        raise SystemExit("Error: --fast-path-size-mb must be a number.")
+
+    pdf_dtype = args["--pdf-dtype"]
+    if pdf_dtype not in ("float32", "float64"):
+        raise SystemExit("Error: --pdf-dtype must be either 'float32' or 'float64'.")
+
+    dask_cluster = args["--dask-cluster"]
+    if dask_cluster not in ("local", "slurm"):
+        raise SystemExit("Error: --dask-cluster must be either 'local' or 'slurm'.")
+
+    if args.get("--dask-scheduler") and args["--dask-cluster"] != "local":
+        raise SystemExit("Error: --dask-scheduler is mutually exclusive with --dask-cluster.")
+
+    local_n_workers = parse_positive_int(args["--local-n-workers"], "--local-n-workers")
+    local_threads_per_worker = parse_positive_int(
+        args["--local-threads-per-worker"], "--local-threads-per-worker"
+    )
+    slurm_processes = parse_positive_int(args["--slurm-processes"], "--slurm-processes")
+    slurm_cores = parse_optional_positive_int(args.get("--slurm-cores"), "--slurm-cores")
+    slurm_minimum_jobs = parse_optional_nonnegative_int(
+        args.get("--slurm-minimum-jobs"), "--slurm-minimum-jobs"
+    )
+    slurm_maximum_jobs = parse_optional_nonnegative_int(
+        args.get("--slurm-maximum-jobs"), "--slurm-maximum-jobs"
+    )
+    slurm_adapt_interval = parse_positive_float(
+        args["--slurm-adapt-interval"], "--slurm-adapt-interval"
+    )
+    slurm_scale_down_delay = parse_positive_float(
+        args["--slurm-scale-down-delay"], "--slurm-scale-down-delay"
+    )
+
+    return Configuration(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        hats_dir=hats_dir,
+        input_group=args["--input-group"],
+        id_column=args["--id-column"],
+        ra_column=args["--ra-column"],
+        dec_column=args["--dec-column"],
+        staging_dir=staging_dir,
+        pdf_output_dir=pdf_output_dir,
+        pdf_dtype=pdf_dtype,
+        write_pdf_product=not args["--no-pdf-product"],
+        batch_size=batch_size,
+        fast_path_size_mb=fast_path_size_mb,
+        catalog_name=args["--catalog-name"],
+        use_hats_import=args["--use-hats-import"],
+        dask_scheduler=args.get("--dask-scheduler"),
+        dask_cluster=dask_cluster,
+        local_n_workers=local_n_workers,
+        local_threads_per_worker=local_threads_per_worker,
+        local_memory_limit=args["--local-memory-limit"],
+        local_processes=args["--local-processes"],
+        slurm_queue=args.get("--slurm-queue"),
+        slurm_account=args.get("--slurm-account"),
+        slurm_cores=slurm_cores,
+        slurm_processes=slurm_processes,
+        slurm_memory=args.get("--slurm-memory"),
+        slurm_walltime=args.get("--slurm-walltime"),
+        slurm_minimum_jobs=slurm_minimum_jobs,
+        slurm_maximum_jobs=slurm_maximum_jobs,
+        slurm_adapt_interval=slurm_adapt_interval,
+        slurm_scale_down_delay=slurm_scale_down_delay,
+        slurm_log_dir=Path(args["--slurm-log-dir"]) if args.get("--slurm-log-dir") else None,
+        overwrite=args["--overwrite"],
+        staging_only=args["--staging-only"],
+    )
+
+
+def parse_positive_int(value: str, option: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise SystemExit(f"Error: {option} must be an integer.")
+    if parsed < 1:
+        raise SystemExit(f"Error: {option} must be positive.")
+    return parsed
+
+
+def parse_optional_positive_int(value: str | None, option: str) -> int | None:
+    if value is None:
+        return None
+    return parse_positive_int(value, option)
+
+
+def parse_optional_nonnegative_int(value: str | None, option: str) -> int | None:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise SystemExit(f"Error: {option} must be an integer.")
+    if parsed < 0:
+        raise SystemExit(f"Error: {option} must be non-negative.")
+    return parsed
+
+
+def parse_positive_float(value: str, option: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise SystemExit(f"Error: {option} must be a number.")
+    if parsed <= 0:
+        raise SystemExit(f"Error: {option} must be positive.")
+    return parsed
+
+
+def find_input_files(input_dir: Path) -> list[str]:
+    cwd = str(input_dir)
+    files = [
+        relpath(path, cwd)
+        for path in glob(join(cwd, "**", "*"), recursive=True)
+        if isfile(path) and splitext(path)[1] in INPUT_FILE_EXTENSIONS
+    ]
+    files.sort()
+    return files
+
+
+def hdf5_table_group(handle: h5py.File, group_name: str):
+    if group_name:
+        try:
+            group = handle[group_name]
+        except KeyError as err:
+            raise RuntimeError(f"input group not found: {group_name}") from err
+        if not isinstance(group, h5py.Group):
+            raise RuntimeError(f"input group is not an HDF5 group: {group_name}")
+        return group
+    return handle
+
+
+def choose_column(group, requested: str | None, candidates: tuple[str, ...], label: str) -> str:
+    if requested:
+        if requested not in group:
+            raise RuntimeError(f"{label} column not found: {requested}")
+        return requested
+
+    for candidate in candidates:
+        if candidate in group:
+            return candidate
+
+    raise RuntimeError(
+        "%s column not found. Tried: %s. Use --%s-column to set it explicitly."
+        % (label, ", ".join(candidates), label)
+    )
+
+
+def choose_column_from_names(
+    names: set[str],
+    requested: str | None,
+    candidates: tuple[str, ...],
+    label: str,
+) -> str:
+    if requested:
+        if requested not in names:
+            raise RuntimeError(f"{label} column not found: {requested}")
+        return requested
+
+    for candidate in candidates:
+        if candidate in names:
+            return candidate
+
+    raise RuntimeError(
+        "%s column not found. Tried: %s. Use --%s-column to set it explicitly."
+        % (label, ", ".join(candidates), label)
+    )
+
+
+def output_file_name(output_dir: Path, relative_path: str) -> Path:
+    candidate = output_dir / relative_path
+    if candidate.exists():
+        return candidate
+
+    root, _ext = splitext(relative_path)
+    hdf5_candidate = output_dir / f"{root}.hdf5"
+    if hdf5_candidate.exists():
+        return hdf5_candidate
+
+    return candidate
+
+
+def build_file_pairs(cfg: Configuration, files: list[str]) -> list[FilePair]:
+    pairs = []
+    for relative_path in files:
+        input_path = cfg.input_dir / relative_path
+        output_path = output_file_name(cfg.output_dir, relative_path)
+
+        if not output_path.exists():
+            raise RuntimeError(f"missing output for input {relative_path}: {output_path}")
+
+        try:
+            with h5py.File(output_path, "r") as output_handle:
+                xvals, yvals = validate_output(output_handle)
+                num_rows = int(yvals.shape[0])
+                num_bins = len(xvals)
+        except OSError as err:
+            raise RuntimeError(f"unable to read output file {output_path}: {err}") from err
+
+        pairs.append(
+            FilePair(
+                relative_path=relative_path,
+                input_path=input_path,
+                output_path=output_path,
+                num_rows=num_rows,
+                num_bins=num_bins,
+            )
+        )
+
+    return pairs
+
+
+def estimate_summary_staging_size_mb(pairs: list[FilePair]) -> tuple[int, float]:
+    num_rows = sum(pair.num_rows for pair in pairs)
+    size_mb = num_rows * SUMMARY_STAGING_BYTES_PER_ROW_ESTIMATE / 1024**2
+    return num_rows, size_mb
+
+
+def estimate_pdf_product_size_mb(cfg: Configuration, pairs: list[FilePair]) -> float:
+    dtype_size = np.dtype(cfg.pdf_dtype).itemsize
+    value_bytes = sum(pair.num_rows * pair.num_bins * dtype_size for pair in pairs)
+    index_bytes = sum(pair.num_rows * 24 for pair in pairs)
+    return (value_bytes + index_bytes) / 1024**2
+
+
+def validate_expected_staging_size(cfg: Configuration, pairs: list[FilePair]) -> None:
+    num_rows, estimated_size_mb = estimate_summary_staging_size_mb(pairs)
+    info(
+        "Estimated summary staging size: %.1f MB for %d rows"
+        % (estimated_size_mb, num_rows)
+    )
+
+    if cfg.write_pdf_product:
+        info(
+            "Estimated full PDF parquet payload: %.1f MB using %s"
+            % (estimate_pdf_product_size_mb(cfg, pairs), cfg.pdf_dtype)
+        )
+
+    if cfg.staging_only or cfg.use_hats_import:
+        return
+
+    if estimated_size_mb > cfg.fast_path_size_mb:
+        raise RuntimeError(
+            "estimated summary staging size is %.1f MB for %d rows, larger than "
+            "--fast-path-size-mb=%.1f. This check runs before writing staging files "
+            "to avoid a long conversion that would fail later. Re-run with "
+            "--use-hats-import to build with Dask, --staging-only to write only "
+            "parquet staging files, or increase --fast-path-size-mb if you really "
+            "want the LSDB in-memory fast path."
+            % (estimated_size_mb, num_rows, cfg.fast_path_size_mb)
+        )
+
+
+def validate_output(handle: h5py.File) -> tuple[np.ndarray, h5py.Dataset]:
+    try:
+        xvals = handle["meta/xvals"][0]
+        yvals = handle["data/yvals"]
+    except KeyError as err:
+        raise RuntimeError("output file is missing meta/xvals or data/yvals") from err
+
+    if yvals.ndim != 2:
+        raise RuntimeError("output data/yvals must be a two-dimensional dataset")
+
+    if xvals.ndim != 1 or len(xvals) != yvals.shape[1]:
+        raise RuntimeError("output meta/xvals is incompatible with data/yvals")
+
+    return np.asarray(xvals, dtype=np.float64), yvals
+
+
+def weighted_quantile(xvals: np.ndarray, yvals: np.ndarray, q: float) -> np.ndarray:
+    totals = yvals.sum(axis=1)
+    cdf = np.cumsum(yvals, axis=1)
+    out = np.full(yvals.shape[0], np.nan, dtype=np.float64)
+
+    for i in np.flatnonzero(totals > 0):
+        idx = np.searchsorted(cdf[i], q * totals[i], side="left")
+        out[i] = xvals[min(idx, len(xvals) - 1)]
+
+    return out
+
+
+def summarize_pdf(xvals: np.ndarray, yvals: np.ndarray) -> dict[str, np.ndarray]:
+    yvals = np.asarray(yvals, dtype=np.float64)
+    totals = yvals.sum(axis=1)
+    valid = totals > 0
+
+    zmode = xvals[np.argmax(yvals, axis=1)].astype(np.float64)
+    zmode[~valid] = np.nan
+
+    zmean = np.full(yvals.shape[0], np.nan, dtype=np.float64)
+    zmean[valid] = (yvals[valid] * xvals).sum(axis=1) / totals[valid]
+
+    return {
+        "zmode": zmode,
+        "zmean": zmean,
+        "zmedian": weighted_quantile(xvals, yvals, 0.50),
+        "z_p16": weighted_quantile(xvals, yvals, 0.16),
+        "z_p84": weighted_quantile(xvals, yvals, 0.84),
+    }
+
+
+def parquet_part_name(relative_path: str, batch_index: int) -> str:
+    stem = splitext(relative_path)[0].replace("/", "__")
+    return f"{stem}-part{batch_index:05d}.parquet"
+
+
+def pdf_part_name(relative_path: str, batch_index: int) -> str:
+    stem = splitext(relative_path)[0].replace("/", "__")
+    return f"{stem}-pdf-part{batch_index:05d}.parquet"
+
+
+def pdf_array(yvals: np.ndarray, dtype: str) -> pa.FixedSizeListArray:
+    values = np.asarray(yvals, dtype=np.dtype(dtype), order="C")
+    flat_values = pa.array(values.ravel())
+    return pa.FixedSizeListArray.from_arrays(flat_values, values.shape[1])
+
+
+def read_hdf5_identity_columns(
+    cfg: Configuration,
+    pair: FilePair,
+    num_rows: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, str, str, str]:
+    with h5py.File(pair.input_path, "r") as input_handle:
+        input_group = hdf5_table_group(input_handle, cfg.input_group)
+        id_column = choose_column(input_group, cfg.id_column, ID_CANDIDATES, "id")
+        ra_column = choose_column(input_group, cfg.ra_column, RA_CANDIDATES, "ra")
+        dec_column = choose_column(input_group, cfg.dec_column, DEC_CANDIDATES, "dec")
+
+        for column in (id_column, ra_column, dec_column):
+            if input_group[column].shape[0] != num_rows:
+                raise RuntimeError(
+                    "%s row count does not match output rows for %s: %d != %d"
+                    % (column, pair.relative_path, input_group[column].shape[0], num_rows)
+                )
+
+        return (
+            input_group[id_column][:],
+            input_group[ra_column][:],
+            input_group[dec_column][:],
+            id_column,
+            ra_column,
+            dec_column,
+        )
+
+
+def parquet_column_to_numpy(table: pa.Table, column: str) -> np.ndarray:
+    return table[column].combine_chunks().to_numpy(zero_copy_only=False)
+
+
+def read_parquet_identity_columns(
+    cfg: Configuration,
+    pair: FilePair,
+    num_rows: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, str, str, str]:
+    if cfg.input_group:
+        raise RuntimeError("--input-group is only supported for HDF5 input files")
+
+    schema = pq.read_schema(pair.input_path)
+    names = set(schema.names)
+    id_column = choose_column_from_names(names, cfg.id_column, ID_CANDIDATES, "id")
+    ra_column = choose_column_from_names(names, cfg.ra_column, RA_CANDIDATES, "ra")
+    dec_column = choose_column_from_names(names, cfg.dec_column, DEC_CANDIDATES, "dec")
+
+    columns = [id_column, ra_column, dec_column]
+    table = pq.read_table(pair.input_path, columns=columns)
+    if table.num_rows != num_rows:
+        raise RuntimeError(
+            "input row count does not match output rows for %s: %d != %d"
+            % (pair.relative_path, table.num_rows, num_rows)
+        )
+
+    return (
+        parquet_column_to_numpy(table, id_column),
+        parquet_column_to_numpy(table, ra_column),
+        parquet_column_to_numpy(table, dec_column),
+        id_column,
+        ra_column,
+        dec_column,
+    )
+
+
+def read_identity_columns(
+    cfg: Configuration,
+    pair: FilePair,
+    num_rows: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, str, str, str]:
+    ext = pair.input_path.suffix
+    if ext in (".hdf5", ".h5"):
+        return read_hdf5_identity_columns(cfg, pair, num_rows)
+    if ext in (".parquet", ".pq"):
+        return read_parquet_identity_columns(cfg, pair, num_rows)
+    raise RuntimeError(f"unsupported input file type: {pair.input_path}")
+
+
+def write_summary_parts(
+    cfg: Configuration,
+    pair: FilePair,
+    xvals_reference: np.ndarray | None,
+) -> ConvertResult:
+    with h5py.File(pair.output_path, "r") as output_handle:
+        xvals, yvals = validate_output(output_handle)
+
+        num_rows = yvals.shape[0]
+        object_ids, coord_ra, coord_dec, id_column, ra_column, dec_column = read_identity_columns(
+            cfg, pair, num_rows
+        )
+
+        if xvals_reference is not None and not np.array_equal(xvals_reference, xvals):
+            raise RuntimeError(f"meta/xvals differs between output files at {pair.relative_path}")
+
+        info(
+            "Converting %s rows=%d id=%s ra=%s dec=%s"
+            % (pair.relative_path, num_rows, id_column, ra_column, dec_column)
+        )
+
+        for batch_index, start in enumerate(range(0, num_rows, cfg.batch_size)):
+            stop = min(start + cfg.batch_size, num_rows)
+            batch_yvals = yvals[start:stop, :]
+            batch_object_ids = object_ids[start:stop]
+            batch_coord_ra = coord_ra[start:stop]
+            batch_coord_dec = coord_dec[start:stop]
+            stats = summarize_pdf(xvals, batch_yvals)
+            data = {
+                "objectId": batch_object_ids,
+                "coord_ra": batch_coord_ra,
+                "coord_dec": batch_coord_dec,
+                **stats,
+            }
+            table = pa.Table.from_pydict(data)
+            part_path = cfg.staging_dir / parquet_part_name(pair.relative_path, batch_index)
+            pq.write_table(table, part_path)
+
+            if cfg.write_pdf_product:
+                pdf_table = pa.Table.from_pydict(
+                    {
+                        "objectId": batch_object_ids,
+                        "coord_ra": batch_coord_ra,
+                        "coord_dec": batch_coord_dec,
+                    }
+                ).append_column("pdf", pdf_array(batch_yvals, cfg.pdf_dtype))
+                pdf_path = cfg.pdf_output_dir / pdf_part_name(pair.relative_path, batch_index)
+                pq.write_table(pdf_table, pdf_path)
+
+    return ConvertResult(pair.relative_path, num_rows, xvals)
+
+
+def convert_pair_to_parquet(cfg: Configuration, pair: FilePair) -> ConvertResult:
+    try:
+        return write_summary_parts(cfg, pair, None)
+    except Exception as err:
+        raise RuntimeError(f"failed converting {pair.relative_path}: {err}") from err
+
+
+def write_summary_parts_sequential(
+    cfg: Configuration,
+    pairs: list[FilePair],
+) -> list[ConvertResult]:
+    results = []
+    xvals_reference = None
+    for pair in pairs:
+        result = write_summary_parts(cfg, pair, xvals_reference)
+        if xvals_reference is None:
+            xvals_reference = result.xvals
+        results.append(result)
+    return results
+
+
+def write_summary_parts_dask(
+    cfg: Configuration,
+    pairs: list[FilePair],
+    client,
+) -> list[ConvertResult]:
+    try:
+        from distributed import as_completed
+    except Exception as err:
+        raise RuntimeError("distributed is required for Dask staging.") from err
+
+    info("Converting %d input/output pairs with Dask staging tasks" % len(pairs))
+    futures = client.map(convert_pair_to_parquet, [cfg] * len(pairs), pairs)
+    results = []
+    try:
+        for future in as_completed(futures):
+            result = future.result()
+            info("Converted %s rows=%d" % (result.relative_path, result.num_rows))
+            results.append(result)
+    finally:
+        for future in futures:
+            if not future.done():
+                future.cancel()
+
+    results.sort(key=lambda result: result.relative_path)
+    return results
+
+
+def validate_xvals(results: list[ConvertResult]) -> np.ndarray:
+    if not results:
+        raise RuntimeError("no conversion results were produced")
+
+    xvals_reference = results[0].xvals
+    for result in results[1:]:
+        if not np.array_equal(xvals_reference, result.xvals):
+            raise RuntimeError(f"meta/xvals differs between output files at {result.relative_path}")
+
+    return xvals_reference
+
+
+def write_xvals_metadata(directory: Path, xvals: np.ndarray, file_name: str) -> None:
+    table = pa.Table.from_pydict(
+        {
+            "bin_index": np.arange(len(xvals), dtype=np.int32),
+            "z": xvals.astype(np.float64),
+        }
+    )
+    pq.write_table(table, directory / file_name)
+
+
+def create_hats_import_client(cfg: Configuration):
+    try:
+        from distributed import Client, LocalCluster
+    except Exception as err:
+        raise RuntimeError(
+            "distributed is required to create a Dask client for pz-build-hats."
+        ) from err
+
+    if cfg.dask_scheduler:
+        info("Connecting hats-import to existing Dask scheduler: %s" % cfg.dask_scheduler)
+        return Client(cfg.dask_scheduler), None
+
+    if cfg.dask_cluster == "local":
+        info(
+        "Starting local Dask cluster for pz-build-hats: "
+            "n_workers=%d threads_per_worker=%d memory_limit=%s processes=%s"
+            % (
+                cfg.local_n_workers,
+                cfg.local_threads_per_worker,
+                cfg.local_memory_limit,
+                cfg.local_processes,
+            )
+        )
+        cluster = LocalCluster(
+            n_workers=cfg.local_n_workers,
+            threads_per_worker=cfg.local_threads_per_worker,
+            memory_limit=cfg.local_memory_limit,
+            processes=cfg.local_processes,
+            dashboard_address=None,
+        )
+        return Client(cluster), cluster
+
+    if cfg.dask_cluster == "slurm":
+        try:
+            from dask_jobqueue import SLURMCluster
+        except Exception as err:
+            raise RuntimeError(
+                "dask-jobqueue is required for --dask-cluster=slurm. "
+                "Install it in the active environment or use --dask-scheduler "
+                "to connect to an existing Dask scheduler."
+            ) from err
+
+        missing = []
+        if cfg.slurm_cores is None:
+            missing.append("--slurm-cores")
+        if cfg.slurm_memory is None:
+            missing.append("--slurm-memory")
+        if cfg.slurm_walltime is None:
+            missing.append("--slurm-walltime")
+        if cfg.slurm_minimum_jobs is None:
+            missing.append("--slurm-minimum-jobs")
+        if cfg.slurm_maximum_jobs is None:
+            missing.append("--slurm-maximum-jobs")
+        if missing:
+            raise RuntimeError(
+                "--dask-cluster=slurm requires %s. Example: "
+                "--dask-cluster=slurm --slurm-queue=cpu --slurm-cores=32 "
+                "--slurm-processes=1 --slurm-memory=120GB "
+                "--slurm-walltime=04:00:00 --slurm-minimum-jobs=1 "
+                "--slurm-maximum-jobs=8"
+                % ", ".join(missing)
+            )
+
+        if cfg.slurm_maximum_jobs < cfg.slurm_minimum_jobs:
+            raise RuntimeError("--slurm-maximum-jobs must be >= --slurm-minimum-jobs.")
+
+        instance_args = {
+            "cores": cfg.slurm_cores,
+            "processes": cfg.slurm_processes,
+            "memory": cfg.slurm_memory,
+            "walltime": cfg.slurm_walltime,
+        }
+        if cfg.slurm_queue:
+            instance_args["queue"] = cfg.slurm_queue
+        if cfg.slurm_account:
+            instance_args["account"] = cfg.slurm_account
+        if cfg.slurm_log_dir:
+            makedirs(cfg.slurm_log_dir, exist_ok=True)
+            instance_args["job_extra_directives"] = [
+                f"--output={cfg.slurm_log_dir}/slurm-%j.out",
+                f"--error={cfg.slurm_log_dir}/slurm-%j.err",
+            ]
+
+        n_workers_init = cfg.slurm_minimum_jobs * cfg.slurm_processes
+        wait_count = max(1, ceil(cfg.slurm_scale_down_delay / cfg.slurm_adapt_interval))
+
+        info(
+            "Starting Slurm Dask cluster for pz-build-hats: "
+            "initial_jobs=%d max_jobs=%d cores=%s processes=%s memory=%s "
+            "walltime=%s queue=%s account=%s"
+            % (
+                cfg.slurm_minimum_jobs,
+                cfg.slurm_maximum_jobs,
+                cfg.slurm_cores,
+                cfg.slurm_processes,
+                cfg.slurm_memory,
+                cfg.slurm_walltime,
+                cfg.slurm_queue,
+                cfg.slurm_account,
+            )
+        )
+        cluster = SLURMCluster(n_workers=n_workers_init, **instance_args)
+        cluster.adapt(
+            minimum_jobs=cfg.slurm_minimum_jobs,
+            maximum_jobs=cfg.slurm_maximum_jobs,
+            interval=f"{cfg.slurm_adapt_interval:g}s",
+            wait_count=wait_count,
+        )
+        info(
+            "Slurm Dask adaptive scaling enabled: interval=%.1fs "
+            "scale_down_delay=%.1fs wait_count=%d"
+            % (cfg.slurm_adapt_interval, cfg.slurm_scale_down_delay, wait_count)
+        )
+        return Client(cluster), cluster
+
+    raise RuntimeError(f"unsupported Dask cluster mode: {cfg.dask_cluster}")
+
+
+def build_hats_collection(cfg: Configuration, client=None) -> None:
+    input_files = sorted(path for path in cfg.staging_dir.glob("*.parquet")
+                         if path.name != "pz_pdf_xvals.parquet")
+    if not input_files:
+        raise RuntimeError(f"no parquet staging files found in {cfg.staging_dir}")
+
+    try:
+        total_size_mb = sum(path.stat().st_size for path in input_files) / 1024**2
+    except OSError:
+        total_size_mb = float("inf")
+
+    if total_size_mb <= cfg.fast_path_size_mb:
+        try:
+            import lsdb
+            import pandas as pd
+        except Exception as err:
+            raise RuntimeError(
+                "lsdb and pandas are required to build small HATS collections. "
+                "The parquet staging files were written successfully."
+            ) from err
+
+        collection_path = cfg.hats_dir.resolve()
+        if collection_path.exists():
+            if not cfg.overwrite:
+                raise RuntimeError(f"HATS directory already exists: {collection_path}")
+            rmtree(collection_path)
+
+        info(
+            "Building HATS collection with LSDB fast path: %s (%.1f MB)"
+            % (collection_path, total_size_mb)
+        )
+        df = pd.concat((pd.read_parquet(path) for path in input_files), ignore_index=True)
+        catalog = lsdb.from_dataframe(
+            df,
+            catalog_name=cfg.catalog_name,
+            ra_column="coord_ra",
+            dec_column="coord_dec",
+            use_pyarrow_types=True,
+        )
+        catalog.write_catalog(str(collection_path), as_collection=True, overwrite=True)
+        return
+
+    if not cfg.use_hats_import:
+        raise RuntimeError(
+            "staged parquet size is %.1f MB, larger than --fast-path-size-mb=%.1f. "
+            "The parquet staging files were written successfully. Re-run with "
+            "--staging-only to keep only staging files, increase --fast-path-size-mb "
+            "for local testing, or pass --use-hats-import with Dask local, Slurm, "
+            "or scheduler options."
+            % (total_size_mb, cfg.fast_path_size_mb)
+        )
+
+    try:
+        from hats_import import CollectionArguments
+        from hats_import.collection.run_import import run as run_collection_import
+    except Exception as err:
+        raise RuntimeError(
+            "hats-import is required to build the HATS collection. "
+            "The parquet staging files were written successfully."
+        ) from err
+
+    parent_dir = cfg.hats_dir.parent.resolve()
+    collection_name = cfg.hats_dir.name
+    collection_path = parent_dir / collection_name
+
+    input_file_names = [str(path) for path in input_files]
+
+    if collection_path.exists():
+        if not cfg.overwrite:
+            raise RuntimeError(f"HATS directory already exists: {collection_path}")
+        rmtree(collection_path)
+
+    args = CollectionArguments(
+        output_artifact_name=collection_name,
+        output_path=str(parent_dir),
+        resume=False,
+    ).catalog(
+        input_file_list=input_file_names,
+        file_reader="parquet",
+        output_artifact_name=cfg.catalog_name,
+        ra_column="coord_ra",
+        dec_column="coord_dec",
+    )
+
+    if client is None:
+        raise RuntimeError("internal error: hats-import requires a Dask client")
+
+    info("Building HATS collection: %s" % collection_path)
+    run_collection_import(args, client)
+
+
+def setup_output_dirs(cfg: Configuration) -> None:
+    if cfg.write_pdf_product:
+        resolved_dirs = {
+            "staging": cfg.staging_dir.resolve(),
+            "hats": cfg.hats_dir.resolve(),
+            "pdf": cfg.pdf_output_dir.resolve(),
+        }
+        if len(set(resolved_dirs.values())) != len(resolved_dirs):
+            raise RuntimeError(
+                "--pdf-output-dir, --staging-dir, and <hats_dir> must be different paths."
+            )
+
+    if cfg.staging_dir.exists():
+        if not cfg.overwrite:
+            raise RuntimeError(f"staging directory already exists: {cfg.staging_dir}")
+        rmtree(cfg.staging_dir)
+
+    if cfg.hats_dir.exists() and not (cfg.overwrite or cfg.staging_only):
+        raise RuntimeError(f"HATS directory already exists: {cfg.hats_dir}")
+
+    if cfg.write_pdf_product and cfg.pdf_output_dir.exists():
+        if not cfg.overwrite:
+            raise RuntimeError(f"PDF output directory already exists: {cfg.pdf_output_dir}")
+        rmtree(cfg.pdf_output_dir)
+
+    makedirs(cfg.staging_dir, exist_ok=True)
+    if cfg.write_pdf_product:
+        makedirs(cfg.pdf_output_dir, exist_ok=True)
+    if not cfg.staging_only:
+        makedirs(cfg.hats_dir.parent or Path("."), exist_ok=True)
+
+
+def run(cfg: Configuration) -> None:
+    if not cfg.input_dir.is_dir():
+        raise RuntimeError(f"input directory not found: {cfg.input_dir}")
+    if not cfg.output_dir.is_dir():
+        raise RuntimeError(f"output directory not found: {cfg.output_dir}")
+
+    files = find_input_files(cfg.input_dir)
+    if not files:
+        raise RuntimeError(f"no input files found in {cfg.input_dir}")
+
+    pairs = build_file_pairs(cfg, files)
+    validate_expected_staging_size(cfg, pairs)
+    setup_output_dirs(cfg)
+
+    client = None
+    cluster = None
+    if cfg.use_hats_import:
+        client, cluster = create_hats_import_client(cfg)
+
+    try:
+        if client is not None:
+            results = write_summary_parts_dask(cfg, pairs, client)
+        else:
+            results = write_summary_parts_sequential(cfg, pairs)
+
+        xvals_reference = validate_xvals(results)
+
+        write_xvals_metadata(cfg.staging_dir, xvals_reference, "pz_pdf_xvals.parquet")
+        info("Wrote summary parquet staging files: %s" % cfg.staging_dir)
+        if cfg.write_pdf_product:
+            write_xvals_metadata(cfg.pdf_output_dir, xvals_reference, "xvals.parquet")
+            info("Wrote full PDF parquet product: %s" % cfg.pdf_output_dir)
+
+        if cfg.staging_only:
+            return
+
+        build_hats_collection(cfg, client)
+        info("Done: %s" % cfg.hats_dir)
+    finally:
+        if client is not None:
+            client.close()
+        if cluster is not None:
+            cluster.close()
+
+
+def main() -> None:
+    try:
+        run(parse_cmdline())
+    except RuntimeError as err:
+        print("Error: %s" % err, file=stderr)
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()
