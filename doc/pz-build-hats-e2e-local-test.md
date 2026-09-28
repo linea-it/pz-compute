@@ -194,6 +194,7 @@ cluster is used for HDF5-to-parquet staging and for `hats-import`.
 cd "$PZ_LOCAL_RUN"
 pz-build-hats \
     --overwrite \
+    --keep-staging \
     --fast-path-size-mb=0 \
     --use-hats-import \
     --dask-cluster=local \

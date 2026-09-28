@@ -62,6 +62,12 @@ Options:
     --slurm-log-dir=<dir>  Directory for Slurm Dask worker stdout/stderr logs.
     --overwrite            Replace existing staging and HATS directories.
     --staging-only         Stop after writing summary parquet staging files.
+    --keep-staging         Keep summary parquet staging after a successful
+                           HATS build.
+    --delete-hdf5-outputs  Delete matched rail-estimate HDF5 outputs after all
+                           requested products are written successfully.
+    --require-complete-marker  Reject outputs without a successful rail-estimate
+                               completion marker.
 """
 
 from __future__ import annotations
@@ -82,13 +88,18 @@ import pyarrow.parquet as pq
 from docopt import docopt
 
 from rail_scripts import VERSION_TEXT
+from rail_scripts.integrity import (
+    FINGERPRINT_ALGORITHM,
+    INTEGRITY_GROUP,
+    row_id_fingerprint,
+)
 
 
 ID_CANDIDATES = ("objectId", "object_id", "coadd_object_id", "id")
 RA_CANDIDATES = ("coord_ra", "ra")
 DEC_CANDIDATES = ("coord_dec", "dec")
 SUMMARY_STAGING_BYTES_PER_ROW_ESTIMATE = 96
-INPUT_FILE_EXTENSIONS = (".hdf5", ".h5", ".parquet", ".pq")
+INPUT_FILE_EXTENSIONS = (".hdf5", ".h5", ".parquet", ".parq", ".pq")
 
 
 @dataclass
@@ -127,6 +138,9 @@ class Configuration:
     slurm_log_dir: Path | None
     overwrite: bool
     staging_only: bool
+    keep_staging: bool
+    delete_hdf5_outputs: bool
+    require_complete_marker: bool
 
 
 @dataclass
@@ -136,6 +150,7 @@ class FilePair:
     output_path: Path
     num_rows: int
     num_bins: int
+    ancillary_columns: tuple[str, ...]
 
 
 @dataclass
@@ -181,6 +196,11 @@ def parse_cmdline() -> Configuration:
 
     if args.get("--dask-scheduler") and args["--dask-cluster"] != "local":
         raise SystemExit("Error: --dask-scheduler is mutually exclusive with --dask-cluster.")
+
+    if args["--delete-hdf5-outputs"] and args["--no-pdf-product"]:
+        raise SystemExit(
+            "Error: --delete-hdf5-outputs requires the PDF parquet product."
+        )
 
     local_n_workers = parse_positive_int(args["--local-n-workers"], "--local-n-workers")
     local_threads_per_worker = parse_positive_int(
@@ -236,6 +256,9 @@ def parse_cmdline() -> Configuration:
         slurm_log_dir=Path(args["--slurm-log-dir"]) if args.get("--slurm-log-dir") else None,
         overwrite=args["--overwrite"],
         staging_only=args["--staging-only"],
+        keep_staging=args["--keep-staging"],
+        delete_hdf5_outputs=args["--delete-hdf5-outputs"],
+        require_complete_marker=args["--require-complete-marker"],
     )
 
 
@@ -350,6 +373,20 @@ def output_file_name(output_dir: Path, relative_path: str) -> Path:
     return candidate
 
 
+def validate_completion_marker(
+    handle: h5py.File, num_rows: int, require_marker: bool
+) -> None:
+    integrity = handle.get(INTEGRITY_GROUP)
+    if integrity is None:
+        if require_marker:
+            raise RuntimeError("output is missing the pz-compute completion marker")
+        return
+    if not bool(integrity.attrs.get("complete", False)):
+        raise RuntimeError("output has an incomplete pz-compute marker")
+    if int(integrity.attrs.get("row_count", -1)) != num_rows:
+        raise RuntimeError("completion marker row count does not match data/yvals")
+
+
 def build_file_pairs(cfg: Configuration, files: list[str]) -> list[FilePair]:
     pairs = []
     for relative_path in files:
@@ -363,7 +400,14 @@ def build_file_pairs(cfg: Configuration, files: list[str]) -> list[FilePair]:
             with h5py.File(output_path, "r") as output_handle:
                 xvals, yvals = validate_output(output_handle)
                 num_rows = int(yvals.shape[0])
+                validate_completion_marker(
+                    output_handle, num_rows, cfg.require_complete_marker
+                )
                 num_bins = len(xvals)
+                ancillary_group = output_handle.get("ancillary")
+                ancillary_columns = tuple(
+                    sorted(ancillary_group.keys()) if ancillary_group is not None else ()
+                )
         except OSError as err:
             raise RuntimeError(f"unable to read output file {output_path}: {err}") from err
 
@@ -374,7 +418,14 @@ def build_file_pairs(cfg: Configuration, files: list[str]) -> list[FilePair]:
                 output_path=output_path,
                 num_rows=num_rows,
                 num_bins=num_bins,
+                ancillary_columns=ancillary_columns,
             )
+        )
+
+    schemas = {pair.ancillary_columns for pair in pairs}
+    if len(schemas) > 1:
+        raise RuntimeError(
+            "ancillary column schema differs between rail-estimate output files"
         )
 
     return pairs
@@ -557,9 +608,40 @@ def read_identity_columns(
     ext = pair.input_path.suffix
     if ext in (".hdf5", ".h5"):
         return read_hdf5_identity_columns(cfg, pair, num_rows)
-    if ext in (".parquet", ".pq"):
+    if ext in (".parquet", ".parq", ".pq"):
         return read_parquet_identity_columns(cfg, pair, num_rows)
     raise RuntimeError(f"unsupported input file type: {pair.input_path}")
+
+
+def _text_attribute(value) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return str(value)
+
+
+def validate_row_fingerprint(
+    handle: h5py.File, object_ids: np.ndarray, id_column: str
+) -> None:
+    integrity = handle.get(INTEGRITY_GROUP)
+    if integrity is None or "row_id_fingerprint" not in integrity.attrs:
+        return
+
+    algorithm = _text_attribute(
+        integrity.attrs.get("row_id_fingerprint_algorithm", "")
+    )
+    if algorithm != FINGERPRINT_ALGORITHM:
+        raise RuntimeError(f"unsupported row fingerprint algorithm: {algorithm}")
+
+    expected_column = _text_attribute(integrity.attrs.get("row_id_column", ""))
+    if expected_column != id_column:
+        raise RuntimeError(
+            f"row fingerprint uses {expected_column}, but identity input uses {id_column}"
+        )
+
+    expected = _text_attribute(integrity.attrs["row_id_fingerprint"])
+    actual = row_id_fingerprint(object_ids)
+    if actual != expected:
+        raise RuntimeError("input object identifiers or row order do not match output")
 
 
 def write_summary_parts(
@@ -571,9 +653,28 @@ def write_summary_parts(
         xvals, yvals = validate_output(output_handle)
 
         num_rows = yvals.shape[0]
+        ancillary_group = output_handle.get("ancillary")
+        ancillary_columns = {}
+        if ancillary_group is not None:
+            reserved = {"objectId", "coord_ra", "coord_dec", "zmode", "zmean",
+                        "zmedian", "z_p16", "z_p84", "pdf"}
+            collisions = sorted(reserved.intersection(ancillary_group.keys()))
+            if collisions:
+                raise RuntimeError(
+                    f"ancillary columns collide with product columns: {collisions}"
+                )
+            for name, dataset in ancillary_group.items():
+                if not isinstance(dataset, h5py.Dataset) or dataset.ndim != 1:
+                    raise RuntimeError(f"ancillary/{name} must be a one-dimensional dataset")
+                if dataset.shape[0] != num_rows:
+                    raise RuntimeError(
+                        f"ancillary/{name} row count does not match data/yvals"
+                    )
+                ancillary_columns[name] = dataset
         object_ids, coord_ra, coord_dec, id_column, ra_column, dec_column = read_identity_columns(
             cfg, pair, num_rows
         )
+        validate_row_fingerprint(output_handle, object_ids, id_column)
 
         if xvals_reference is not None and not np.array_equal(xvals_reference, xvals):
             raise RuntimeError(f"meta/xvals differs between output files at {pair.relative_path}")
@@ -590,11 +691,16 @@ def write_summary_parts(
             batch_coord_ra = coord_ra[start:stop]
             batch_coord_dec = coord_dec[start:stop]
             stats = summarize_pdf(xvals, batch_yvals)
+            propagated = {
+                name: dataset[start:stop]
+                for name, dataset in ancillary_columns.items()
+            }
             data = {
                 "objectId": batch_object_ids,
                 "coord_ra": batch_coord_ra,
                 "coord_dec": batch_coord_dec,
                 **stats,
+                **propagated,
             }
             table = pa.Table.from_pydict(data)
             part_path = cfg.staging_dir / parquet_part_name(pair.relative_path, batch_index)
@@ -606,6 +712,7 @@ def write_summary_parts(
                         "objectId": batch_object_ids,
                         "coord_ra": batch_coord_ra,
                         "coord_dec": batch_coord_dec,
+                        **propagated,
                     }
                 ).append_column("pdf", pdf_array(batch_yvals, cfg.pdf_dtype))
                 pdf_path = cfg.pdf_output_dir / pdf_part_name(pair.relative_path, batch_index)
@@ -894,16 +1001,38 @@ def build_hats_collection(cfg: Configuration, client=None) -> None:
 
 
 def setup_output_dirs(cfg: Configuration) -> None:
+    source_dirs = {
+        "input": cfg.input_dir.resolve(),
+        "rail-estimate output": cfg.output_dir.resolve(),
+    }
+    product_dirs = {
+        "staging": cfg.staging_dir.resolve(),
+        "HATS": cfg.hats_dir.resolve(),
+    }
     if cfg.write_pdf_product:
-        resolved_dirs = {
-            "staging": cfg.staging_dir.resolve(),
-            "hats": cfg.hats_dir.resolve(),
-            "pdf": cfg.pdf_output_dir.resolve(),
-        }
-        if len(set(resolved_dirs.values())) != len(resolved_dirs):
-            raise RuntimeError(
-                "--pdf-output-dir, --staging-dir, and <hats_dir> must be different paths."
-            )
+        product_dirs["PDF parquet"] = cfg.pdf_output_dir.resolve()
+
+    def overlap(first: Path, second: Path) -> bool:
+        return (
+            first == second
+            or first in second.parents
+            or second in first.parents
+        )
+
+    products = list(product_dirs.items())
+    for index, (first_label, first_path) in enumerate(products):
+        for second_label, second_path in products[index + 1:]:
+            if overlap(first_path, second_path):
+                raise RuntimeError(
+                    f"unsafe overlapping {first_label} and {second_label} "
+                    f"directories: {first_path}, {second_path}"
+                )
+        for source_label, source_path in source_dirs.items():
+            if overlap(first_path, source_path):
+                raise RuntimeError(
+                    f"unsafe overlapping {first_label} and {source_label} "
+                    f"directories: {first_path}, {source_path}"
+                )
 
     if cfg.staging_dir.exists():
         if not cfg.overwrite:
@@ -923,6 +1052,30 @@ def setup_output_dirs(cfg: Configuration) -> None:
         makedirs(cfg.pdf_output_dir, exist_ok=True)
     if not cfg.staging_only:
         makedirs(cfg.hats_dir.parent or Path("."), exist_ok=True)
+
+
+def delete_hdf5_outputs(cfg: Configuration, pairs: list[FilePair]) -> None:
+    output_root = cfg.output_dir.resolve()
+    paths = []
+    for pair in pairs:
+        path = pair.output_path.resolve()
+        try:
+            path.relative_to(output_root)
+        except ValueError as err:
+            raise RuntimeError(
+                f"refusing to delete output outside {output_root}: {path}"
+            ) from err
+        if not path.is_file():
+            raise RuntimeError(f"refusing to delete missing or non-file output: {path}")
+        paths.append(path)
+
+    total_bytes = sum(path.stat().st_size for path in paths)
+    for path in paths:
+        path.unlink()
+    info(
+        "Deleted %d rail-estimate HDF5 outputs (%.1f GB)"
+        % (len(paths), total_bytes / 1024**3)
+    )
 
 
 def run(cfg: Configuration) -> None:
@@ -958,16 +1111,21 @@ def run(cfg: Configuration) -> None:
             write_xvals_metadata(cfg.pdf_output_dir, xvals_reference, "xvals.parquet")
             info("Wrote full PDF parquet product: %s" % cfg.pdf_output_dir)
 
-        if cfg.staging_only:
-            return
-
-        build_hats_collection(cfg, client)
-        info("Done: %s" % cfg.hats_dir)
+        if not cfg.staging_only:
+            build_hats_collection(cfg, client)
+            info("Done: %s" % cfg.hats_dir)
     finally:
         if client is not None:
             client.close()
         if cluster is not None:
             cluster.close()
+
+    if not cfg.staging_only and not cfg.keep_staging:
+        rmtree(cfg.staging_dir)
+        info("Deleted summary parquet staging: %s" % cfg.staging_dir)
+
+    if cfg.delete_hdf5_outputs:
+        delete_hdf5_outputs(cfg, pairs)
 
 
 def main() -> None:

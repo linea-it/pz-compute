@@ -304,6 +304,7 @@ mkdir -p log/dask
 
 pz-build-hats \
     --overwrite \
+    --keep-staging \
     --fast-path-size-mb=0 \
     --use-hats-import \
     --dask-cluster=slurm \

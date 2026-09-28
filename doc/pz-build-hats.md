@@ -65,6 +65,18 @@ To choose a different destination:
 --pdf-output-dir=<dir>
 ```
 
+The source `rail-estimate` HDF5 files are kept by default. Once the PDF parquet
+product and every other requested product have been written successfully, they
+can be removed automatically with:
+
+```bash
+--delete-hdf5-outputs
+```
+
+This option requires the PDF parquet product and therefore cannot be combined
+with `--no-pdf-product`. All matched paths are validated before deletion starts.
+A failed conversion or HATS build never deletes the HDF5 inputs.
+
 The output columns are normalized to `objectId`, `coord_ra`, and `coord_dec`.
 Input column aliases are detected automatically:
 
@@ -99,8 +111,7 @@ Input files may be HDF5 or parquet. The input file must contain object
 identifiers and coordinates. For parquet input, `pz-build-hats` reads only the
 identifier and coordinate columns needed to associate each PDF with the original
 object. Metadata files in partitioned parquet datasets, such as `_metadata` and
-`_common_metadata`, are ignored because only `.hdf5`, `.h5`, `.parquet`, and
-`.pq` input shards are considered.
+`_common_metadata`, are ignored because only `.hdf5`, `.h5`, `.parquet`, `.parq`, and `.pq` input shards are considered.
 
 The output HDF5 must be a `rail-estimate` output with:
 
@@ -108,6 +119,22 @@ The output HDF5 must be a `rail-estimate` output with:
 meta/xvals
 data/yvals
 ```
+
+When `rail-estimate --output-columns` is used, selected values are stored as
+one-dimensional datasets under `ancillary/`. `pz-build-hats` validates their
+row counts and copies them into both the summary staging (and therefore the HATS
+catalog) and the PDF parquet parts. All matched output files must expose a
+compatible ancillary schema.
+
+When the estimate contains row-integrity metadata, `pz-build-hats` recomputes
+the identifier fingerprint from the matched input shard and rejects a changed
+object set or row order. A present but incomplete estimate marker is always
+rejected. Use `--require-complete-marker` for production runs to also reject
+older outputs that do not contain a completion marker.
+
+Zero-row input/output pairs are valid and are checked like any other pair. They
+do not add parquet rows, while non-empty shards in the same run build the final
+HATS and PDF products normally.
 
 If input columns live inside an HDF5 group, pass:
 
@@ -133,7 +160,10 @@ pz_pdf_xvals.parquet
 
 `pz_pdf_xvals.parquet` records the redshift grid used by the `rail-estimate`
 PDF output. The same grid is also written to the full PDF product as
-`xvals.parquet`.
+`xvals.parquet`. After a successful final HATS build, the staging directory is
+removed by default. Pass `--keep-staging` to retain it. `--staging-only` always
+retains staging because it is the requested output of that mode. If conversion
+or HATS construction fails, staging is retained for diagnosis or resumption.
 
 ## Basic Usage
 
@@ -152,8 +182,11 @@ This writes:
 ```text
 pz-summary-hats/
 pz-summary-hats.pdf/
-pz-summary-hats.parquet_staging/
 ```
+
+The temporary `pz-summary-hats.parquet_staging/` directory is deleted after
+the HATS catalog is complete. Add `--keep-staging` when it is needed for
+debugging or inspection.
 
 Inspect the generated HATS catalog:
 
