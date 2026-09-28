@@ -30,9 +30,8 @@ standard format. It does the following preprocessing steps:
   object ID, optional coordinates).
 - Convert infinite values to NaN.
 - Convert flux to magnitude.
+- Apply optional extinction correction.
 - Convert Apache Parquet files to HDF5.
-
-Note: dereddening is not implemented yet (TDB).
 
 Preprocessing is done as efficiently as possible and memory usage is limited
 even with arbitrarily large files. The resulting output files are a set of

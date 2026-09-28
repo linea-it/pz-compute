@@ -114,6 +114,32 @@ the last ones are used. The list of options follows:
   ``\{band}error'', it will require the columns ``uerror'', ``gerror'',
   ``rerror'', etc. present in the input file.
 
+*--sfd-deredden*::
+  Generate requested magnitude and magnitude-error columns whose names end in
+  `_sfd`. Uncorrected magnitude columns are preferred; if absent, matching LSST
+  flux columns in nJy are converted first. Magnitudes are corrected with the
+  input E(B-V), while measurement uncertainties are preserved.
+
+*--ebv-column=*__name__::
+  Set the E(B-V) input column used by *--sfd-deredden*. The default is `ebv`.
+
+*--output-columns=*__columns__::
+  Comma-separated input or generated scalar columns to store under `ancillary/`
+  in the HDF5 output for propagation by *pz-build-hats*.
+
+*--row-id-column=*__name__::
+  Input identifier column used to store an order-sensitive row fingerprint.
+  *pz-build-hats* uses this metadata to detect a different object set or row
+  order before associating input objects with output PDFs.
+
+After the PDFs and ancillary columns have been finalized, *rail-estimate*
+writes a successful completion marker and output row count. If finalization
+fails, the marker remains incomplete.
+
+For an input table with zero rows, *rail-estimate* skips model inference and
+writes a complete zero-row output on the configured redshift grid, including
+empty requested ancillary datasets and integrity metadata.
+
 *-h*, *--help*::
   Show help message instead of executing an estimation.
 
