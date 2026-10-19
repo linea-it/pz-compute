@@ -6,7 +6,10 @@ RAIL/FlexZBoost model
 training catalog `train_clipped_v3.parquet`. It uses the six
 `{band}_gaap1p0Mag` columns (`u`, `g`, `r`, `i`, `z`, and `y`). These
 magnitudes are already dereddened even though their names do not have a
-dereddening suffix. **Do not apply another extinction correction.**
+dereddening suffix. [RTN-124 documents](https://github.com/lsst/rtn-124/blob/2f6e3f4cc7381f6789cb33fb9746ac574a9be9e3/body.tex#L70-L78)
+that the nJy-to-AB conversion and SFD dereddening happen before the catalog is
+shuffled and split into the `dp2_v3p1` training and test sets. **Do not apply
+another extinction correction.**
 
 The source products are:
 
@@ -33,6 +36,10 @@ their immutable revision:
   50 basis functions and fixed bump/sharpen values;
 - [`dp2_catalogs.yaml`](https://github.com/LSSTDESC/rail_project_config/blob/c1014cf5de697b9238d38c0cd635efb2cbafd382/dp2/dp2_catalogs.yaml):
   GAaP column templates, band order, magnitude limits, `zmax`, and `nzbins`.
+
+This choice also follows the [RTN-124 production
+description](https://github.com/lsst/rtn-124/blob/2f6e3f4cc7381f6789cb33fb9746ac574a9be9e3/body.tex#L287-L303),
+which identifies GAaP 1.0 and `dp2_v3p1.yaml` as the optimized DP2 setup.
 
 Inspection of the reference pickle independently confirms the following
 persisted state:
@@ -155,12 +162,16 @@ sha256sum training-model/train_clipped_v3.parquet
 
 ## 2. Validate and convert the training catalog
 
-The reference model was fitted with all 554,676 rows. In particular, do not
-filter the 501 objects with `redshift > 6`: the model's `zmax: 6.0` defines the
-FlexCode basis interval but the reference training run did not use it as a row
-selection. Row order must also remain unchanged.
+The reference model was fitted with all 554,676 rows, consistent with the
+[RTN-124 training-count
+table](https://github.com/lsst/rtn-124/blob/2f6e3f4cc7381f6789cb33fb9746ac574a9be9e3/body.tex#L410-L423).
+In particular, do not filter the 501 objects with `redshift > 6`: the model's
+`zmax: 6.0` defines the FlexCode basis interval but the reference training run
+did not use it as a row selection. Row order must also remain unchanged.
 
-The effective training features are the `i` magnitude and five adjacent colors:
+The effective training features are the `i` magnitude and five adjacent
+colors, following the [RAIL FlexZBoost feature
+construction](https://github.com/LSSTDESC/rail_flexzboost/blob/19d5078910cd4d9bfa5cd4da6943c0e90f266647/src/rail/estimation/algos/flexzboost.py#L19-L44):
 
 ```text
 i, u-g, g-r, r-i, i-z, z-y

@@ -18,7 +18,9 @@ object_6309_lsst_cells_v2_LSSTCam_runs_DRP_DP2_v30_0_8_DM-55060_stage3_20260606T
 object_9974_lsst_cells_v2_LSSTCam_runs_DRP_DP2_v30_0_8_DM-55060_stage3_20260609T183945Z.parq
 ```
 
-All parquet files are expected to have the same schema, including:
+All parquet files are expected to have the same schema, including the GAaP
+fluxes documented for the [DP2 Object
+table](https://dp2.lsst.io/v/SP-3082/tutorials/notebook/201/notebook-201-01.html#photometry):
 
 ```text
 u_gaap1p0Flux, g_gaap1p0Flux, r_gaap1p0Flux
@@ -32,7 +34,11 @@ During estimation, `rail-estimate` converts the nJy fluxes to AB magnitudes and
 magnitude uncertainties, then applies the SFD correction from `ebv`. The
 resulting in-memory columns are named `{band}_gaap1p0Mag_sfd` and
 `{band}_gaap1p0MagErr_sfd`. These names differ from the Stage 1 parquet columns
-only by the `_sfd` suffix; both represent dereddened GAaP 1.0 photometry.
+only by the `_sfd` suffix; both represent dereddened GAaP 1.0 photometry. This
+matches the [RTN-124 preprocessing
+sequence](https://github.com/lsst/rtn-124/blob/2f6e3f4cc7381f6789cb33fb9746ac574a9be9e3/body.tex#L70-L78)
+and the Rubin [DP2 dust-correction
+tutorial](https://dp2.lsst.io/v/SP-3082/tutorials/notebook/311/notebook-311-1.html#correct-the-effects-of-dust).
 
 For each band, the transformation is:
 
@@ -42,13 +48,24 @@ mag_err     = (2.5 / ln(10)) * abs(fluxErr_nJy / flux_nJy)
 mag_ab_sfd  = mag_ab - R_band * ebv
 ```
 
-with `R_band = [4.81, 3.64, 2.70, 2.06, 1.58, 1.31]` in `ugrizy` order.
-The deterministic SFD correction does not change `mag_err`. A non-finite or
+with `R_band = [4.81, 3.64, 2.70, 2.06, 1.58, 1.31]` in `ugrizy` order. This
+exact vector is a reference-artifact compatibility choice: it is recovered by
+comparing the flux, `ebv`, and already-dereddened magnitude columns in the
+[published training product](https://pzserver.linea.org.br/product/415_clipped_train_rtn124_parquet)
+and matches the `comcam`/`DC2LSST` values in the [pinned project catalog
+definitions](https://github.com/LSSTDESC/rail_project_config/blob/c1014cf5de697b9238d38c0cd635efb2cbafd382/dp2/dp2_catalogs.yaml#L13-L67).
+It should not be read as the current general LSSTCam recommendation, whose
+`u` and `g` coefficients differ slightly in that same configuration. The
+deterministic SFD correction does not change `mag_err`. A non-finite or
 non-positive flux produces `NaN` magnitude and uncertainty; the FlexZBoost
 estimator then replaces that magnitude and its uncertainty with the configured
-band limit and `1.0`, respectively.
+band limit and `1.0`, respectively, as implemented by [RAIL
+FlexZBoost](https://github.com/LSSTDESC/rail_flexzboost/blob/19d5078910cd4d9bfa5cd4da6943c0e90f266647/src/rail/estimation/algos/flexzboost.py#L201-L221).
 
-The Stage 1/Stage 2 feature contract is:
+The Stage 1/Stage 2 feature contract combines the [pinned DP2 catalog
+configuration](https://github.com/LSSTDESC/rail_project_config/blob/c1014cf5de697b9238d38c0cd635efb2cbafd382/dp2/dp2_catalogs.yaml#L154-L195)
+with the [RAIL FlexZBoost feature
+construction](https://github.com/LSSTDESC/rail_flexzboost/blob/19d5078910cd4d9bfa5cd4da6943c0e90f266647/src/rail/estimation/algos/flexzboost.py#L19-L44):
 
 | Property | Stage 1 training | Stage 2 estimation |
 |---|---|---|
