@@ -353,9 +353,12 @@ bash -n run-one-dp2-gaap1p0-estimate.sh
 
 ## 6. Submit a pilot array job
 
-Before using the whole cluster, run a pilot job with only 10 parquet files. This
-checks the Slurm array script, model loading, output layout, and logs without
-starting the full catalog run.
+Before using the whole cluster, run a pilot job with the five largest parquet
+files, measured by file size. File size is only a proxy for the in-memory load,
+but selecting the largest shards is a more useful stress test than selecting
+the first files in the manifest. This checks the Slurm array script, model
+loading, memory requirement, output layout, and logs without starting the full
+catalog run.
 
 The runner fixes the LineA Slurm partition to `cpu` and the account to
 `hpc-public`.
@@ -363,13 +366,22 @@ The runner fixes the LineA Slurm partition to `cpu` and the account to
 ```bash
 cd "$PZ_APOLLO_RUN"
 
-head -10 input-parquet-files.txt > pilot-parquet-files.txt
+while IFS= read -r input_file; do
+  printf '%s\t%s\n' "$(stat --format='%s' "$input_file")" "$input_file"
+done < input-parquet-files.txt |
+  LC_ALL=C sort -t $'\t' -k1,1nr -k2,2 > input-parquet-files-by-size.txt
+
+awk -F '\t' 'NR <= 5 {sub(/^[^\t]*\t/, ""); print}' \
+  input-parquet-files-by-size.txt > pilot-parquet-files.txt
+
 mkdir -p "$PZ_APOLLO_RUN/output-pilot"
 
 export PZ_FILE_LIST=$PZ_APOLLO_RUN/pilot-parquet-files.txt
 export PZ_NFILES=$(wc -l < "$PZ_FILE_LIST")
 export PZ_OUTPUT_DIR=$PZ_APOLLO_RUN/output-pilot
-export PZ_MAX_CONCURRENT=10
+export PZ_MAX_CONCURRENT=5
+
+test "$PZ_NFILES" -eq 5
 
 sbatch \
   --array=0-$((PZ_NFILES - 1))%$PZ_MAX_CONCURRENT \
