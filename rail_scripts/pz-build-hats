@@ -753,7 +753,16 @@ def write_summary_parts_dask(
         raise RuntimeError("distributed is required for Dask staging.") from err
 
     info("Converting %d input/output pairs with Dask staging tasks" % len(pairs))
-    futures = client.map(convert_pair_to_parquet, [cfg] * len(pairs), pairs)
+    # This command is executed as a script, so Dask may see the conversion
+    # function as a ``__main__`` object that cannot be deterministically
+    # tokenized. Each input/output pair is an independent side-effecting write;
+    # disabling pure-task deduplication is therefore both correct and required.
+    futures = client.map(
+        convert_pair_to_parquet,
+        [cfg] * len(pairs),
+        pairs,
+        pure=False,
+    )
     results = []
     try:
         for future in as_completed(futures):
