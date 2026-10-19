@@ -271,9 +271,9 @@ cd "$PZ_APOLLO_RUN"
 cat > run-one-dp2-gaap1p0-estimate.sh <<'EOF'
 #!/usr/bin/env bash
 #SBATCH --job-name=dp2-pz-gaap1p0
-#SBATCH --partition=cpu
-#SBATCH --account=hpc-public
-#SBATCH --mem=16G
+#SBATCH --partition=cpu_photoz
+#SBATCH --account=hpc-photoz
+#SBATCH --mem=40G
 #SBATCH --time=12:00:00
 #SBATCH --output=log/slurm-%A_%a.out
 #SBATCH --error=log/slurm-%A_%a.err
@@ -360,8 +360,8 @@ the first files in the manifest. This checks the Slurm array script, model
 loading, memory requirement, output layout, and logs without starting the full
 catalog run.
 
-The runner fixes the LineA Slurm partition to `cpu` and the account to
-`hpc-public`.
+The runner fixes the LineA Slurm partition to `cpu_photoz`, the account to
+`hpc-photoz`, and the memory reservation to 40 GB per task.
 
 ```bash
 cd "$PZ_APOLLO_RUN"
@@ -384,7 +384,9 @@ export PZ_MAX_CONCURRENT=5
 test "$PZ_NFILES" -eq 5
 
 sbatch \
-  --mem=24G \
+  --partition=cpu_photoz \
+  --account=hpc-photoz \
+  --mem=40G \
   --array=0-$((PZ_NFILES - 1))%$PZ_MAX_CONCURRENT \
   --export=ALL,PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_MODEL="$PZ_MODEL",PZ_ESTIMATE_CONFIG="$PZ_ESTIMATE_CONFIG",PZ_OUTPUT_DIR="$PZ_OUTPUT_DIR",PZ_FILE_LIST="$PZ_FILE_LIST" \
   run-one-dp2-gaap1p0-estimate.sh
@@ -435,38 +437,46 @@ The previous production defaults in this repository used:
 for `fzboost` and similar single-process estimators. That corresponds to about
 78 concurrent `rail-estimate` processes per node.
 
-The current [LineA Apollo documentation](https://docs.linea.org.br/en/processamento/apollo/index.html)
-states that the cluster has 28 compute nodes, but the standard `cpu` partition
-exposes 25 nodes, `apl[01-25]`; `apl26`, `apl27`, and `apl28` are reserved for
-Jupyter notebooks and other LineA platform pipelines. The `cpu` partition
-includes:
+The `cpu_photoz` partition, submitted under the `hpc-photoz` account, exposes
+all 28 Apollo compute nodes. Their memory layout is:
 
 - 16 nodes `apl[01-16]` with 128 GB RAM each;
-- 9 nodes `apl[17-25]` with 256 GB RAM each.
+- 12 nodes `apl[17-28]` with 256 GB RAM each.
 
-In this DP2 GAaP 1.0 parquet-to-HDF5 workflow, a pilot task processing a large shard
-failed with the default 2140 MiB memory request and completed with `--mem=8G`.
-A full-catalog run later showed that some larger shards can still exceed 8 GB,
-so use `--mem=16G` for the production array unless a newer pilot over the
-largest shards shows that a smaller request is enough. The memory-limited
-capacity of the `cpu` partition with 16 GB per task is approximately:
+This workflow starts with a 40 GB reservation per task. The pilot over the five
+largest parquet files in Section 6 is the acceptance test for that reservation:
+all five tasks must finish with state `COMPLETED`, exit code `0:0`, valid HDF5
+outputs, and no memory errors before the production array is submitted.
+
+Because Slurm must place each task within one node, calculate capacity by
+rounding down the number of 40 GB tasks that fit on each node, rather than by
+dividing the cluster-wide aggregate RAM:
 
 ```text
-16 nodes * (128 GB / 16 GB) = 128 tasks
- 9 nodes * (256 GB / 16 GB) = 144 tasks
-total theoretical memory capacity = 272 concurrent tasks
+16 nodes * floor(128 GB / 40 GB) = 16 * 3 = 48 tasks
+12 nodes * floor(256 GB / 40 GB) = 12 * 6 = 72 tasks
+total theoretical memory capacity = 48 + 72 = 120 concurrent tasks
 ```
 
-Use a conservative first full-cluster target below the theoretical limit:
+Reserve a 5% concurrency margin and round to the nearest integer:
+
+```text
+round(0.95 * 120) = 114 concurrent tasks
+```
+
+Use this limit for the production array:
 
 ```bash
 cd "$PZ_APOLLO_RUN"
 
 export PZ_FILE_LIST=$PZ_APOLLO_RUN/input-parquet-files.txt
 export PZ_NFILES=$(wc -l < "$PZ_FILE_LIST")
-export PZ_MAX_CONCURRENT=200
+export PZ_MAX_CONCURRENT=114
 
 sbatch \
+  --partition=cpu_photoz \
+  --account=hpc-photoz \
+  --mem=40G \
   --array=0-$((PZ_NFILES - 1))%$PZ_MAX_CONCURRENT \
   --export=ALL,PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_MODEL="$PZ_MODEL",PZ_ESTIMATE_CONFIG="$PZ_ESTIMATE_CONFIG",PZ_OUTPUT_DIR="$PZ_OUTPUT_DIR",PZ_FILE_LIST="$PZ_FILE_LIST" \
   run-one-dp2-gaap1p0-estimate.sh
@@ -482,19 +492,19 @@ If the cluster is busy, or if the run shows memory pressure or filesystem
 contention, reduce only the concurrency cap, for example:
 
 ```bash
-export PZ_MAX_CONCURRENT=100
+export PZ_MAX_CONCURRENT=80
 ```
 
-If the run is stable and Apollo policy allows a higher active array limit, the
-cap can be increased toward `250`, still staying below the approximate
-memory-limited capacity of `272`.
+The configured cap of `114` is 95% of the theoretical memory-limited capacity.
+Do not increase it above the theoretical limit of `120` without revisiting the
+per-node placement calculation and the observed task memory.
 
 This document uses a Slurm array rather than the legacy `pz-compute.batch`
 dispatcher because each array task reads its input parquet directly, writes a
 final output path ending in `.hdf5`, and preserves the input relative path.
 The historical `pz-compute` defaults are useful as a CPU-scale reference, but
-the final concurrency must be capped by the current
-Apollo `cpu` partition memory and by the observed per-task memory requirement.
+the final concurrency is capped by the `cpu_photoz` partition memory and by the
+observed per-task memory requirement.
 
 ## 8. Resume failed or missing outputs
 
@@ -547,10 +557,13 @@ If `missing or incomplete outputs` is greater than zero, resubmit only those fil
 ```bash
 export PZ_FILE_LIST=$PZ_APOLLO_RUN/retry-parquet-files.txt
 export PZ_NFILES=$(wc -l < "$PZ_FILE_LIST")
-export PZ_MAX_CONCURRENT=200
+export PZ_MAX_CONCURRENT=114
 
 if [ "$PZ_NFILES" -gt 0 ]; then
   sbatch \
+    --partition=cpu_photoz \
+    --account=hpc-photoz \
+    --mem=40G \
     --array=0-$((PZ_NFILES - 1))%$PZ_MAX_CONCURRENT \
     --export=ALL,PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_MODEL="$PZ_MODEL",PZ_ESTIMATE_CONFIG="$PZ_ESTIMATE_CONFIG",PZ_OUTPUT_DIR="$PZ_OUTPUT_DIR",PZ_FILE_LIST="$PZ_FILE_LIST" \
     run-one-dp2-gaap1p0-estimate.sh

@@ -270,6 +270,29 @@ The `pdf` field is a fixed-size vector with 601 values ordered according to
 `float32`; use `--pdf-dtype=float64` only if the increased storage cost is
 required by a downstream analysis.
 
+Each Slurm Dask job requests 8 cores and 40 GB, or 5 GB per core. The
+`cpu_photoz` partition, submitted under the `hpc-photoz` account, exposes all
+28 Apollo compute nodes:
+
+- 16 nodes `apl[01-16]`, each with 56 cores and 128 GB RAM;
+- 12 nodes `apl[17-28]`, each with 104 cores and 256 GB RAM.
+
+Memory, rather than CPU count, limits the number of these jobs that fit on each
+node:
+
+```text
+apl[01-16]: min(floor(56 / 8), floor(128 GB / 40 GB)) = min(7, 3) = 3 jobs/node
+apl[17-28]: min(floor(104 / 8), floor(256 GB / 40 GB)) = min(13, 6) = 6 jobs/node
+
+total theoretical capacity = 16 * 3 + 12 * 6 = 120 Slurm jobs
+round(0.95 * 120) = 114 Slurm jobs
+```
+
+Set both the minimum and maximum to 114 so that Dask requests this fixed number
+of jobs instead of scaling below the 95% target. Slurm may leave some jobs
+pending when nodes are occupied by other workloads, but the Stage 3
+configuration itself continues to request 114 jobs.
+
 Run:
 
 ```bash
@@ -283,14 +306,14 @@ pz-build-hats \
     --fast-path-size-mb=0 \
     --use-hats-import \
     --dask-cluster=slurm \
-    --slurm-queue=cpu \
-    --slurm-account=hpc-public \
+    --slurm-queue=cpu_photoz \
+    --slurm-account=hpc-photoz \
     --slurm-cores=8 \
     --slurm-processes=1 \
-    --slurm-memory=32GB \
+    --slurm-memory=40GB \
     --slurm-walltime=12:00:00 \
-    --slurm-minimum-jobs=2 \
-    --slurm-maximum-jobs=16 \
+    --slurm-minimum-jobs=114 \
+    --slurm-maximum-jobs=114 \
     --slurm-log-dir=log/dask-stage3 \
     "$PZ_DP2_INPUT_DATASET" \
     "$PZ_STAGE2_OUTPUT_DIR" \
@@ -302,8 +325,9 @@ The Slurm Dask workers perform two operations:
 - convert each parquet/HDF5 pair into summary parquet staging and PDF parquet;
 - run `hats-import` to build the final HATS collection from the summary staging.
 
-The command enables adaptive scaling, so Apollo may submit additional Dask
-worker jobs up to `--slurm-maximum-jobs`.
+The command uses the adaptive-scaling interface with an equal minimum and
+maximum, fixing the request at 114 Slurm worker jobs for the duration of the
+build.
 
 If only the lightweight scalar HATS summary is needed, disable the separate
 full PDF parquet product:
