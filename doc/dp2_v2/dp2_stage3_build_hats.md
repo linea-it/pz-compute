@@ -270,28 +270,36 @@ The `pdf` field is a fixed-size vector with 601 values ordered according to
 `float32`; use `--pdf-dtype=float64` only if the increased storage cost is
 required by a downstream analysis.
 
-Each Slurm Dask job requests 8 cores and 40 GB, or 5 GB per core. The
+Each Slurm Dask job requests 8 logical CPUs and 40 GiB, or 5 GiB per CPU. Use
+`--slurm-memory=40GiB` so that `dask-jobqueue` emits a 40 GiB Slurm request;
+the SI value `40GB` would be converted to approximately 38 GiB. The
 `cpu_photoz` partition, submitted under the `hpc-photoz` account, exposes all
 28 Apollo compute nodes:
 
-- 16 nodes `apl[01-16]`, each with 56 cores and 128 GB RAM;
-- 12 nodes `apl[17-28]`, each with 104 cores and 256 GB RAM.
+- 16 nodes `apl[01-16]`, each with 56 effective CPUs,
+  `RealMemory=124080 MiB`, and `MemSpecLimit=4096 MiB`;
+- 12 nodes `apl[17-28]`, each with 104 effective CPUs,
+  `RealMemory=253132 MiB`, and `MemSpecLimit=4096 MiB`.
 
 Memory, rather than CPU count, limits the number of these jobs that fit on each
 node:
 
 ```text
-apl[01-16]: min(floor(56 / 8), floor(128 GB / 40 GB)) = min(7, 3) = 3 jobs/node
-apl[17-28]: min(floor(104 / 8), floor(256 GB / 40 GB)) = min(13, 6) = 6 jobs/node
+apl[01-16] memory available to jobs = 124080 MiB - 4096 MiB = 119984 MiB
+min(floor(56 / 8), floor(119984 / 40960)) = min(7, 2) = 2 jobs/node
 
-total theoretical capacity = 16 * 3 + 12 * 6 = 120 Slurm jobs
-round(0.95 * 120) = 114 Slurm jobs
+apl[17-28] memory available to jobs = 253132 MiB - 4096 MiB = 249036 MiB
+min(floor(104 / 8), floor(249036 / 40960)) = min(13, 6) = 6 jobs/node
+
+total theoretical capacity = 16 * 2 + 12 * 6 = 104 Slurm jobs
+round(0.95 * 104) = 99 Slurm jobs
 ```
 
-Set both the minimum and maximum to 114 so that Dask requests this fixed number
-of jobs instead of scaling below the 95% target. Slurm may leave some jobs
+The whole-job result, 99, uses 95.19% of the 104 schedulable slots. Set both
+the minimum and maximum to 99 so that Dask requests this fixed number of jobs
+instead of scaling below the 95% target. Slurm may leave some jobs
 pending when nodes are occupied by other workloads, but the Stage 3
-configuration itself continues to request 114 jobs.
+configuration itself continues to request 99 jobs.
 
 Run:
 
@@ -329,10 +337,10 @@ set -o pipefail
     --slurm-account=hpc-photoz \
     --slurm-cores=8 \
     --slurm-processes=1 \
-    --slurm-memory=40GB \
+    --slurm-memory=40GiB \
     --slurm-walltime=12:00:00 \
-    --slurm-minimum-jobs=114 \
-    --slurm-maximum-jobs=114 \
+    --slurm-minimum-jobs=99 \
+    --slurm-maximum-jobs=99 \
     --slurm-log-dir="$PZ_STAGE3_SLURM_LOG_DIR" \
     "$PZ_DP2_INPUT_DATASET" \
     "$PZ_STAGE2_OUTPUT_DIR" \
@@ -351,7 +359,7 @@ The Slurm Dask workers perform two operations:
 - run `hats-import` to build the final HATS collection from the summary staging.
 
 The command uses the adaptive-scaling interface with an equal minimum and
-maximum, fixing the request at 114 Slurm worker jobs for the duration of the
+maximum, fixing the request at 99 Slurm worker jobs for the duration of the
 build. GNU `time` records the end-to-end driver wall time and resource usage;
 `tee` preserves the complete driver log. `set -o pipefail` ensures that a
 failed `pz-build-hats` command is not hidden by a successful `tee` process, and
@@ -422,8 +430,8 @@ echo "started Slurm worker jobs: $(wc -l < \
 
 "$PZ_PY" "$PZ_COMPUTE_DIR/performance/slurm/slurm-profile" \
   --job-id-file "$PZ_STAGE3_BENCHMARK_DIR/worker-job-ids.txt" \
-  --expected-jobs 114 \
-  --concurrency-target 114 \
+  --expected-jobs 99 \
+  --concurrency-target 99 \
   --label dp2-stage3-build-hats \
   --output-dir "$PZ_STAGE3_BENCHMARK_DIR"
 ```
@@ -433,7 +441,7 @@ of `pz-build-hats`. The Slurm profile measures worker allocation, queue wait,
 concurrency, CPU, and memory. Dask may cancel healthy workers while closing the
 cluster, so worker state alone is not the success criterion; also require a
 zero driver exit status, clean worker logs, and the scientific output checks in
-Sections 6 and 7. If fewer than 114 worker ids were created, the summary records
+Sections 6 and 7. If fewer than 99 worker ids were created, the summary records
 the difference as `missing_expected_jobs`.
 
 ## 6. Inspect the HATS Summary

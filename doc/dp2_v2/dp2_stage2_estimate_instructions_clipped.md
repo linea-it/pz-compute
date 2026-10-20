@@ -378,7 +378,7 @@ loading, memory requirement, output layout, and logs without starting the full
 catalog run.
 
 The runner fixes the LineA Slurm partition to `cpu_photoz`, the account to
-`hpc-photoz`, and the memory reservation to 40 GB per task.
+`hpc-photoz`, and the memory reservation to 40 GiB per task (`--mem=40G`).
 
 ```bash
 cd "$PZ_APOLLO_RUN"
@@ -455,31 +455,45 @@ for `fzboost` and similar single-process estimators. That corresponds to about
 78 concurrent `rail-estimate` processes per node.
 
 The `cpu_photoz` partition, submitted under the `hpc-photoz` account, exposes
-all 28 Apollo compute nodes. Their memory layout is:
+all 28 Apollo compute nodes. Slurm reports the following effective layout:
 
-- 16 nodes `apl[01-16]` with 128 GB RAM each;
-- 12 nodes `apl[17-28]` with 256 GB RAM each.
+- 16 nodes `apl[01-16]` with 56 effective CPUs, `RealMemory=124080 MiB`,
+  and `MemSpecLimit=4096 MiB` each;
+- 12 nodes `apl[17-28]` with 104 effective CPUs, `RealMemory=253132 MiB`,
+  and `MemSpecLimit=4096 MiB` each.
 
-This workflow starts with a 40 GB reservation per task. The pilot over the five
+This workflow starts with a 40 GiB reservation per task. The pilot over the five
 largest parquet files in Section 6 is the acceptance test for that reservation:
 all five tasks must finish with state `COMPLETED`, exit code `0:0`, valid HDF5
 outputs, and no memory errors before the production array is submitted.
 
 Because Slurm must place each task within one node, calculate capacity by
-rounding down the number of 40 GB tasks that fit on each node, rather than by
-dividing the cluster-wide aggregate RAM:
+subtracting the memory reserved for the system and rounding down the number of
+40 GiB tasks that fit on each node, rather than by dividing the cluster-wide
+aggregate RAM:
 
 ```text
-16 nodes * floor(128 GB / 40 GB) = 16 * 3 = 48 tasks
-12 nodes * floor(256 GB / 40 GB) = 12 * 6 = 72 tasks
-total theoretical memory capacity = 48 + 72 = 120 concurrent tasks
+apl[01-16] available memory = 124080 MiB - 4096 MiB = 119984 MiB
+floor(119984 MiB / 40960 MiB) = 2 tasks/node
+
+apl[17-28] available memory = 253132 MiB - 4096 MiB = 249036 MiB
+floor(249036 MiB / 40960 MiB) = 6 tasks/node
+
+total theoretical capacity = 16 * 2 + 12 * 6 = 104 concurrent tasks
 ```
 
-Reserve a 5% concurrency margin and round to the nearest integer:
+Reserve a 5% concurrency margin relative to this discrete, per-node task
+capacity and round to the nearest integer:
 
 ```text
-round(0.95 * 120) = 114 concurrent tasks
+round(0.95 * 104) = 99 concurrent tasks
 ```
+
+The cap uses 95.19% of the 104 schedulable task slots; the 0.19 percentage-point
+difference is the unavoidable result of rounding to a whole task. This margin
+is relative to schedulable 40 GiB task slots, not aggregate bytes: per-node
+packing leaves additional memory fragments that cannot accommodate another
+complete task.
 
 Use this limit for the production array:
 
@@ -488,7 +502,7 @@ cd "$PZ_APOLLO_RUN"
 
 export PZ_FILE_LIST=$PZ_APOLLO_RUN/input-parquet-files.txt
 export PZ_NFILES=$(wc -l < "$PZ_FILE_LIST")
-export PZ_MAX_CONCURRENT=114
+export PZ_MAX_CONCURRENT=99
 export PZ_STAGE2_BENCHMARK_DIR=$PZ_APOLLO_RUN/benchmark/stage2
 
 mkdir -p "$PZ_STAGE2_BENCHMARK_DIR"
@@ -518,8 +532,9 @@ contention, reduce only the concurrency cap, for example:
 export PZ_MAX_CONCURRENT=80
 ```
 
-The configured cap of `114` is 95% of the theoretical memory-limited capacity.
-Do not increase it above the theoretical limit of `120` without revisiting the
+The configured cap of `99` is the nearest whole task count to 95% of the
+theoretical memory-limited capacity. Do not increase it above the theoretical
+limit of `104` without revisiting the
 per-node placement calculation and the observed task memory.
 
 This document uses a Slurm array rather than the legacy `pz-compute.batch`
@@ -580,7 +595,7 @@ If `missing or incomplete outputs` is greater than zero, resubmit only those fil
 ```bash
 export PZ_FILE_LIST=$PZ_APOLLO_RUN/retry-parquet-files.txt
 export PZ_NFILES=$(wc -l < "$PZ_FILE_LIST")
-export PZ_MAX_CONCURRENT=114
+export PZ_MAX_CONCURRENT=99
 export PZ_STAGE2_BENCHMARK_DIR=$PZ_APOLLO_RUN/benchmark/stage2
 
 if [ "$PZ_NFILES" -gt 0 ]; then
@@ -691,7 +706,7 @@ PZ_EXPECTED_JOB_ATTEMPTS=$(awk '{total += $1} END {print total}' \
 "$PZ_PY" "$PZ_COMPUTE_DIR/performance/slurm/slurm-profile" \
   --job-id-file "$PZ_STAGE2_BENCHMARK_DIR/production-job-ids.txt" \
   --expected-jobs "$PZ_EXPECTED_JOB_ATTEMPTS" \
-  --concurrency-target 114 \
+  --concurrency-target 99 \
   --label dp2-stage2-estimate \
   --output-dir "$PZ_STAGE2_BENCHMARK_DIR"
 ```

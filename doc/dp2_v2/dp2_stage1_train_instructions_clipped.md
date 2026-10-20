@@ -387,14 +387,27 @@ PY
 ### 5.1. Slurm example
 
 On the LineA HPC infrastructure, submit the training command as one process on
-one HPE ProLiant XL220n node (`apl[17-28]`) of the `cpu_photoz` partition with
-the `hpc-photoz` account. Each of these nodes has 104 logical cores and 256 GB
-RAM. Reserve 95% of each nominal resource, rounded to the nearest integer:
+one HPE ProLiant XL220n node in `apl[17-27]` of the `cpu_photoz` partition with
+the `hpc-photoz` account. The currently unhealthy `apl28` is excluded from this
+single-node Stage 1 run while its job-launch failure is investigated. Slurm
+reports 104 effective logical CPUs,
+`RealMemory=253132 MiB`, and `MemSpecLimit=4096 MiB` on these nodes. The memory
+available to jobs is therefore 249036 MiB. Reserve approximately 95% of each
+effective resource, respecting the allocation granularity:
 
 ```text
-round(0.95 * 104 cores) = 99 cores
-round(0.95 * 256 GB) = 243 GB
+CPU target: 0.95 * 104 = 98.8 logical CPUs
+CR_CORE_MEMORY allocation uses complete 2-thread cores, so request 98 CPUs
+
+memory available to jobs: 253132 MiB - 4096 MiB = 249036 MiB
+memory target: 0.95 * 249036 MiB = 236584.2 MiB
+231 GiB = 236544 MiB = 94.98% of the available memory
 ```
+
+Requesting 99 CPUs would cause Slurm to allocate 100 because the cluster uses
+`SelectTypeParameters=CR_CORE_MEMORY` and each physical core has two threads.
+The 98-CPU request is the closest supported allocation that does not exceed
+the 95% target.
 
 XGBoost is parallelized by `MultiOutputRegressor`; keep BLAS/OpenMP at one
 thread per worker to avoid nested oversubscription.
@@ -407,11 +420,11 @@ cat > training-model/train-fzboost-dp2-v3p1.sbatch <<'SBATCH'
 #SBATCH --job-name=dp2-v3p1-fzboost
 #SBATCH --partition=cpu_photoz
 #SBATCH --account=hpc-photoz
-#SBATCH --nodelist=apl[17-28]
+#SBATCH --nodelist=apl[17-27]
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=99
-#SBATCH --mem=243G
+#SBATCH --cpus-per-task=98
+#SBATCH --mem=231G
 #SBATCH --time=03:00:00
 #SBATCH --output=training-model/train-fzboost-dp2-v3p1-%j.out
 #SBATCH --error=training-model/train-fzboost-dp2-v3p1-%j.err
