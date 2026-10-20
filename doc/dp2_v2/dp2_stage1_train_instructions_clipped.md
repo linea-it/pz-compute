@@ -387,9 +387,17 @@ PY
 ### 5.1. Slurm example
 
 On the LineA HPC infrastructure, submit the training command as one process on
-one node of the `cpu` partition with the `hpc-public` account. XGBoost is
-parallelized by `MultiOutputRegressor`; keep BLAS/OpenMP at one thread per
-worker to avoid nested oversubscription.
+one HPE ProLiant XL220n node (`apl[17-28]`) of the `cpu_photoz` partition with
+the `hpc-photoz` account. Each of these nodes has 104 logical cores and 256 GB
+RAM. Reserve 95% of each nominal resource, rounded to the nearest integer:
+
+```text
+round(0.95 * 104 cores) = 99 cores
+round(0.95 * 256 GB) = 243 GB
+```
+
+XGBoost is parallelized by `MultiOutputRegressor`; keep BLAS/OpenMP at one
+thread per worker to avoid nested oversubscription.
 
 Create `training-model/train-fzboost-dp2-v3p1.sbatch`:
 
@@ -397,12 +405,13 @@ Create `training-model/train-fzboost-dp2-v3p1.sbatch`:
 cat > training-model/train-fzboost-dp2-v3p1.sbatch <<'SBATCH'
 #!/usr/bin/env bash
 #SBATCH --job-name=dp2-v3p1-fzboost
-#SBATCH --partition=cpu
-#SBATCH --account=hpc-public
+#SBATCH --partition=cpu_photoz
+#SBATCH --account=hpc-photoz
+#SBATCH --nodelist=apl[17-28]
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=49
-#SBATCH --mem=112G
+#SBATCH --cpus-per-task=99
+#SBATCH --mem=243G
 #SBATCH --time=03:00:00
 #SBATCH --output=training-model/train-fzboost-dp2-v3p1-%j.out
 #SBATCH --error=training-model/train-fzboost-dp2-v3p1-%j.err
