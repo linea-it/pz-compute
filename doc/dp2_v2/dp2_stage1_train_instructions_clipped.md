@@ -426,10 +426,31 @@ export NUMEXPR_NUM_THREADS=1
   --param-file=training-model/fzboost_dp2_v3p1_6band_gold.yaml
 SBATCH
 
-sbatch training-model/train-fzboost-dp2-v3p1.sbatch
+PZ_STAGE1_JOB_ID=$(sbatch --parsable \
+  training-model/train-fzboost-dp2-v3p1.sbatch)
+export PZ_STAGE1_JOB_ID=${PZ_STAGE1_JOB_ID%%;*}
+mkdir -p "$PZ_STAGE1_RUN/benchmark/stage1"
+printf '%s\n' "$PZ_STAGE1_JOB_ID" > \
+  "$PZ_STAGE1_RUN/benchmark/stage1/job-id.txt"
+echo "Stage 1 Slurm job: $PZ_STAGE1_JOB_ID"
 ```
 
-After the job finishes, run the wrapping cell above on the login node.
+After the job finishes, create the lightweight Slurm benchmark artifacts
+described in [Slurm performance profiling](../slurm_profile.md):
+
+```bash
+"$PZ_PY" "$PZ_COMPUTE_DIR/performance/slurm/slurm-profile" \
+  --job-id-file "$PZ_STAGE1_RUN/benchmark/stage1/job-id.txt" \
+  --expected-jobs 1 \
+  --concurrency-target 1 \
+  --label dp2-stage1-train \
+  --output-dir "$PZ_STAGE1_RUN/benchmark/stage1" \
+  --fail-on-unsuccessful
+```
+
+This writes `summary.log`, `summary.json`, `sacct.tsv`, `tasks.tsv`,
+`time-profile.tsv`, and `time-profile.svg` without reading the training data or
+the model pickle. Then run the wrapping cell above on the login node.
 
 ## 6. Validate configuration compatibility
 

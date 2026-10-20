@@ -151,6 +151,16 @@ inside non-interactive Slurm jobs.
 
 ## 6. Validate and record both environments
 
+Confirm that the Apollo Slurm commands and the lightweight production profiler
+are available:
+
+```bash
+command -v sbatch
+command -v sacct
+test -x /usr/bin/time
+test -x "$PZ_COMPUTE_DIR/performance/slurm/slurm-profile"
+```
+
 ```bash
 source /scripts/$(whoami)/ondemand/env-dp2-gaap1p0.sh
 cd "$PZ_COMPUTE_DIR"

@@ -489,20 +489,26 @@ cd "$PZ_APOLLO_RUN"
 export PZ_FILE_LIST=$PZ_APOLLO_RUN/input-parquet-files.txt
 export PZ_NFILES=$(wc -l < "$PZ_FILE_LIST")
 export PZ_MAX_CONCURRENT=114
+export PZ_STAGE2_BENCHMARK_DIR=$PZ_APOLLO_RUN/benchmark/stage2
 
-sbatch \
+mkdir -p "$PZ_STAGE2_BENCHMARK_DIR"
+: > "$PZ_STAGE2_BENCHMARK_DIR/production-job-ids.txt"
+: > "$PZ_STAGE2_BENCHMARK_DIR/job-attempt-counts.txt"
+
+PZ_ARRAY_JOB_ID=$(sbatch --parsable \
   --partition=cpu_photoz \
   --account=hpc-photoz \
   --mem=40G \
   --array=0-$((PZ_NFILES - 1))%$PZ_MAX_CONCURRENT \
   --export=ALL,PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_MODEL="$PZ_MODEL",PZ_ESTIMATE_CONFIG="$PZ_ESTIMATE_CONFIG",PZ_OUTPUT_DIR="$PZ_OUTPUT_DIR",PZ_FILE_LIST="$PZ_FILE_LIST" \
-  run-one-dp2-gaap1p0-estimate.sh
-```
+  run-one-dp2-gaap1p0-estimate.sh)
 
-Save the job id printed by `sbatch`:
-
-```bash
-export PZ_ARRAY_JOB_ID=<jobid>
+export PZ_ARRAY_JOB_ID=${PZ_ARRAY_JOB_ID%%;*}
+printf '%s\n' "$PZ_ARRAY_JOB_ID" >> \
+  "$PZ_STAGE2_BENCHMARK_DIR/production-job-ids.txt"
+printf '%s\n' "$PZ_NFILES" >> \
+  "$PZ_STAGE2_BENCHMARK_DIR/job-attempt-counts.txt"
+echo "Stage 2 production array: $PZ_ARRAY_JOB_ID"
 ```
 
 If the cluster is busy, or if the run shows memory pressure or filesystem
@@ -575,17 +581,28 @@ If `missing or incomplete outputs` is greater than zero, resubmit only those fil
 export PZ_FILE_LIST=$PZ_APOLLO_RUN/retry-parquet-files.txt
 export PZ_NFILES=$(wc -l < "$PZ_FILE_LIST")
 export PZ_MAX_CONCURRENT=114
+export PZ_STAGE2_BENCHMARK_DIR=$PZ_APOLLO_RUN/benchmark/stage2
 
 if [ "$PZ_NFILES" -gt 0 ]; then
-  sbatch \
+  PZ_RETRY_JOB_ID=$(sbatch --parsable \
     --partition=cpu_photoz \
     --account=hpc-photoz \
     --mem=40G \
     --array=0-$((PZ_NFILES - 1))%$PZ_MAX_CONCURRENT \
     --export=ALL,PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_MODEL="$PZ_MODEL",PZ_ESTIMATE_CONFIG="$PZ_ESTIMATE_CONFIG",PZ_OUTPUT_DIR="$PZ_OUTPUT_DIR",PZ_FILE_LIST="$PZ_FILE_LIST" \
-    run-one-dp2-gaap1p0-estimate.sh
+    run-one-dp2-gaap1p0-estimate.sh)
+  export PZ_RETRY_JOB_ID=${PZ_RETRY_JOB_ID%%;*}
+  export PZ_ARRAY_JOB_ID=$PZ_RETRY_JOB_ID
+  printf '%s\n' "$PZ_RETRY_JOB_ID" >> \
+    "$PZ_STAGE2_BENCHMARK_DIR/production-job-ids.txt"
+  printf '%s\n' "$PZ_NFILES" >> \
+    "$PZ_STAGE2_BENCHMARK_DIR/job-attempt-counts.txt"
+  echo "Stage 2 retry array: $PZ_RETRY_JOB_ID"
 fi
 ```
+
+The benchmark manifests retain the initial production array id and every retry
+array id. They also retain the number of tasks expected from each submission.
 
 ## 9. Inspect outputs
 
@@ -658,62 +675,33 @@ awk -F'|' -v job="$PZ_ARRAY_JOB_ID" '
 '
 ```
 
-Summarize the total elapsed time for the array. `wall-clock elapsed` is the
-real time from the first task start to the last task end; `sum task elapsed` is
-the accumulated runtime across all array tasks:
+After the production array and all required retry arrays finish, generate the
+lightweight benchmark artifacts described in
+[Slurm performance profiling](../slurm_profile.md). This includes every
+execution attempt, so its submission-to-last-end metric is the end-to-end
+runtime of Stage 2:
 
 ```bash
 cd "$PZ_APOLLO_RUN"
 
-: "${PZ_ARRAY_JOB_ID:?set PZ_ARRAY_JOB_ID to the Slurm array job id}"
+export PZ_STAGE2_BENCHMARK_DIR=$PZ_APOLLO_RUN/benchmark/stage2
+PZ_EXPECTED_JOB_ATTEMPTS=$(awk '{total += $1} END {print total}' \
+  "$PZ_STAGE2_BENCHMARK_DIR/job-attempt-counts.txt")
 
-sacct -j "$PZ_ARRAY_JOB_ID" --parsable2 --noheader \
-  --format=JobID%30,State,ExitCode,Start,End,ElapsedRaw \
-  > array-sacct-timing.txt
-
-python - <<'PY'
-from datetime import datetime
-import os
-from pathlib import Path
-
-job = os.environ["PZ_ARRAY_JOB_ID"]
-starts = []
-ends = []
-sum_elapsed = 0
-tasks = 0
-
-for line in Path("array-sacct-timing.txt").read_text(encoding="utf-8").splitlines():
-    if not line:
-        continue
-    parts = line.rstrip("\n").split("|")
-    if len(parts) != 6:
-        continue
-    jobid, state, exit_code, start, end, elapsed_raw = parts
-    if not jobid.startswith(f"{job}_") or "." in jobid:
-        continue
-    suffix = jobid.rsplit("_", 1)[-1]
-    if not suffix.isdigit():
-        continue
-    if state != "COMPLETED" or exit_code != "0:0":
-        continue
-    if start in ("Unknown", "None") or end in ("Unknown", "None"):
-        continue
-    starts.append(datetime.fromisoformat(start))
-    ends.append(datetime.fromisoformat(end))
-    sum_elapsed += int(elapsed_raw)
-    tasks += 1
-
-if tasks == 0:
-    raise SystemExit("No completed array tasks found in sacct output")
-
-wall = int((max(ends) - min(starts)).total_seconds())
-print("completed array tasks:", tasks)
-print("first task start:", min(starts).isoformat(sep=" "))
-print("last task end:", max(ends).isoformat(sep=" "))
-print("wall-clock elapsed seconds:", wall)
-print("sum task elapsed seconds:", sum_elapsed)
-PY
+"$PZ_PY" "$PZ_COMPUTE_DIR/performance/slurm/slurm-profile" \
+  --job-id-file "$PZ_STAGE2_BENCHMARK_DIR/production-job-ids.txt" \
+  --expected-jobs "$PZ_EXPECTED_JOB_ATTEMPTS" \
+  --concurrency-target 114 \
+  --label dp2-stage2-estimate \
+  --output-dir "$PZ_STAGE2_BENCHMARK_DIR"
 ```
+
+The resulting `summary.log` and `summary.json` contain total time, queue wait,
+task-duration percentiles, throughput, CPU efficiency, memory percentiles,
+node usage, and achieved concurrency. `tasks.tsv` retains one row per task;
+`time-profile.tsv` is the graph source; and `time-profile.svg` plots active jobs
+and cumulative finished jobs. The profiler queries `sacct` only and does not open
+the DP2 parquets or HDF5 outputs.
 
 Count output HDF5 files:
 

@@ -68,7 +68,7 @@ export PZ_STAGE2_OUTPUT_DIR=$PZ_STAGE2_RUN/output
 export PZ_HATS_DIR=$PZ_STAGE2_RUN/pz-fzboost-gaap1p0-clipped-hats
 
 cd "$PZ_STAGE2_RUN"
-mkdir -p log/dask-stage3
+mkdir -p log benchmark/stage3
 ```
 
 ## 2. Validate Input and Output Pairing
@@ -297,9 +297,28 @@ Run:
 
 ```bash
 cd "$PZ_STAGE2_RUN"
-mkdir -p log/dask-stage3
 
-pz-build-hats \
+export PZ_STAGE3_RUN_TAG=production-$(date -u +%Y%m%dT%H%M%SZ)
+export PZ_STAGE3_BENCHMARK_DIR=$PZ_STAGE2_RUN/benchmark/stage3/$PZ_STAGE3_RUN_TAG
+export PZ_STAGE3_SLURM_LOG_DIR=$PZ_STAGE2_RUN/log/dask-stage3-$PZ_STAGE3_RUN_TAG
+
+mkdir -p "$PZ_STAGE3_BENCHMARK_DIR" "$PZ_STAGE3_SLURM_LOG_DIR"
+
+{
+  date --iso-8601=seconds
+  hostname
+  "$PZ_PY" --version
+  git -C "$PZ_COMPUTE_DIR" rev-parse HEAD
+} > "$PZ_STAGE3_BENCHMARK_DIR/run-context.log"
+
+echo "Stage 3 run tag: $PZ_STAGE3_RUN_TAG"
+echo "Stage 3 benchmark: $PZ_STAGE3_BENCHMARK_DIR"
+echo "Stage 3 worker logs: $PZ_STAGE3_SLURM_LOG_DIR"
+
+set -o pipefail
+
+/usr/bin/time -v -o "$PZ_STAGE3_BENCHMARK_DIR/driver-resource-usage.log" \
+  pz-build-hats \
     --overwrite \
     --require-complete-marker \
     --pdf-dtype=float32 \
@@ -314,10 +333,16 @@ pz-build-hats \
     --slurm-walltime=12:00:00 \
     --slurm-minimum-jobs=114 \
     --slurm-maximum-jobs=114 \
-    --slurm-log-dir=log/dask-stage3 \
+    --slurm-log-dir="$PZ_STAGE3_SLURM_LOG_DIR" \
     "$PZ_DP2_INPUT_DATASET" \
     "$PZ_STAGE2_OUTPUT_DIR" \
-    "$PZ_HATS_DIR"
+    "$PZ_HATS_DIR" 2>&1 | \
+  tee "$PZ_STAGE3_BENCHMARK_DIR/driver.log"
+
+PZ_STAGE3_DRIVER_STATUS=${PIPESTATUS[0]}
+printf '%s\n' "$PZ_STAGE3_DRIVER_STATUS" > \
+  "$PZ_STAGE3_BENCHMARK_DIR/driver-exit-code.txt"
+test "$PZ_STAGE3_DRIVER_STATUS" -eq 0
 ```
 
 The Slurm Dask workers perform two operations:
@@ -327,7 +352,10 @@ The Slurm Dask workers perform two operations:
 
 The command uses the adaptive-scaling interface with an equal minimum and
 maximum, fixing the request at 114 Slurm worker jobs for the duration of the
-build.
+build. GNU `time` records the end-to-end driver wall time and resource usage;
+`tee` preserves the complete driver log. `set -o pipefail` ensures that a
+failed `pz-build-hats` command is not hidden by a successful `tee` process, and
+`driver-exit-code.txt` preserves the command status explicitly.
 
 If only the lightweight scalar HATS summary is needed, disable the separate
 full PDF parquet product:
@@ -367,9 +395,46 @@ Inspect worker logs:
 
 ```bash
 cd "$PZ_STAGE2_RUN"
-find log/dask-stage3 -type f -print | sort | tail -50
-grep -R "Traceback\\|Error:\\|Killed\\|OOM\\|out of memory" log/dask-stage3 || true
+find "$PZ_STAGE3_SLURM_LOG_DIR" -type f -print | sort | tail -50
+grep -R "Traceback\\|Error:\\|Killed\\|OOM\\|out of memory" \
+  "$PZ_STAGE3_SLURM_LOG_DIR" || true
 ```
+
+When monitoring from another terminal, export the benchmark and worker-log
+paths printed by the launch command first.
+
+### 5.1. Generate the production benchmark
+
+After `pz-build-hats` exits and the Slurm worker records reach terminal states,
+extract the worker job ids from the isolated log directory and create the
+artifacts described in
+[Slurm performance profiling](../slurm_profile.md):
+
+```bash
+cd "$PZ_STAGE2_RUN"
+
+find "$PZ_STAGE3_SLURM_LOG_DIR" -type f -name 'slurm-*.out' -printf '%f\n' |
+  sed -n 's/^slurm-\([0-9][0-9]*\)\.out$/\1/p' |
+  sort -n -u > "$PZ_STAGE3_BENCHMARK_DIR/worker-job-ids.txt"
+
+echo "started Slurm worker jobs: $(wc -l < \
+  "$PZ_STAGE3_BENCHMARK_DIR/worker-job-ids.txt")"
+
+"$PZ_PY" "$PZ_COMPUTE_DIR/performance/slurm/slurm-profile" \
+  --job-id-file "$PZ_STAGE3_BENCHMARK_DIR/worker-job-ids.txt" \
+  --expected-jobs 114 \
+  --concurrency-target 114 \
+  --label dp2-stage3-build-hats \
+  --output-dir "$PZ_STAGE3_BENCHMARK_DIR"
+```
+
+For Stage 3, `driver-resource-usage.log` is the authoritative end-to-end timing
+of `pz-build-hats`. The Slurm profile measures worker allocation, queue wait,
+concurrency, CPU, and memory. Dask may cancel healthy workers while closing the
+cluster, so worker state alone is not the success criterion; also require a
+zero driver exit status, clean worker logs, and the scientific output checks in
+Sections 6 and 7. If fewer than 114 worker ids were created, the summary records
+the difference as `missing_expected_jobs`.
 
 ## 6. Inspect the HATS Summary
 
