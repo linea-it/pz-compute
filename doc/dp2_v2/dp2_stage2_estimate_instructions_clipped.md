@@ -291,7 +291,6 @@ cat > run-one-dp2-gaap1p0-estimate.sh <<'EOF'
 #SBATCH --partition=cpu_photoz
 #SBATCH --account=hpc-photoz
 #SBATCH --exclude=apl[26-28]
-#SBATCH --requeue
 #SBATCH --mem=40G
 #SBATCH --time=12:00:00
 #SBATCH --output=log/slurm-%A_%a.out
@@ -381,8 +380,7 @@ catalog run.
 
 The runner fixes the LineA Slurm partition to `cpu_photoz`, the account to
 `hpc-photoz`, and the memory reservation to 40 GiB per task (`--mem=40G`). It
-also excludes the infrastructure-reserved `apl[26-28]` nodes and enables
-Slurm requeue for interrupted tasks.
+also excludes the infrastructure-reserved `apl[26-28]` nodes.
 
 ```bash
 cd "$PZ_APOLLO_RUN"

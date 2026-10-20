@@ -301,7 +301,7 @@ the minimum and maximum to 82 so that Dask requests this fixed number of jobs
 instead of scaling below the 95% target. Slurm may leave some jobs
 pending when nodes are occupied by other workloads, but the Stage 3
 configuration itself continues to request 82 jobs. Worker jobs exclude
-`apl[26-28]` and are eligible for Slurm requeue if interrupted.
+`apl[26-28]`.
 
 Run:
 
@@ -338,7 +338,6 @@ set -o pipefail
     --slurm-queue=cpu_photoz \
     --slurm-account=hpc-photoz \
     --slurm-exclude='apl[26-28]' \
-    --slurm-requeue \
     --slurm-cores=8 \
     --slurm-processes=1 \
     --slurm-memory=40GiB \

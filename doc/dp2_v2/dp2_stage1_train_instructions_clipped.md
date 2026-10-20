@@ -389,8 +389,7 @@ PY
 On the LineA HPC infrastructure, submit the training command as one process on
 one HPE ProLiant XL220n node in `apl[17-25]` of the `cpu_photoz` partition with
 the `hpc-photoz` account; `apl[26-28]` remain reserved for internal pipelines
-and Jupyter. Enable Slurm requeue so an interrupted training job can return to
-the queue. Slurm reports 104 effective logical CPUs,
+and Jupyter. Slurm reports 104 effective logical CPUs,
 `RealMemory=253132 MiB`, and `MemSpecLimit=4096 MiB` on these nodes. The memory
 available to jobs is therefore 249036 MiB. Reserve approximately 95% of each
 effective resource, respecting the allocation granularity:
@@ -421,7 +420,6 @@ cat > training-model/train-fzboost-dp2-v3p1.sbatch <<'SBATCH'
 #SBATCH --partition=cpu_photoz
 #SBATCH --account=hpc-photoz
 #SBATCH --nodelist=apl[17-25]
-#SBATCH --requeue
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=98
