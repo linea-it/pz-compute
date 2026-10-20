@@ -283,6 +283,8 @@ pz-build-hats \
     --slurm-minimum-jobs=1 \
     --slurm-maximum-jobs=8 \
     --slurm-log-dir=log/dask \
+    --slurm-exclude='node[09-10]' \
+    --slurm-requeue \
     input \
     output \
     pz-summary-hats
@@ -307,12 +309,15 @@ Optional Slurm options include:
 --slurm-adapt-interval
 --slurm-scale-down-delay
 --slurm-log-dir
+--slurm-exclude
+--slurm-requeue
 ```
 
 The Slurm path creates a `dask-jobqueue` `SLURMCluster`, submits
 `minimum_jobs * processes` initial workers, and enables adaptive scaling up to
 `maximum_jobs`. The cluster is used first for staging and then reused by
-`hats-import`.
+`hats-import`. `--slurm-exclude` is forwarded to the worker jobs as Slurm's
+`--exclude` directive, and `--slurm-requeue` adds the `--requeue` directive.
 
 ## Existing Dask Scheduler
 

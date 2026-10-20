@@ -60,6 +60,8 @@ Options:
     --slurm-scale-down-delay=<seconds>  Approximate adaptive scale-down delay
                                         [default: 180].
     --slurm-log-dir=<dir>  Directory for Slurm Dask worker stdout/stderr logs.
+    --slurm-exclude=<nodes>  Slurm node list to exclude from Dask worker jobs.
+    --slurm-requeue         Allow Slurm to requeue interrupted Dask worker jobs.
     --overwrite            Replace existing staging and HATS directories.
     --staging-only         Stop after writing summary parquet staging files.
     --keep-staging         Keep summary parquet staging after a successful
@@ -136,6 +138,8 @@ class Configuration:
     slurm_adapt_interval: float
     slurm_scale_down_delay: float
     slurm_log_dir: Path | None
+    slurm_exclude: str | None
+    slurm_requeue: bool
     overwrite: bool
     staging_only: bool
     keep_staging: bool
@@ -254,6 +258,8 @@ def parse_cmdline() -> Configuration:
         slurm_adapt_interval=slurm_adapt_interval,
         slurm_scale_down_delay=slurm_scale_down_delay,
         slurm_log_dir=Path(args["--slurm-log-dir"]) if args.get("--slurm-log-dir") else None,
+        slurm_exclude=args.get("--slurm-exclude"),
+        slurm_requeue=args["--slurm-requeue"],
         overwrite=args["--overwrite"],
         staging_only=args["--staging-only"],
         keep_staging=args["--keep-staging"],
@@ -876,12 +882,19 @@ def create_hats_import_client(cfg: Configuration):
             instance_args["queue"] = cfg.slurm_queue
         if cfg.slurm_account:
             instance_args["account"] = cfg.slurm_account
+        job_extra_directives = []
         if cfg.slurm_log_dir:
             makedirs(cfg.slurm_log_dir, exist_ok=True)
-            instance_args["job_extra_directives"] = [
+            job_extra_directives.extend([
                 f"--output={cfg.slurm_log_dir}/slurm-%j.out",
                 f"--error={cfg.slurm_log_dir}/slurm-%j.err",
-            ]
+            ])
+        if cfg.slurm_exclude:
+            job_extra_directives.append(f"--exclude={cfg.slurm_exclude}")
+        if cfg.slurm_requeue:
+            job_extra_directives.append("--requeue")
+        if job_extra_directives:
+            instance_args["job_extra_directives"] = job_extra_directives
 
         n_workers_init = cfg.slurm_minimum_jobs * cfg.slurm_processes
         wait_count = max(1, ceil(cfg.slurm_scale_down_delay / cfg.slurm_adapt_interval))
@@ -889,7 +902,7 @@ def create_hats_import_client(cfg: Configuration):
         info(
             "Starting Slurm Dask cluster for pz-build-hats: "
             "initial_jobs=%d max_jobs=%d cores=%s processes=%s memory=%s "
-            "walltime=%s queue=%s account=%s"
+            "walltime=%s queue=%s account=%s exclude=%s requeue=%s"
             % (
                 cfg.slurm_minimum_jobs,
                 cfg.slurm_maximum_jobs,
@@ -899,6 +912,8 @@ def create_hats_import_client(cfg: Configuration):
                 cfg.slurm_walltime,
                 cfg.slurm_queue,
                 cfg.slurm_account,
+                cfg.slurm_exclude,
+                cfg.slurm_requeue,
             )
         )
         cluster = SLURMCluster(n_workers=n_workers_init, **instance_args)
