@@ -81,7 +81,8 @@ if [ ! -d "$PZ_STAGE3_CONDA_ENV" ]; then
 fi
 
 conda install -y --prefix "$PZ_STAGE3_CONDA_ENV" -c conda-forge \
-    numpy pyarrow hdf5 h5py astropy distributed dask-jobqueue docopt
+    numpy pyarrow hdf5 h5py astropy distributed dask-jobqueue docopt \
+    pyyaml pyxdg
 
 "$PZ_STAGE3_CONDA_ENV/bin/python" -m pip install lsdb hats-import hats
 ```

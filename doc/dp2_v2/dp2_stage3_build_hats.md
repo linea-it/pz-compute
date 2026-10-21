@@ -51,6 +51,8 @@ import hats_import
 import h5py
 import lsdb
 import pyarrow
+import yaml
+from xdg.BaseDirectory import load_data_paths
 
 print("DP2 stage 3 HATS environment is importable")
 PY
