@@ -109,3 +109,46 @@ def test_slurm_profile_accepts_regular_worker_job_ids(tmp_path):
     assert summary["unsuccessful_jobs"] == 1
     assert summary["states"] == {"CANCELLED": 1, "COMPLETED": 1}
     assert summary["max_rss_gib"]["maximum"] == 4
+
+
+def test_slurm_profile_collects_io_metrics_from_batch_step(tmp_path):
+    source = Path(__file__).parents[1] / "performance" / "slurm" / "slurm-profile"
+    sacct = tmp_path / "io.tsv"
+    io_fields = FIELDS[:-1] + [
+        "AveDiskRead", "AveDiskWrite", "MaxDiskRead", "MaxDiskWrite", "NodeList"
+    ]
+    rows = [
+        ["300", "300", "io-job", "cpu", "account", "normal", "COMPLETED", "0:0",
+         "2026-01-01T10:00:00", "2026-01-01T10:00:00", "2026-01-01T10:01:00",
+         "2026-01-01T10:03:00", "120", "2", "240", "", "4Gn", "", "", "", "", "", "n01"],
+        ["300.batch", "300.batch", "batch", "", "", "", "COMPLETED", "0:0",
+         "2026-01-01T10:00:00", "2026-01-01T10:00:00", "2026-01-01T10:01:00",
+         "2026-01-01T10:03:00", "120", "2", "240", "00:03:00", "", "1048576K",
+         "524288K", "262144K", "2097152K", "1048576K", "n01"],
+    ]
+    with sacct.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream, delimiter="\t", lineterminator="\n")
+        writer.writerow(io_fields)
+        writer.writerows(rows)
+
+    output = tmp_path / "io-metrics"
+    subprocess.run(
+        [sys.executable, str(source), "--sacct-file", str(sacct), "--job-id", "300",
+         "--output-dir", str(output)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+    assert summary["schema_version"] == 2
+    assert summary["io"]["jobs_with_accounting"] == 1
+    assert summary["io"]["max_disk_read_gib"]["maximum"] == 2
+    assert summary["io"]["max_disk_write_gib"]["maximum"] == 1
+
+    with (output / "tasks.tsv").open(encoding="utf-8", newline="") as stream:
+        task = next(csv.DictReader(stream, delimiter="\t"))
+    assert float(task["ave_disk_read_gib"]) == 0.5
+    assert float(task["ave_disk_write_gib"]) == 0.25
+    assert float(task["max_disk_read_gib"]) == 2
+    assert float(task["max_disk_write_gib"]) == 1

@@ -41,6 +41,10 @@ SACCT_FIELDS = (
     "TotalCPU",
     "ReqMem",
     "MaxRSS",
+    "AveDiskRead",
+    "AveDiskWrite",
+    "MaxDiskRead",
+    "MaxDiskWrite",
     "NodeList",
 )
 MISSING_TIME = {"", "Unknown", "None", "N/A"}
@@ -291,20 +295,30 @@ def natural_job_key(job_id: str) -> tuple[int, int]:
     return (int(match.group(1)), int(match.group(2) or -1))
 
 
-def resource_values(logical_id: str, rows: list[dict[str, str]]) -> tuple[float | None, float | None]:
+def maximum_resource_value(
+    related: list[dict[str, str]], field: str
+) -> float | None:
+    values = [parse_memory_kib(row[field]) for row in related]
+    valid_values = [value for value in values if value is not None]
+    return max(valid_values) if valid_values else None
+
+
+def resource_values(logical_id: str, rows: list[dict[str, str]]) -> dict[str, float | None]:
     related = [
         row
         for row in rows
         if row["JobID"] == logical_id or row["JobID"].startswith(logical_id + ".")
     ]
-    memories = [parse_memory_kib(row["MaxRSS"]) for row in related]
     cpu_times = [parse_slurm_duration(row["TotalCPU"]) for row in related]
-    valid_memories = [value for value in memories if value is not None]
     valid_cpu_times = [value for value in cpu_times if value is not None]
-    return (
-        max(valid_memories) if valid_memories else None,
-        max(valid_cpu_times) if valid_cpu_times else None,
-    )
+    return {
+        "max_rss_kib": maximum_resource_value(related, "MaxRSS"),
+        "total_cpu_seconds": max(valid_cpu_times) if valid_cpu_times else None,
+        "ave_disk_read_kib": maximum_resource_value(related, "AveDiskRead"),
+        "ave_disk_write_kib": maximum_resource_value(related, "AveDiskWrite"),
+        "max_disk_read_kib": maximum_resource_value(related, "MaxDiskRead"),
+        "max_disk_write_kib": maximum_resource_value(related, "MaxDiskWrite"),
+    }
 
 
 TASK_FIELDS = [
@@ -330,6 +344,14 @@ TASK_FIELDS = [
     "cpu_efficiency_percent",
     "max_rss_kib",
     "max_rss_gib",
+    "ave_disk_read_kib",
+    "ave_disk_read_gib",
+    "ave_disk_write_kib",
+    "ave_disk_write_gib",
+    "max_disk_read_kib",
+    "max_disk_read_gib",
+    "max_disk_write_kib",
+    "max_disk_write_gib",
     "node_list",
 ]
 
@@ -346,7 +368,9 @@ def build_tasks(logical_rows: list[dict[str, str]], all_rows: list[dict[str, str
         if duration is None and start is not None and end is not None:
             duration = max(0, int((end - start).total_seconds()))
         alloc_cpus = parse_int(row["AllocCPUS"])
-        max_rss_kib, total_cpu = resource_values(job_id, all_rows)
+        resources = resource_values(job_id, all_rows)
+        max_rss_kib = resources["max_rss_kib"]
+        total_cpu = resources["total_cpu_seconds"]
         allocated_cpu_seconds = (
             duration * alloc_cpus
             if duration is not None and alloc_cpus is not None and alloc_cpus > 0
@@ -388,6 +412,30 @@ def build_tasks(logical_rows: list[dict[str, str]], all_rows: list[dict[str, str
                 "cpu_efficiency_percent": cpu_efficiency,
                 "max_rss_kib": max_rss_kib,
                 "max_rss_gib": max_rss_kib / 1024**2 if max_rss_kib is not None else None,
+                "ave_disk_read_kib": resources["ave_disk_read_kib"],
+                "ave_disk_read_gib": (
+                    resources["ave_disk_read_kib"] / 1024**2
+                    if resources["ave_disk_read_kib"] is not None
+                    else None
+                ),
+                "ave_disk_write_kib": resources["ave_disk_write_kib"],
+                "ave_disk_write_gib": (
+                    resources["ave_disk_write_kib"] / 1024**2
+                    if resources["ave_disk_write_kib"] is not None
+                    else None
+                ),
+                "max_disk_read_kib": resources["max_disk_read_kib"],
+                "max_disk_read_gib": (
+                    resources["max_disk_read_kib"] / 1024**2
+                    if resources["max_disk_read_kib"] is not None
+                    else None
+                ),
+                "max_disk_write_kib": resources["max_disk_write_kib"],
+                "max_disk_write_gib": (
+                    resources["max_disk_write_kib"] / 1024**2
+                    if resources["max_disk_write_kib"] is not None
+                    else None
+                ),
                 "node_list": row["NodeList"],
                 "_submit_dt": submit,
                 "_start_dt": start,
@@ -476,6 +524,16 @@ def build_summary(
         if task["eligible_wait_seconds"] is not None
     ]
     memories = [float(task["max_rss_gib"]) for task in tasks if task["max_rss_gib"] is not None]
+    io_fields = (
+        "ave_disk_read_gib",
+        "ave_disk_write_gib",
+        "max_disk_read_gib",
+        "max_disk_write_gib",
+    )
+    io_values = {
+        field: [float(task[field]) for task in tasks if task[field] is not None]
+        for field in io_fields
+    }
     cpu_used = sum(task["total_cpu_seconds"] or 0 for task in tasks)
     cpu_allocated = sum(
         (task["duration_seconds"] or 0) * (task["alloc_cpus"] or 0) for task in tasks
@@ -496,7 +554,7 @@ def build_summary(
     accounts = sorted({task["account"] for task in tasks if task["account"]})
     qos_values = sorted({task["qos"] for task in tasks if task["qos"]})
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "label": label,
         "requested_job_ids": requested_ids,
@@ -529,6 +587,12 @@ def build_summary(
         "queue_wait_seconds": stats(queue_waits),
         "eligible_wait_seconds": stats(eligible_waits),
         "max_rss_gib": stats(memories),
+        "io": {
+            "jobs_with_accounting": sum(
+                any(task[field] is not None for field in io_fields) for task in tasks
+            ),
+            **{field: stats(values) for field, values in io_values.items()},
+        },
         "cpu": {
             "used_seconds": cpu_used,
             "allocated_seconds": cpu_allocated,
@@ -564,6 +628,7 @@ def write_summary_log(path: Path, summary: dict) -> None:
     rss = summary["max_rss_gib"]
     concurrency = summary["concurrency"]
     cpu = summary["cpu"]
+    io = summary["io"]
     lines = [
         f"label: {summary['label']}",
         f"generated_at_utc: {summary['generated_at_utc']}",
@@ -592,6 +657,19 @@ def write_summary_log(path: Path, summary: dict) -> None:
         f"duration_seconds_p50_p95_max: {fmt(duration['p50'])}, {fmt(duration['p95'])}, {fmt(duration['maximum'])}",
         f"queue_wait_seconds_p50_p95_max: {fmt(queue['p50'])}, {fmt(queue['p95'])}, {fmt(queue['maximum'])}",
         f"max_rss_gib_p50_p95_max: {fmt(rss['p50'])}, {fmt(rss['p95'])}, {fmt(rss['maximum'])}",
+        f"io_jobs_with_accounting: {io['jobs_with_accounting']}",
+        "io_ave_disk_read_gib_p50_p95_max: "
+        + f"{fmt(io['ave_disk_read_gib']['p50'])}, {fmt(io['ave_disk_read_gib']['p95'])}, "
+        + fmt(io["ave_disk_read_gib"]["maximum"]),
+        "io_ave_disk_write_gib_p50_p95_max: "
+        + f"{fmt(io['ave_disk_write_gib']['p50'])}, {fmt(io['ave_disk_write_gib']['p95'])}, "
+        + fmt(io["ave_disk_write_gib"]["maximum"]),
+        "io_max_disk_read_gib_p50_p95_max: "
+        + f"{fmt(io['max_disk_read_gib']['p50'])}, {fmt(io['max_disk_read_gib']['p95'])}, "
+        + fmt(io["max_disk_read_gib"]["maximum"]),
+        "io_max_disk_write_gib_p50_p95_max: "
+        + f"{fmt(io['max_disk_write_gib']['p50'])}, {fmt(io['max_disk_write_gib']['p95'])}, "
+        + fmt(io["max_disk_write_gib"]["maximum"]),
         f"cpu_used_seconds: {fmt(cpu['used_seconds'])}",
         f"cpu_allocated_seconds: {fmt(cpu['allocated_seconds'])}",
         f"cpu_efficiency_percent: {fmt(cpu['efficiency_percent'])}",
