@@ -3,7 +3,8 @@
 This document describes how to build the HATS photo-z products after the DP2
 GAaP 1.0 stage 2 estimation has completed.
 
-The stage 2 output is a tree of `rail-estimate` HDF5 files:
+The stage 2 output is a tree of `rail-estimate` HDF5 files used as input by
+this stage:
 
 ```text
 $PZ_STAGE2_RUN/output/object_*.hdf5
@@ -57,19 +58,29 @@ PY
 
 ## 1. Set Run Variables
 
-Start from the stage 2 run directory. For the clipped RTN-124 run:
+Create a Stage 3 run directory separate from the Stage 2 run. For the clipped
+RTN-124 run:
 
 ```bash
 source /scripts/$(whoami)/ondemand/env-dp2-stage3-hats.sh
 
 export PZ_STAGE2_RUN=$PZ_RUN_ROOT/dp2-stage2-fzboost-gaap1p0-clipped
+export PZ_STAGE3_RUN=$PZ_RUN_ROOT/dp2-stage3-build-hats-fzboost-gaap1p0-clipped
 export PZ_DP2_INPUT_DATASET=/data/cl/lsst/dp2/primary/catalogs/object
 export PZ_STAGE2_OUTPUT_DIR=$PZ_STAGE2_RUN/output
-export PZ_HATS_DIR=$PZ_STAGE2_RUN/pz-fzboost-gaap1p0-clipped-hats
+export PZ_STAGE3_OUTPUT_DIR=$PZ_STAGE3_RUN/output
+export PZ_HATS_DIR=$PZ_STAGE3_OUTPUT_DIR/pz-fzboost-gaap1p0-clipped-hats
+export PZ_STAGE3_SMOKE_DIR=$PZ_STAGE3_RUN/smoke
 
-cd "$PZ_STAGE2_RUN"
-mkdir -p log benchmark/stage3
+mkdir -p "$PZ_STAGE3_OUTPUT_DIR" "$PZ_STAGE3_RUN/log" \
+  "$PZ_STAGE3_RUN/benchmark"
+cd "$PZ_STAGE3_RUN"
 ```
+
+This keeps the Stage 2 HDF5 inputs read-only by default and places all Stage 3
+products, logs, smoke-test artifacts, and benchmarks under `$PZ_STAGE3_RUN`.
+The Stage 2 HDF5 files are removed only if the optional
+`--delete-hdf5-outputs` flag is selected after a successful build.
 
 ## 2. Validate Input and Output Pairing
 
@@ -78,7 +89,7 @@ Confirm that the number of input shards matches the number of production Stage
 be copied into this production output tree:
 
 ```bash
-cd "$PZ_STAGE2_RUN"
+cd "$PZ_STAGE3_RUN"
 
 echo "input parquets: $(find "$PZ_DP2_INPUT_DATASET" -name '*.parq' | wc -l)"
 echo "production HDF5 files: $(find "$PZ_STAGE2_OUTPUT_DIR" -name '*.hdf5' | wc -l)"
@@ -153,10 +164,10 @@ subset. This verifies parquet input support, HDF5 PDF reading, positional
 matching, and output schemas.
 
 ```bash
-cd "$PZ_STAGE2_RUN"
+cd "$PZ_STAGE3_RUN"
 
-rm -rf stage3-smoke
-mkdir -p stage3-smoke/input stage3-smoke/output
+rm -rf "$PZ_STAGE3_SMOKE_DIR"
+mkdir -p "$PZ_STAGE3_SMOKE_DIR/input" "$PZ_STAGE3_SMOKE_DIR/output"
 
 python - <<'PY'
 from pathlib import Path
@@ -165,7 +176,7 @@ import shutil
 
 input_root = Path(os.environ["PZ_DP2_INPUT_DATASET"])
 output_root = Path(os.environ["PZ_STAGE2_OUTPUT_DIR"])
-smoke_root = Path("stage3-smoke")
+smoke_root = Path(os.environ["PZ_STAGE3_SMOKE_DIR"])
 
 for input_path in sorted(input_root.glob("**/*.parq"))[:3]:
     relative = input_path.relative_to(input_root)
@@ -186,9 +197,9 @@ pz-build-hats \
     --overwrite \
     --staging-only \
     --require-complete-marker \
-    stage3-smoke/input \
-    stage3-smoke/output \
-    stage3-smoke/pz-summary-hats
+    "$PZ_STAGE3_SMOKE_DIR/input" \
+    "$PZ_STAGE3_SMOKE_DIR/output" \
+    "$PZ_STAGE3_SMOKE_DIR/pz-summary-hats"
 ```
 
 Inspect the smoke staging output:
@@ -196,9 +207,11 @@ Inspect the smoke staging output:
 ```bash
 python - <<'PY'
 from pathlib import Path
+import os
 import pyarrow.parquet as pq
 
-staging = Path("stage3-smoke/pz-summary-hats.parquet_staging")
+smoke_root = Path(os.environ["PZ_STAGE3_SMOKE_DIR"])
+staging = smoke_root / "pz-summary-hats.parquet_staging"
 parts = sorted(path for path in staging.glob("*.parquet")
                if path.name != "pz_pdf_xvals.parquet")
 if not parts:
@@ -206,7 +219,7 @@ if not parts:
 
 table = pq.read_table(parts[0])
 xvals = pq.read_table(staging / "pz_pdf_xvals.parquet")
-pdf_dir = Path("stage3-smoke/pz-summary-hats.pdf")
+pdf_dir = smoke_root / "pz-summary-hats.pdf"
 pdf_parts = sorted(pdf_dir.glob("*pdf-part*.parquet"))
 if not pdf_parts:
     raise SystemExit("No smoke PDF parquet parts found")
@@ -306,11 +319,11 @@ configuration itself continues to request 82 jobs. Worker jobs exclude
 Run:
 
 ```bash
-cd "$PZ_STAGE2_RUN"
+cd "$PZ_STAGE3_RUN"
 
 export PZ_STAGE3_RUN_TAG=production-$(date -u +%Y%m%dT%H%M%SZ)
-export PZ_STAGE3_BENCHMARK_DIR=$PZ_STAGE2_RUN/benchmark/stage3/$PZ_STAGE3_RUN_TAG
-export PZ_STAGE3_SLURM_LOG_DIR=$PZ_STAGE2_RUN/log/dask-stage3-$PZ_STAGE3_RUN_TAG
+export PZ_STAGE3_BENCHMARK_DIR=$PZ_STAGE3_RUN/benchmark/$PZ_STAGE3_RUN_TAG
+export PZ_STAGE3_SLURM_LOG_DIR=$PZ_STAGE3_RUN/log/dask-$PZ_STAGE3_RUN_TAG
 
 mkdir -p "$PZ_STAGE3_BENCHMARK_DIR" "$PZ_STAGE3_SLURM_LOG_DIR"
 
@@ -327,30 +340,43 @@ echo "Stage 3 worker logs: $PZ_STAGE3_SLURM_LOG_DIR"
 
 set -o pipefail
 
-/usr/bin/time -v -o "$PZ_STAGE3_BENCHMARK_DIR/driver-resource-usage.log" \
-  pz-build-hats \
-    --overwrite \
-    --require-complete-marker \
-    --pdf-dtype=float32 \
-    --fast-path-size-mb=0 \
-    --use-hats-import \
-    --dask-cluster=slurm \
-    --slurm-queue=cpu_photoz \
-    --slurm-account=hpc-photoz \
-    --slurm-exclude='apl[26-28]' \
-    --slurm-cores=8 \
-    --slurm-processes=1 \
-    --slurm-memory=40GiB \
-    --slurm-walltime=12:00:00 \
-    --slurm-minimum-jobs=82 \
-    --slurm-maximum-jobs=82 \
-    --slurm-log-dir="$PZ_STAGE3_SLURM_LOG_DIR" \
-    "$PZ_DP2_INPUT_DATASET" \
-    "$PZ_STAGE2_OUTPUT_DIR" \
-    "$PZ_HATS_DIR" 2>&1 | \
-  tee "$PZ_STAGE3_BENCHMARK_DIR/driver.log"
+export PZ_STAGE3_DRIVER_START=$(date --iso-8601=seconds)
+export PZ_STAGE3_TIMEFORMAT=$'wall_seconds=%R\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S'
 
-PZ_STAGE3_DRIVER_STATUS=${PIPESTATUS[0]}
+TIMEFORMAT="$PZ_STAGE3_TIMEFORMAT"
+{
+  time {
+    pz-build-hats \
+      --overwrite \
+      --require-complete-marker \
+      --pdf-dtype=float32 \
+      --fast-path-size-mb=0 \
+      --use-hats-import \
+      --dask-cluster=slurm \
+      --slurm-queue=cpu_photoz \
+      --slurm-account=hpc-photoz \
+      --slurm-exclude='apl[26-28]' \
+      --slurm-cores=8 \
+      --slurm-processes=1 \
+      --slurm-memory=40GiB \
+      --slurm-walltime=12:00:00 \
+      --slurm-minimum-jobs=82 \
+      --slurm-maximum-jobs=82 \
+      --slurm-log-dir="$PZ_STAGE3_SLURM_LOG_DIR" \
+      "$PZ_DP2_INPUT_DATASET" \
+      "$PZ_STAGE2_OUTPUT_DIR" \
+      "$PZ_HATS_DIR" 2>&1 | \
+      tee "$PZ_STAGE3_BENCHMARK_DIR/driver.log"
+    PZ_STAGE3_DRIVER_STATUS=${PIPESTATUS[0]}
+  }
+} 2> "$PZ_STAGE3_BENCHMARK_DIR/driver-resource-usage.log"
+
+PZ_STAGE3_DRIVER_END=$(date --iso-8601=seconds)
+{
+  printf 'start_time=%s\n' "$PZ_STAGE3_DRIVER_START"
+  printf 'end_time=%s\n' "$PZ_STAGE3_DRIVER_END"
+  printf 'driver_exit_code=%s\n' "$PZ_STAGE3_DRIVER_STATUS"
+} >> "$PZ_STAGE3_BENCHMARK_DIR/driver-resource-usage.log"
 printf '%s\n' "$PZ_STAGE3_DRIVER_STATUS" > \
   "$PZ_STAGE3_BENCHMARK_DIR/driver-exit-code.txt"
 test "$PZ_STAGE3_DRIVER_STATUS" -eq 0
@@ -363,10 +389,12 @@ The Slurm Dask workers perform two operations:
 
 The command uses the adaptive-scaling interface with an equal minimum and
 maximum, fixing the request at 82 Slurm worker jobs for the duration of the
-build. GNU `time` records the end-to-end driver wall time and resource usage;
-`tee` preserves the complete driver log. `set -o pipefail` ensures that a
-failed `pz-build-hats` command is not hidden by a successful `tee` process, and
-`driver-exit-code.txt` preserves the command status explicitly.
+build. Bash's portable `time` keyword records driver wall, user CPU, and system
+CPU time without requiring `/usr/bin/time`, which is not installed on every
+Apollo login node. `tee` preserves the complete driver log. `PIPESTATUS`
+ensures that a failed `pz-build-hats` command is not hidden by a successful
+`tee` process, and `driver-exit-code.txt` preserves the command status
+explicitly.
 
 If only the lightweight scalar HATS summary is needed, disable the separate
 full PDF parquet product:
@@ -405,7 +433,7 @@ squeue -u "$(whoami)"
 Inspect worker logs:
 
 ```bash
-cd "$PZ_STAGE2_RUN"
+cd "$PZ_STAGE3_RUN"
 find "$PZ_STAGE3_SLURM_LOG_DIR" -type f -print | sort | tail -50
 grep -R "Traceback\\|Error:\\|Killed\\|OOM\\|out of memory" \
   "$PZ_STAGE3_SLURM_LOG_DIR" || true
@@ -422,7 +450,7 @@ artifacts described in
 [Slurm performance profiling](../slurm_profile.md):
 
 ```bash
-cd "$PZ_STAGE2_RUN"
+cd "$PZ_STAGE3_RUN"
 
 find "$PZ_STAGE3_SLURM_LOG_DIR" -type f -name 'slurm-*.out' -printf '%f\n' |
   sed -n 's/^slurm-\([0-9][0-9]*\)\.out$/\1/p' |
@@ -453,7 +481,7 @@ Read the final HATS summary and compare its metadata row count with the retained
 stage 2 HDF5 outputs:
 
 ```bash
-cd "$PZ_STAGE2_RUN"
+cd "$PZ_STAGE3_RUN"
 
 python - <<'PY'
 from pathlib import Path
@@ -501,7 +529,7 @@ Skip this section if the full PDF product was disabled with
 `--no-pdf-product`.
 
 ```bash
-cd "$PZ_STAGE2_RUN"
+cd "$PZ_STAGE3_RUN"
 
 python - <<'PY'
 from pathlib import Path
@@ -555,11 +583,14 @@ Load the local Stage 3 environment and point it at the reduced Stage 2 run:
 source /path/to/pz-dp2-work/software/env-dp2-stage3-hats.sh
 
 export PZ_STAGE2_RUN=$PZ_RUN_ROOT/dp2-stage2-fzboost-gaap1p0-local-test
+export PZ_STAGE3_RUN=$PZ_RUN_ROOT/dp2-stage3-build-hats-fzboost-gaap1p0-local-test
 export PZ_DP2_INPUT_DATASET=$PZ_STAGE2_RUN/input
 export PZ_STAGE2_OUTPUT_DIR=$PZ_STAGE2_RUN/output
-export PZ_HATS_DIR=$PZ_STAGE2_RUN/pz-fzboost-gaap1p0-local-test-hats
+export PZ_STAGE3_OUTPUT_DIR=$PZ_STAGE3_RUN/output
+export PZ_HATS_DIR=$PZ_STAGE3_OUTPUT_DIR/pz-fzboost-gaap1p0-local-test-hats
 
-cd "$PZ_STAGE2_RUN"
+mkdir -p "$PZ_STAGE3_OUTPUT_DIR"
+cd "$PZ_STAGE3_RUN"
 ```
 
 Build both products with a small local Dask cluster. Setting the fast-path
@@ -623,6 +654,19 @@ PY
 ```
 
 ## 9. Expected Outputs
+
+The Apollo procedure produces this separate Stage 3 run tree (the local
+procedure uses the analogous `local-test` product names):
+
+```text
+$PZ_STAGE3_RUN/
+├── benchmark/
+├── log/
+├── output/
+│   ├── pz-fzboost-gaap1p0-clipped-hats/
+│   └── pz-fzboost-gaap1p0-clipped-hats.pdf/
+└── smoke/
+```
 
 The stage 3 run is successful when:
 

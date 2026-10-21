@@ -157,7 +157,7 @@ are available:
 ```bash
 command -v sbatch
 command -v sacct
-test -x /usr/bin/time
+type time
 test -x "$PZ_COMPUTE_DIR/performance/slurm/slurm-profile"
 ```
 
