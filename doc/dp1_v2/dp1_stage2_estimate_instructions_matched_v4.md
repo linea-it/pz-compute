@@ -1,7 +1,8 @@
 # DP1 GAaP 1.0 FlexZBoost Stage 2: Matched v4 Model
 
-This document describes how to run photo-z estimation on Apollo/LIneA after the
-GAaP 1.0 matched-v4 FlexZBoost pickle has been generated.
+This stage applies the model produced by
+`dp1_stage1_train_instructions_matched_v4.md` to the DP1 Object catalog. It
+contains both the Apollo production path and a reduced local test.
 
 The input dataset is the LSST DP1 primary Object catalog stored on Apollo as
 individual parquet shards:
@@ -17,7 +18,9 @@ object_10705_lsst_cells_v1_LSSTComCam_runs_DRP_DP1_v29_0_0_DM-50260_20250417T034
 object_10221_lsst_cells_v1_LSSTComCam_runs_DRP_DP1_v29_0_0_DM-50260_20250417T034317Z.parq
 ```
 
-All parquet files are expected to expose the same column names, including:
+All parquet files are expected to expose the same column names, including the
+GAaP fluxes described for the [DP1 Object
+table](https://dp1.lsst.io/tutorials/notebook/201/notebook-201-1.html):
 
 ```text
 u_gaap1p0Flux, g_gaap1p0Flux, r_gaap1p0Flux, i_gaap1p0Flux, z_gaap1p0Flux, y_gaap1p0Flux
@@ -34,143 +37,57 @@ input shard through stage 3.
 During estimation, `rail-estimate` converts the nJy fluxes to AB magnitudes and
 magnitude uncertainties, then applies the SFD correction from `ebv`. The
 resulting in-memory columns are named `{band}_gaap1p0Mag_sfd` and
-`{band}_gaap1p0MagErr_sfd`.
+`{band}_gaap1p0MagErr_sfd`. The operation follows the same physical sequence
+illustrated by Rubin's [DP1 dust-correction
+tutorial](https://dp1.lsst.io/tutorials/notebook/311/notebook-311-1.html).
 
-## 0. Login
+The conversion is
 
-Access Apollo from a terminal or JupyterHub terminal:
-
-```bash
-ssh loginapl01
+```text
+mag_ab     = 31.4 - 2.5 log10(flux_nJy)
+mag_err    = (2.5 / ln(10)) abs(fluxErr_nJy / flux_nJy)
+mag_ab_sfd = mag_ab - R_band * ebv
 ```
 
-Load conda or miniconda if your shell does not already do it. The exact command
-depends on your Apollo account configuration.
+with `R_band = [4.81, 3.64, 2.70, 2.06, 1.58, 1.31]` in `ugrizy` order, matching
+the `comcam` coefficients in the pinned [Rubin project catalog
+definitions](https://github.com/LSSTDESC/rail_project_config/blob/6c179d1f69c9dde2ceeb6bcd2dcb8c9d0a48a916/dp2/dp2_catalogs.yaml#L13-L39).
+Invalid or non-positive flux becomes `NaN`; RAIL then substitutes the DP1
+limits. Because the final model has 11 inputs, the Stage 1/Stage 2 contract is:
 
-## 1. Prepare the Apollo environment
+| Property | Training | Estimation |
+|---|---|---|
+| band order | `ugrizy` | `ugrizy` |
+| magnitude names | `{band}_gaap1p0Mag` | `{band}_gaap1p0Mag_sfd` |
+| reference band | `i` | `i` |
+| effective features | `i` + 5 colors + 5 color errors | same |
+| `include_mag_err` | `true` | `true` |
+| redshift grid | 301 points over `[0,3]` | same |
 
-Use `/scripts` for source code, conda environments, package caches, and helper
-scripts. Use `/scratch` for run directories, file lists, logs, and outputs.
+The historical feature construction is documented in the pinned
+[`rail_flexzboost` source](https://github.com/LSSTDESC/rail_flexzboost/blob/5363ec62d6a492e75e510a1ab140c4fd066398f8/src/rail/estimation/algos/flexzboost.py#L16-L41).
 
-```bash
-export SCRIPTS=/scripts/$(whoami)
-export SCRATCH=/scratch/users/$(whoami)
-export PZ_INSTALL_ROOT=$SCRIPTS/ondemand
-export PZ_SRC_DIR=$SCRIPTS
-export PZ_COMPUTE_DIR=$PZ_SRC_DIR/pz-compute
-export PZ_RUN_ROOT=$SCRATCH/pz-compute-runs
-export PZ_CONDA_ENV=$PZ_INSTALL_ROOT/pz_compute_dp1_gaap1p0
+## 0. Load the common Apollo environment
 
-mkdir -p "$PZ_INSTALL_ROOT" "$PZ_SRC_DIR" "$PZ_RUN_ROOT" "$SCRIPTS/bin"
-mkdir -p "$PZ_INSTALL_ROOT/conda_pkgs" "$PZ_INSTALL_ROOT/pip_cache"
-
-export CONDA_PKGS_DIRS=$PZ_INSTALL_ROOT/conda_pkgs
-export PIP_CACHE_DIR=$PZ_INSTALL_ROOT/pip_cache
-```
-
-Clone or update `pz-compute` under `/scripts`:
+Complete [the Apollo setup](dp1_setup_apollo.md) first. Stage 2 must use the
+same environment captured by Stage 1.
 
 ```bash
-cd "$PZ_SRC_DIR"
-
-if [ ! -d pz-compute ]; then
-    git clone https://github.com/linea-it/pz-compute
-fi
-
+source /scripts/$(whoami)/ondemand/env-dp1-gaap1p0.sh
 cd "$PZ_COMPUTE_DIR"
-git status --short
-```
 
-Create and activate the conda environment if it does not exist yet:
-
-```bash
-if [ ! -d "$PZ_CONDA_ENV" ]; then
-    conda create -y --prefix "$PZ_CONDA_ENV" python=3.12 pip
-fi
-
-conda activate "$PZ_CONDA_ENV"
-```
-
-Install RAIL dependencies if this environment has not already been prepared:
-
-```bash
-PZ_INSTALL_ROOT="$PZ_INSTALL_ROOT" "$PZ_COMPUTE_DIR/rail_scripts/install-pz-rail"
-```
-
-When prompted by `install-pz-rail`, type:
-
-```text
-yes
-```
-
-Install the basic packages used by the inspection commands:
-
-```bash
-conda install -y -c conda-forge pyarrow tables-io hdf5 h5py
-```
-
-Create script links under `/scripts/$(whoami)/bin`:
-
-```bash
-ln -sfn "$PZ_COMPUTE_DIR/rail_scripts/rail-estimate" "$SCRIPTS/bin/rail-estimate"
-chmod +x "$SCRIPTS/bin/rail-estimate"
-```
-
-Create an environment loader:
-
-```bash
-cat > "$PZ_INSTALL_ROOT/env-dp1-gaap1p0-estimate.sh" <<'EOF'
-export SCRIPTS=/scripts/$(whoami)
-export SCRATCH=/scratch/users/$(whoami)
-export PZ_INSTALL_ROOT=$SCRIPTS/ondemand
-export PZ_SRC_DIR=$SCRIPTS
-export PZ_COMPUTE_DIR=$PZ_SRC_DIR/pz-compute
-export PZ_RUN_ROOT=$SCRATCH/pz-compute-runs
-export PZ_CONDA_ENV=$PZ_INSTALL_ROOT/pz_compute_dp1_gaap1p0
-export CONDA_PKGS_DIRS=$PZ_INSTALL_ROOT/conda_pkgs
-export PIP_CACHE_DIR=$PZ_INSTALL_ROOT/pip_cache
-export PATH=$PZ_CONDA_ENV/bin:$SCRIPTS/bin:$PZ_COMPUTE_DIR/rail_scripts:$PATH
-export PYTHONPATH=$PZ_COMPUTE_DIR/rail_scripts:${PYTHONPATH:-}
-EOF
-
-chmod +x "$PZ_INSTALL_ROOT/env-dp1-gaap1p0-estimate.sh"
-source "$PZ_INSTALL_ROOT/env-dp1-gaap1p0-estimate.sh"
-```
-
-The environment loader intentionally avoids `conda activate` and instead puts
-the conda environment's `bin` directory at the front of `PATH`. This is more
-robust for Slurm batch jobs, where non-interactive shells may fail with:
-
-```text
-CondaError: Run 'conda init' before 'conda activate'
-```
-
-Verify that the loader does not contain `conda activate`:
-
-```bash
-if grep -n "conda activate" "$PZ_INSTALL_ROOT/env-dp1-gaap1p0-estimate.sh"; then
-    echo "ERROR: remove conda activate from env-dp1-gaap1p0-estimate.sh"
-    exit 1
-fi
-```
-
-Check imports:
-
-```bash
-python - <<'PY'
-import pyarrow
-import rail
-import tables_io
-print("DP1 GAaP 1.0 estimate environment is importable")
+"$PZ_PY" - <<'PY'
+import pyarrow, rail, tables_io
+print("DP1 Stage 2 environment is importable")
 PY
 ```
 
-## 2. Create the run directory
+## 1. Create the run directory
 
 Create an isolated run directory under `/scratch`:
 
 ```bash
-source /scripts/$(whoami)/ondemand/env-dp1-gaap1p0-estimate.sh
+source /scripts/$(whoami)/ondemand/env-dp1-gaap1p0.sh
 
 export RUN_ID=dp1-stage2-fzboost-gaap1p0-matched-v4
 export PZ_APOLLO_RUN=$PZ_RUN_ROOT/$RUN_ID
@@ -183,7 +100,9 @@ Copy or link the model pickle produced by
 `dp1_stage1_train_instructions_matched_v4.md` into the run directory:
 
 ```bash
-cp /path/to/model_dp1_v4_fzboost_gaap1p0_6band.pickle \
+export PZ_STAGE1_RUN=$PZ_RUN_ROOT/dp1-stage1-fzboost-gaap1p0-matched-v4
+
+cp "$PZ_STAGE1_RUN/training-model/model_dp1_v4_fzboost_gaap1p0_6band.pickle" \
    "$PZ_APOLLO_RUN/model/"
 ```
 
@@ -196,7 +115,38 @@ export PZ_OUTPUT_DIR=$PZ_APOLLO_RUN/output
 export PZ_LOG_DIR=$PZ_APOLLO_RUN/log
 ```
 
-## 3. Inspect one input parquet
+Copy and compare the Stage 1 environment manifest:
+
+```bash
+cp "$PZ_STAGE1_RUN/training-model/environment-freeze.txt" \
+  "$PZ_APOLLO_RUN/model/environment-freeze-stage1.txt"
+"$PZ_PY" -m pip freeze > "$PZ_APOLLO_RUN/model/environment-freeze-stage2.txt"
+diff -u "$PZ_APOLLO_RUN/model/environment-freeze-stage1.txt" \
+  "$PZ_APOLLO_RUN/model/environment-freeze-stage2.txt"
+```
+
+Continue only when the manifests match. Create the estimator config. The
+`_sfd` keys must match the Stage 2 column template:
+
+```bash
+cat > "$PZ_APOLLO_RUN/fzboost_dp1_v4_6band_gold_estimate.yaml" <<'YAML'
+zmin: 0.0
+zmax: 3.0
+nzbins: 301
+nondetect_val: .nan
+mag_limits:
+  u_gaap1p0Mag_sfd: 26.4
+  g_gaap1p0Mag_sfd: 27.8
+  r_gaap1p0Mag_sfd: 27.1
+  i_gaap1p0Mag_sfd: 26.7
+  z_gaap1p0Mag_sfd: 25.8
+  y_gaap1p0Mag_sfd: 24.6
+include_mag_err: true
+YAML
+export PZ_ESTIMATE_CONFIG=$PZ_APOLLO_RUN/fzboost_dp1_v4_6band_gold_estimate.yaml
+```
+
+## 2. Inspect one input parquet
 
 Select a non-empty parquet shard and validate its schema before submitting many
 jobs. The scan reads parquet metadata only, not catalog columns:
@@ -250,7 +200,7 @@ print("required DP1 columns are present")
 PY
 ```
 
-## 4. Run a single-file smoke test
+## 3. Run a single-file smoke test
 
 This verifies the model, flux-to-magnitude conversion, SFD correction, and
 retained-column output before launching the full dataset. `rail-estimate` reads
@@ -260,12 +210,15 @@ loaded into memory.
 ```bash
 cd "$PZ_APOLLO_RUN"
 export PZ_FIRST_INPUT=$(cat first-input.txt)
+mkdir -p "$PZ_APOLLO_RUN/smoke"
 
 rail-estimate \
   "$PZ_FIRST_INPUT" \
-  "$PZ_OUTPUT_DIR/smoke-test.hdf5" \
+  "$PZ_APOLLO_RUN/smoke/smoke-test.hdf5" \
   --algorithm=fzboost \
   --calibration-file="$PZ_MODEL" \
+  --bins=301 \
+  --param-file="$PZ_ESTIMATE_CONFIG" \
   --sfd-deredden \
   --column-template='{band}_gaap1p0Mag_sfd' \
   --column-template-error='{band}_gaap1p0MagErr_sfd' \
@@ -279,12 +232,13 @@ Inspect the smoke-test output:
 python - <<'PY'
 import h5py
 
-path = "output/smoke-test.hdf5"
+path = "smoke/smoke-test.hdf5"
 with h5py.File(path, "r") as handle:
     for name in ("meta/xvals", "data/yvals", "ancillary/i_gaap1p0Mag_sfd"):
         dataset = handle[name]
         print(name, dataset.shape, dataset.dtype)
     assert handle["data/yvals"].shape[0] == handle["ancillary/i_gaap1p0Mag_sfd"].shape[0]
+    assert handle["data/yvals"].shape[1] == 301
     integrity = handle["pz_compute"]
     assert bool(integrity.attrs["complete"])
     assert integrity.attrs["row_count"] == handle["data/yvals"].shape[0]
@@ -300,7 +254,7 @@ The full file list must retain zero-row shards. `rail-estimate` skips model
 inference for those shards, writes the model redshift grid with a `(0, 301)` PDF
 dataset, and finalizes the same integrity metadata and ancillary schema.
 
-## 5. Build the parquet file list
+## 4. Build the parquet file list
 
 The input dataset contains many parquet shards. Create a stable file list
 once and keep it with the run logs:
@@ -314,7 +268,7 @@ export PZ_NFILES=$(wc -l < input-parquet-files.txt)
 echo "Number of parquet files: $PZ_NFILES"
 ```
 
-## 6. Create the Slurm array script
+## 5. Create the Slurm array script
 
 Create a small array-job runner. Each array task processes exactly one parquet
 file and writes one HDF5 output. `rail-estimate` projects only the 12 GAaP 1.0
@@ -328,18 +282,21 @@ cd "$PZ_APOLLO_RUN"
 cat > run-one-dp1-gaap1p0-estimate.sh <<'EOF'
 #!/usr/bin/env bash
 #SBATCH --job-name=dp1-pz-gaap1p0
-#SBATCH --partition=cpu
-#SBATCH --mem=16G
+#SBATCH --partition=cpu_photoz
+#SBATCH --account=hpc-photoz
+#SBATCH --exclude=apl[26-28]
+#SBATCH --mem=40G
 #SBATCH --time=12:00:00
 #SBATCH --output=log/slurm-%A_%a.out
 #SBATCH --error=log/slurm-%A_%a.err
 
 set -euo pipefail
 
-source /scripts/$(whoami)/ondemand/env-dp1-gaap1p0-estimate.sh
+source /scripts/$(whoami)/ondemand/env-dp1-gaap1p0.sh
 
 : "${PZ_DP1_INPUT_DATASET:?missing PZ_DP1_INPUT_DATASET}"
 : "${PZ_MODEL:?missing PZ_MODEL}"
+: "${PZ_ESTIMATE_CONFIG:?missing PZ_ESTIMATE_CONFIG}"
 : "${PZ_OUTPUT_DIR:?missing PZ_OUTPUT_DIR}"
 : "${PZ_FILE_LIST:?missing PZ_FILE_LIST}"
 
@@ -366,6 +323,7 @@ with h5py.File(sys.argv[1], "r") as handle:
         bool(marker.get("complete", False))
         and int(marker.get("row_count", -1)) == rows
         and "row_id_fingerprint" in marker
+        and handle["data/yvals"].shape[1] == 301
         and "ancillary/i_gaap1p0Mag_sfd" in handle
         and handle["ancillary/i_gaap1p0Mag_sfd"].shape[0] == rows
     )
@@ -385,12 +343,15 @@ echo "SLURM_ARRAY_TASK_ID=$SLURM_ARRAY_TASK_ID"
 echo "input_file=$input_file"
 echo "output_file=$output_file"
 echo "model=$PZ_MODEL"
+echo "estimate_config=$PZ_ESTIMATE_CONFIG"
 
 rail-estimate \
   "$input_file" \
   "$output_file" \
   --algorithm=fzboost \
   --calibration-file="$PZ_MODEL" \
+  --bins=301 \
+  --param-file="$PZ_ESTIMATE_CONFIG" \
   --sfd-deredden \
   --column-template='{band}_gaap1p0Mag_sfd' \
   --column-template-error='{band}_gaap1p0MagErr_sfd' \
@@ -402,13 +363,14 @@ chmod +x run-one-dp1-gaap1p0-estimate.sh
 bash -n run-one-dp1-gaap1p0-estimate.sh
 ```
 
-## 7. Submit a pilot array job
+## 6. Submit a pilot array job
 
 Before using the whole cluster, run a pilot job with only 10 parquet files. This
 checks the Slurm array script, model loading, output layout, and logs without
 starting the full catalog run.
 
-Adjust `--account` if your allocation requires a Slurm account.
+The runner fixes the `cpu_photoz` partition, `hpc-photoz` account and a 40 GiB
+reservation. Recalibrate memory from the pilot before increasing concurrency.
 
 ```bash
 cd "$PZ_APOLLO_RUN"
@@ -432,7 +394,7 @@ export PZ_MAX_CONCURRENT=10
 
 sbatch \
   --array=0-$((PZ_NFILES - 1))%$PZ_MAX_CONCURRENT \
-  --export=ALL,PZ_DP1_INPUT_DATASET="$PZ_DP1_INPUT_DATASET",PZ_MODEL="$PZ_MODEL",PZ_OUTPUT_DIR="$PZ_OUTPUT_DIR",PZ_FILE_LIST="$PZ_FILE_LIST" \
+  --export=ALL,PZ_DP1_INPUT_DATASET="$PZ_DP1_INPUT_DATASET",PZ_MODEL="$PZ_MODEL",PZ_ESTIMATE_CONFIG="$PZ_ESTIMATE_CONFIG",PZ_OUTPUT_DIR="$PZ_OUTPUT_DIR",PZ_FILE_LIST="$PZ_FILE_LIST" \
   run-one-dp1-gaap1p0-estimate.sh
 ```
 
@@ -440,12 +402,6 @@ Save the job id printed by `sbatch`:
 
 ```bash
 export PZ_ARRAY_JOB_ID=<jobid>
-```
-
-If Apollo requires an account, include it in the `sbatch` command:
-
-```bash
---account=<account>
 ```
 
 Watch the job:
@@ -469,7 +425,7 @@ directory:
 export PZ_OUTPUT_DIR=$PZ_APOLLO_RUN/output
 ```
 
-## 8. Submit the production array
+## 7. Submit the production array
 
 Choose concurrency from the pilot's measured `MaxRSS`, the currently available
 Apollo capacity, and shared-filesystem load. The initial value below is
@@ -484,7 +440,7 @@ export PZ_MAX_CONCURRENT=100
 
 sbatch \
   --array=0-$((PZ_NFILES - 1))%$PZ_MAX_CONCURRENT \
-  --export=ALL,PZ_DP1_INPUT_DATASET="$PZ_DP1_INPUT_DATASET",PZ_MODEL="$PZ_MODEL",PZ_OUTPUT_DIR="$PZ_OUTPUT_DIR",PZ_FILE_LIST="$PZ_FILE_LIST" \
+  --export=ALL,PZ_DP1_INPUT_DATASET="$PZ_DP1_INPUT_DATASET",PZ_MODEL="$PZ_MODEL",PZ_ESTIMATE_CONFIG="$PZ_ESTIMATE_CONFIG",PZ_OUTPUT_DIR="$PZ_OUTPUT_DIR",PZ_FILE_LIST="$PZ_FILE_LIST" \
   run-one-dp1-gaap1p0-estimate.sh
 ```
 
@@ -499,7 +455,7 @@ projected photometry and a 301-bin PDF chunk; memory and filesystem throughput
 are also limiting factors. Zero-row tasks finish cheaply, but should not be used
 to estimate the resource requirement.
 
-## 9. Resume failed or missing outputs
+## 8. Resume failed or missing outputs
 
 After the array job finishes, build a retry list containing missing or incomplete outputs:
 
@@ -529,6 +485,7 @@ for line in Path("input-parquet-files.txt").read_text(encoding="utf-8").splitlin
                     bool(marker.get("complete", False))
                     and int(marker.get("row_count", -1)) == rows
                     and "row_id_fingerprint" in marker
+                    and handle["data/yvals"].shape[1] == 301
                     and "ancillary/i_gaap1p0Mag_sfd" in handle
                     and handle["ancillary/i_gaap1p0Mag_sfd"].shape[0] == rows
                 )
@@ -554,12 +511,12 @@ export PZ_MAX_CONCURRENT=200
 if [ "$PZ_NFILES" -gt 0 ]; then
   sbatch \
     --array=0-$((PZ_NFILES - 1))%$PZ_MAX_CONCURRENT \
-    --export=ALL,PZ_DP1_INPUT_DATASET="$PZ_DP1_INPUT_DATASET",PZ_MODEL="$PZ_MODEL",PZ_OUTPUT_DIR="$PZ_OUTPUT_DIR",PZ_FILE_LIST="$PZ_FILE_LIST" \
+    --export=ALL,PZ_DP1_INPUT_DATASET="$PZ_DP1_INPUT_DATASET",PZ_MODEL="$PZ_MODEL",PZ_ESTIMATE_CONFIG="$PZ_ESTIMATE_CONFIG",PZ_OUTPUT_DIR="$PZ_OUTPUT_DIR",PZ_FILE_LIST="$PZ_FILE_LIST" \
     run-one-dp1-gaap1p0-estimate.sh
 fi
 ```
 
-## 10. Inspect outputs
+## 9. Inspect outputs
 
 While the job is still running, summarize the active array state without
 treating `RUNNING` or `PENDING` tasks as failures:
@@ -725,14 +682,106 @@ cd "$PZ_APOLLO_RUN"
 grep -R "Traceback\\|Error:\\|CondaError\\|Killed\\|OOM\\|out of memory" log || true
 ```
 
-## 11. Expected outputs
+## 10. Run a reduced local test
+
+Download one or two DP1 Object `.parq` shards with the schema described above;
+the complete catalog is not required for this test.
+
+```bash
+source /path/to/pz-dp1-work/software/env-dp1-gaap1p0.sh
+
+export RUN_ID=dp1-stage2-fzboost-gaap1p0-local-test
+export PZ_LOCAL_STAGE2_RUN=$PZ_RUN_ROOT/$RUN_ID
+export PZ_DP1_INPUT_DATASET=$PZ_LOCAL_STAGE2_RUN/input
+export PZ_OUTPUT_DIR=$PZ_LOCAL_STAGE2_RUN/output
+export PZ_MODEL=$PZ_LOCAL_STAGE2_RUN/model/model_dp1_v4_fzboost_gaap1p0_6band.pickle
+export PZ_ESTIMATE_CONFIG=$PZ_LOCAL_STAGE2_RUN/fzboost_dp1_v4_6band_gold_estimate.yaml
+
+mkdir -p "$PZ_DP1_INPUT_DATASET" "$PZ_OUTPUT_DIR" \
+  "$PZ_LOCAL_STAGE2_RUN/model"
+cd "$PZ_LOCAL_STAGE2_RUN"
+
+export PZ_LOCAL_STAGE1_RUN=$PZ_RUN_ROOT/dp1-stage1-fzboost-gaap1p0-matched-v4
+cp "$PZ_LOCAL_STAGE1_RUN/training-model/model_dp1_v4_fzboost_gaap1p0_6band.pickle" \
+  "$PZ_LOCAL_STAGE2_RUN/model/"
+cp "$PZ_LOCAL_STAGE1_RUN/training-model/environment-freeze.txt" \
+  "$PZ_LOCAL_STAGE2_RUN/model/environment-freeze-stage1.txt"
+"$PZ_PY" -m pip freeze > "$PZ_LOCAL_STAGE2_RUN/model/environment-freeze-stage2.txt"
+diff -u "$PZ_LOCAL_STAGE2_RUN/model/environment-freeze-stage1.txt" \
+  "$PZ_LOCAL_STAGE2_RUN/model/environment-freeze-stage2.txt"
+```
+
+Place the shards below `$PZ_DP1_INPUT_DATASET`, then create the same config:
+
+```bash
+cat > "$PZ_ESTIMATE_CONFIG" <<'YAML'
+zmin: 0.0
+zmax: 3.0
+nzbins: 301
+nondetect_val: .nan
+mag_limits:
+  u_gaap1p0Mag_sfd: 26.4
+  g_gaap1p0Mag_sfd: 27.8
+  r_gaap1p0Mag_sfd: 27.1
+  i_gaap1p0Mag_sfd: 26.7
+  z_gaap1p0Mag_sfd: 25.8
+  y_gaap1p0Mag_sfd: 24.6
+include_mag_err: true
+YAML
+
+find "$PZ_DP1_INPUT_DATASET" -name '*.parq' | sort > input-parquet-files.txt
+while IFS= read -r input_file; do
+  relative_path="${input_file#$PZ_DP1_INPUT_DATASET/}"
+  output_file="$PZ_OUTPUT_DIR/${relative_path%.parq}.hdf5"
+  mkdir -p "$(dirname "$output_file")"
+  rail-estimate "$input_file" "$output_file" \
+    --algorithm=fzboost \
+    --calibration-file="$PZ_MODEL" \
+    --bins=301 \
+    --param-file="$PZ_ESTIMATE_CONFIG" \
+    --sfd-deredden \
+    --column-template='{band}_gaap1p0Mag_sfd' \
+    --column-template-error='{band}_gaap1p0MagErr_sfd' \
+    --row-id-column=objectId \
+    --output-columns=i_gaap1p0Mag_sfd
+done < input-parquet-files.txt
+```
+
+Validate every result:
+
+```bash
+"$PZ_PY" - <<'PY'
+from pathlib import Path
+import os
+import h5py
+
+root = Path(os.environ["PZ_DP1_INPUT_DATASET"])
+out = Path(os.environ["PZ_OUTPUT_DIR"])
+inputs = sorted(root.glob("**/*.parq"))
+assert inputs
+for inp in inputs:
+    path = out / inp.relative_to(root).with_suffix(".hdf5")
+    with h5py.File(path) as handle:
+        rows, bins = handle["data/yvals"].shape
+        assert bins == 301
+        assert handle["ancillary/i_gaap1p0Mag_sfd"].shape == (rows,)
+        assert bool(handle["pz_compute"].attrs["complete"])
+        assert int(handle["pz_compute"].attrs["row_count"]) == rows
+        assert "row_id_fingerprint" in handle["pz_compute"].attrs
+    print("valid:", inp.relative_to(root), rows)
+PY
+```
+
+## 11. Expected Apollo production outputs
 
 The run directory should contain:
 
 ```text
 $PZ_APOLLO_RUN/model/model_dp1_v4_fzboost_gaap1p0_6band.pickle
+$PZ_APOLLO_RUN/fzboost_dp1_v4_6band_gold_estimate.yaml
 $PZ_APOLLO_RUN/input-parquet-files.txt
 $PZ_APOLLO_RUN/run-one-dp1-gaap1p0-estimate.sh
+$PZ_APOLLO_RUN/smoke/smoke-test.hdf5
 $PZ_APOLLO_RUN/output/object_*.hdf5
 $PZ_APOLLO_RUN/log/slurm-*.out
 $PZ_APOLLO_RUN/log/slurm-*.err
@@ -753,7 +802,7 @@ matched input parquet before stage 3 associates coordinates and identifiers with
 
 The estimation stage is successful when:
 
-- the single-file smoke test writes `output/smoke-test.hdf5`;
+- the single-file smoke test writes `smoke/smoke-test.hdf5`;
 - the full Slurm array finishes without failed tasks;
 - the number of output HDF5 files matches the number of input parquet files;
 - zero-row input shards have complete `(0, 301)` PDF datasets and empty ancillary datasets;

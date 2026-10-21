@@ -27,57 +27,16 @@ output also stores an order-sensitive `objectId` fingerprint. Stage 3 recomputes
 that fingerprint from the matched parquet and rejects a different object set or
 row order before associating rows with PDFs.
 
-## 0. Requirements
+## 0. Load the common Apollo environment
 
-Run these commands on Apollo from a terminal or JupyterHub terminal.
-
-Use a `pz-compute` checkout that includes parquet input support in
-`rail_scripts/pz-build-hats`. The same checkout must include zero-row
-support in `rail-estimate`. This support is required because the DP1 stage 2
-workflow keeps the original catalog as parquet and writes the photo-z PDFs plus
-selected ancillary columns as HDF5.
-
-The Python environment must include:
-
-```text
-pyarrow
-h5py
-dask_jobqueue
-distributed
-lsdb
-hats
-hats_import
-```
-
-If the stage 2 environment does not already include the HATS packages, install
-them:
+Complete [the Apollo setup](dp1_setup_apollo.md) first. It creates a dedicated
+HATS environment without modifying the frozen Stage 1/Stage 2 environment.
 
 ```bash
-conda install -y -c conda-forge \
-    pyarrow \
-    hdf5 \
-    h5py \
-    astropy \
-    distributed \
-    dask-jobqueue
+source /scripts/$(whoami)/ondemand/env-dp1-stage3-hats.sh
+cd "$PZ_COMPUTE_DIR"
 
-pip install lsdb hats-import hats
-```
-
-Make sure `pz-build-hats` is available:
-
-```bash
-export SCRIPTS=/scripts/$(whoami)
-export PZ_COMPUTE_DIR=$SCRIPTS/pz-compute
-
-ln -sfn "$PZ_COMPUTE_DIR/rail_scripts/pz-build-hats" "$SCRIPTS/bin/pz-build-hats"
-chmod +x "$SCRIPTS/bin/pz-build-hats"
-```
-
-Check imports:
-
-```bash
-python - <<'PY'
+"$PZ_PY" - <<'PY'
 import dask_jobqueue
 import distributed
 import hats
@@ -95,7 +54,7 @@ PY
 Start from the stage 2 run directory. For the matched-v4 run:
 
 ```bash
-source /scripts/$(whoami)/ondemand/env-dp1-gaap1p0-estimate.sh
+source /scripts/$(whoami)/ondemand/env-dp1-stage3-hats.sh
 
 export PZ_STAGE2_RUN=$PZ_RUN_ROOT/dp1-stage2-fzboost-gaap1p0-matched-v4
 export PZ_DP1_INPUT_DATASET=/data/cl/lsst/dp1/primary/catalogs/object
@@ -103,7 +62,7 @@ export PZ_STAGE2_OUTPUT_DIR=$PZ_STAGE2_RUN/output
 export PZ_HATS_DIR=$PZ_STAGE2_RUN/pz-fzboost-gaap1p0-matched-v4-hats
 
 cd "$PZ_STAGE2_RUN"
-mkdir -p log/dask-stage3
+mkdir -p log benchmark/stage3
 ```
 
 ## 2. Validate Input and Output Pairing
@@ -166,6 +125,7 @@ with h5py.File(output_path, "r") as handle:
     output_rows = handle["data/yvals"].shape[0]
     bins = handle["data/yvals"].shape[1]
     retained_rows = handle["ancillary/i_gaap1p0Mag_sfd"].shape[0]
+    ancillary_columns = sorted(handle["ancillary"].keys())
 
 print("input:", input_path)
 print("output:", output_path)
@@ -174,6 +134,8 @@ print("output rows:", output_rows)
 print("pdf bins:", bins)
 assert input_rows == output_rows
 assert retained_rows == output_rows
+assert bins == 301
+assert ancillary_columns == ["i_gaap1p0Mag_sfd"]
 PY
 ```
 
@@ -257,6 +219,7 @@ xvals = pq.read_table(staging / "pz_pdf_xvals.parquet")
 print("summary part:", parts[0])
 print(table.schema)
 assert "i_gaap1p0Mag_sfd" in table.column_names
+assert xvals.num_rows == 301
 print("rows in first part:", table.num_rows)
 print("xvals rows:", xvals.num_rows)
 print(table.to_pandas().head())
@@ -295,26 +258,46 @@ Run:
 
 ```bash
 cd "$PZ_STAGE2_RUN"
-mkdir -p log/dask-stage3
+export PZ_STAGE3_RUN_TAG=production-$(date -u +%Y%m%dT%H%M%SZ)
+export PZ_STAGE3_BENCHMARK_DIR=$PZ_STAGE2_RUN/benchmark/stage3/$PZ_STAGE3_RUN_TAG
+export PZ_STAGE3_SLURM_LOG_DIR=$PZ_STAGE2_RUN/log/dask-stage3-$PZ_STAGE3_RUN_TAG
+mkdir -p "$PZ_STAGE3_BENCHMARK_DIR" "$PZ_STAGE3_SLURM_LOG_DIR"
 
-pz-build-hats \
+{
+  date --iso-8601=seconds
+  hostname
+  "$PZ_PY" --version
+  git -C "$PZ_COMPUTE_DIR" rev-parse HEAD
+} > "$PZ_STAGE3_BENCHMARK_DIR/run-context.log"
+
+set -o pipefail
+
+/usr/bin/time -v -o "$PZ_STAGE3_BENCHMARK_DIR/driver-resource-usage.log" \
+  pz-build-hats \
     --overwrite \
     --require-complete-marker \
+    --pdf-dtype=float32 \
     --fast-path-size-mb=0 \
     --use-hats-import \
     --dask-cluster=slurm \
-    --slurm-queue=cpu \
-    --slurm-account=hpc-public \
+    --slurm-queue=cpu_photoz \
+    --slurm-account=hpc-photoz \
+    --slurm-exclude='apl[26-28]' \
     --slurm-cores=8 \
     --slurm-processes=1 \
-    --slurm-memory=32GB \
+    --slurm-memory=40GiB \
     --slurm-walltime=12:00:00 \
-    --slurm-minimum-jobs=2 \
+    --slurm-minimum-jobs=16 \
     --slurm-maximum-jobs=16 \
-    --slurm-log-dir=log/dask-stage3 \
+    --slurm-log-dir="$PZ_STAGE3_SLURM_LOG_DIR" \
     "$PZ_DP1_INPUT_DATASET" \
     "$PZ_STAGE2_OUTPUT_DIR" \
-    "$PZ_HATS_DIR"
+    "$PZ_HATS_DIR" 2>&1 | tee "$PZ_STAGE3_BENCHMARK_DIR/driver.log"
+
+PZ_STAGE3_DRIVER_STATUS=${PIPESTATUS[0]}
+printf '%s\n' "$PZ_STAGE3_DRIVER_STATUS" > \
+  "$PZ_STAGE3_BENCHMARK_DIR/driver-exit-code.txt"
+test "$PZ_STAGE3_DRIVER_STATUS" -eq 0
 ```
 
 The Slurm Dask workers perform two operations:
@@ -322,8 +305,9 @@ The Slurm Dask workers perform two operations:
 - convert each parquet/HDF5 pair into summary parquet staging and PDF parquet;
 - run `hats-import` to build the final HATS collection from the summary staging.
 
-The command enables adaptive scaling, so Apollo may submit additional Dask
-worker jobs up to `--slurm-maximum-jobs`.
+Equal minimum and maximum values request 16 workers. Adjust this only after
+measuring the pilot and current cluster capacity. The run-specific directory
+keeps the driver log, explicit exit code and GNU `time` report.
 
 If only the lightweight scalar HATS summary is needed, disable the separate
 full PDF parquet product:
@@ -363,8 +347,9 @@ Inspect worker logs:
 
 ```bash
 cd "$PZ_STAGE2_RUN"
-find log/dask-stage3 -type f -print | sort | tail -50
-grep -R "Traceback\\|Error:\\|Killed\\|OOM\\|out of memory" log/dask-stage3 || true
+find "$PZ_STAGE3_SLURM_LOG_DIR" -type f -print | sort | tail -50
+grep -R "Traceback\\|Error:\\|Killed\\|OOM\\|out of memory" \
+  "$PZ_STAGE3_SLURM_LOG_DIR" || true
 ```
 
 ## 6. Inspect the HATS Summary
@@ -443,11 +428,70 @@ print("bins in first PDF vector:", len(table.column("pdf")[0].as_py()))
 print("xvals rows:", xvals.num_rows)
 print("stage 2 output rows:", output_rows)
 print("PDF rows:", pdf_rows)
+assert len(table.column("pdf")[0].as_py()) == 301
+assert xvals.num_rows == 301
 assert output_rows == pdf_rows
 PY
 ```
 
-## 8. Expected Outputs
+## 8. Build a reduced local test product
+
+Use the one- or two-shard output generated by the local section of Stage 2:
+
+```bash
+source /path/to/pz-dp1-work/software/env-dp1-stage3-hats.sh
+
+export PZ_STAGE2_RUN=$PZ_RUN_ROOT/dp1-stage2-fzboost-gaap1p0-local-test
+export PZ_DP1_INPUT_DATASET=$PZ_STAGE2_RUN/input
+export PZ_STAGE2_OUTPUT_DIR=$PZ_STAGE2_RUN/output
+export PZ_HATS_DIR=$PZ_STAGE2_RUN/pz-fzboost-gaap1p0-local-test-hats
+cd "$PZ_STAGE2_RUN"
+
+pz-build-hats \
+  --overwrite \
+  --require-complete-marker \
+  --pdf-dtype=float32 \
+  --fast-path-size-mb=0 \
+  --use-hats-import \
+  --dask-cluster=local \
+  --local-n-workers=2 \
+  --local-threads-per-worker=2 \
+  --local-memory-limit=4GB \
+  "$PZ_DP1_INPUT_DATASET" \
+  "$PZ_STAGE2_OUTPUT_DIR" \
+  "$PZ_HATS_DIR"
+```
+
+Validate both products:
+
+```bash
+"$PZ_PY" - <<'PY'
+from pathlib import Path
+import os
+import lsdb
+import pyarrow.parquet as pq
+
+hats_dir = Path(os.environ["PZ_HATS_DIR"])
+summary = lsdb.read_hats(str(hats_dir / "pz_summary"))
+assert "i_gaap1p0Mag_sfd" in summary.columns
+
+pdf_dir = Path(str(hats_dir) + ".pdf")
+parts = sorted(pdf_dir.glob("*pdf-part*.parquet"))
+assert parts
+table = pq.read_table(parts[0])
+assert "i_gaap1p0Mag_sfd" in table.column_names
+assert table.schema.field("pdf").type.list_size == 301
+xvals = pq.read_table(pdf_dir / "xvals.parquet")
+assert xvals.num_rows == 301
+assert len(summary) == sum(pq.read_metadata(path).num_rows for path in parts)
+print("local HATS rows:", len(summary))
+PY
+```
+
+Machines with less than 8 GB available for workers should use one worker or a
+smaller per-worker limit.
+
+## 9. Expected Outputs
 
 The stage 3 run is successful when:
 
@@ -457,6 +501,7 @@ The stage 3 run is successful when:
 - the HATS metadata row count matches the total stage 2 HDF5 row count;
 - `$PZ_HATS_DIR.parquet_staging` is absent after the successful final build;
 - if enabled, `$PZ_HATS_DIR.pdf/xvals.parquet` exists;
+- every PDF vector and `xvals.parquet` contain 301 redshift bins;
 - if enabled, the PDF product row count matches the stage 2 HDF5 row count;
 - stage 2 HDF5 files remain unless `--delete-hdf5-outputs` was selected;
 - Dask worker logs do not contain unresolved tracebacks or memory failures.
