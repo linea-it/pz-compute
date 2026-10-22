@@ -30,9 +30,11 @@ identity and order in the HDF5 output.
 doc/dp2_v3/scripts/smoke-estimates.sh bpz
 ```
 
-In addition to validating the model, columns, and output, this command creates
-any missing SED/filter AB files. Do not submit the full array before this
-warm-up: concurrent cache creation can cause races and unnecessary I/O.
+The command first creates a 10,000-row projected Parquet sample under
+`$PZ_DP2_ROOT/common/smoke/`; set `PZ_SMOKE_ROWS` to another positive row count
+when needed. In addition to validating the model, columns, and output, it
+creates any missing SED/filter AB files. Do not submit the full array before
+this warm-up: concurrent cache creation can cause races and unnecessary I/O.
 
 The smoke test writes:
 

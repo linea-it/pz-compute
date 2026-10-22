@@ -121,7 +121,7 @@ the alternate COSMOS templates and the BPZ-lite marginalized PDF product.
 ## Cache and output implications
 
 BPZ may generate missing filter/SED AB tables before inference. The mandatory
-single-shard smoke test is therefore scientifically useful as well as
+sampled smoke test is therefore scientifically useful as well as
 operationally safe: it verifies that the selected filters and spectra can be
 combined before a production array and warms the shared cache once.
 

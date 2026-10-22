@@ -122,7 +122,7 @@ fluxes, flux errors, and `ebv`.
 The important difference is that FlexZBoost constructs six features (`i` and
 five adjacent colors) and does not use magnitude errors. BPZ consumes all six
 magnitudes and all six magnitude errors. BPZ also needs its SED/filter data;
-the single-file smoke test must be run before a large array so its AB cache is
+the sampled smoke test must be run before a large array so its AB cache is
 created once rather than concurrently by many tasks.
 
 The retained redshift grid is 601 points over `[0, 6]` for both algorithms, so

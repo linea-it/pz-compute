@@ -15,6 +15,11 @@ test -f "$PZ_DP2_ROOT/fzboost/stage1/model/model_dp2_v3p1_fzboost_dp2_6band_gold
 doc/dp2_v3/scripts/smoke-estimates.sh fzboost
 ```
 
+The command creates a 10,000-row projected Parquet sample under
+`$PZ_DP2_ROOT/common/smoke/` before running the estimator. Set
+`PZ_SMOKE_ROWS` to a different positive row count if needed; it does not read a
+complete shard into the smoke output.
+
 ## 2. Pilot and submit production
 
 Create the full and five-largest-shard manifests using the

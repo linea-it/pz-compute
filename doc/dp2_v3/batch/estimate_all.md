@@ -44,11 +44,16 @@ not redefine those choices.
 
 ## 3. Run mandatory smoke tests
 
-Run one shard through both algorithms:
+Run a 10,000-row sample from one shard through both algorithms:
 
 ```bash
 doc/dp2_v3/scripts/smoke-estimates.sh all
 ```
+
+The script projects only the required input columns before writing
+`$PZ_DP2_ROOT/common/smoke/smoke-input.parquet`. Override the sample size when
+needed with `PZ_SMOKE_ROWS`; the smoke test intentionally does not process a
+complete production shard.
 
 For BPZ this is also a cache-warming step. RAIL/desc-bpz builds missing AB
 template files below its reference-data directory. Letting hundreds of array

@@ -21,11 +21,58 @@ source "$scripts_dir/algorithm-config.sh"
 
 PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
 PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset}
+PZ_SMOKE_ROWS=${PZ_SMOKE_ROWS:-10000}
 manifest=$PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
+
+case "$PZ_SMOKE_ROWS" in
+    ''|*[!0-9]*|0)
+        echo "PZ_SMOKE_ROWS must be a positive integer: $PZ_SMOKE_ROWS" >&2
+        exit 2
+        ;;
+esac
 
 PZ_DP2_ROOT="$PZ_DP2_ROOT" PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET" \
   "$scripts_dir/prepare-estimation-manifests.sh" full >/dev/null
 first_input=$(sed -n '1p' "$manifest")
+smoke_input_dir=$PZ_DP2_ROOT/common/smoke
+smoke_input=$smoke_input_dir/smoke-input.parquet
+mkdir -p "$smoke_input_dir"
+smoke_tmp=$(mktemp "$smoke_input_dir/smoke-input.tmp.XXXXXX")
+trap 'rm -f "$smoke_tmp"' EXIT
+
+"$PZ_PY" - "$first_input" "$smoke_tmp" "$PZ_SMOKE_ROWS" <<'PY'
+import sys
+
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from rail_scripts.photometry import projected_input_columns
+
+
+source, destination, row_limit = sys.argv[1], sys.argv[2], int(sys.argv[3])
+bands = "ugrizy"
+required = [f"{band}_gaap1p0Mag_sfd" for band in bands]
+required += [f"{band}_gaap1p0MagErr_sfd" for band in bands]
+
+parquet = pq.ParquetFile(source)
+columns = projected_input_columns(parquet.schema_arrow.names, required, "ebv")
+if "objectId" not in parquet.schema_arrow.names:
+    raise RuntimeError(f"objectId is missing from smoke-test input: {source}")
+if "objectId" not in columns:
+    columns.append("objectId")
+
+try:
+    batch = next(parquet.iter_batches(batch_size=row_limit, columns=columns))
+except StopIteration as error:
+    raise RuntimeError(f"smoke-test input has no rows: {source}") from error
+
+table = pa.Table.from_batches([batch]).slice(0, row_limit)
+pq.write_table(table, destination, compression="zstd")
+print(f"Smoke input: {table.num_rows} rows from {source}")
+PY
+
+mv "$smoke_tmp" "$smoke_input"
+trap - EXIT
 
 for algorithm in "${algorithms[@]}"; do
     dp2_algorithm_config "$algorithm"
@@ -41,15 +88,19 @@ for algorithm in "${algorithms[@]}"; do
     model=$PZ_DP2_ROOT/$algorithm/stage1/model/$PZ_MODEL_BASENAME
     run_dir=$PZ_DP2_ROOT/$algorithm/stage2
     output=$run_dir/smoke/smoke-test.hdf5
+    inprogress=$run_dir/smoke/inprogress_smoke-test.hdf5
     mkdir -p "$run_dir/smoke" "$run_dir/log" "$run_dir/output"
     if [ -e "$output" ]; then
         mv "$output" "$output.before-$(date +%s)"
+    fi
+    if [ -e "$inprogress" ]; then
+        mv "$inprogress" "$inprogress.before-$(date +%s)"
     fi
     rm -f "$run_dir/smoke/READY"
 
     echo "Smoke test: $algorithm"
     "$PZ_COMPUTE_DIR/rail_scripts/rail-estimate" \
-      "$first_input" \
+      "$smoke_input" \
       "$output" \
       --algorithm="$algorithm" \
       --calibration-file="$model" \
