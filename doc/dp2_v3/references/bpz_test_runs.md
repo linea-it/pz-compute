@@ -26,9 +26,23 @@ because Apollo schedules a whole physical core. More CPUs per task are not
 supported by this evidence; throughput should come from independent array
 tasks.
 
-The 20.53 GiB maximum supports a homogeneous 24 GiB request, leaving 3.47 GiB
-or approximately 16.9% above the observed peak. The two-hour limit is more than
-twice the 53-minute-31-second maximum on the five largest files.
+The 20.53 GiB maximum supports a homogeneous 26 GiB trial request, leaving
+5.47 GiB or approximately 26.6% above the observed pilot peak. The two-hour
+limit is more than twice the 53-minute-31-second maximum on the five largest
+files.
+
+## 2026-10-22 full-catalog 24 GiB attempt
+
+Full-catalog array job `217148` showed that the earlier 24 GiB request was not
+sufficient outside the five-file pilot. The retained error-log scan identifies
+at least 15 array tasks terminated by Slurm with an `oom_kill` event. Because a
+killed process cannot report the memory it would have required to finish, this
+evidence rejects 24 GiB but does not prove that 26 GiB is sufficient.
+
+The new 26 GiB value is therefore a retry setting derived from the requested
+25--30% pilot margin, not a completed-production measurement. The failed tasks
+must finish and the final accounting and HDF5 validation must pass before this
+request is considered validated.
 
 ## Stage 2 capacity calculation
 
@@ -40,26 +54,26 @@ The production `cpu_photoz` allocation exposes 25 Apollo nodes and excludes
 - 9 nodes `apl17-25`, each with 104 effective CPUs, `RealMemory=253132 MiB`,
   and `MemSpecLimit=4096 MiB`.
 
-With a 24 GiB request (`24576 MiB`), memory remains the limiting resource:
+With a 26 GiB request (`26624 MiB`), memory remains the limiting resource:
 
 ```text
-apl01-16: floor((124080 - 4096) / 24576) = 4 tasks/node
-apl17-25: floor((253132 - 4096) / 24576) = 10 tasks/node
+apl01-16: floor((124080 - 4096) / 26624) = 4 tasks/node
+apl17-25: floor((253132 - 4096) / 26624) = 9 tasks/node
 
-theoretical capacity = 16 * 4 + 9 * 10 = 154 tasks
-round(0.95 * 154) = 146 concurrent tasks
+theoretical capacity = 16 * 4 + 9 * 9 = 145 tasks
+round(0.95 * 145) = 138 concurrent tasks
 ```
 
-At full concurrency Slurm allocates 292 logical CPUs, about 16% of the 1,832
-available on `apl01-25`. The 146-task throttle therefore targets approximately
+At full concurrency Slurm allocates 276 logical CPUs, about 15% of the 1,832
+available on `apl01-25`. The 138-task throttle therefore targets approximately
 95% of the discrete per-node memory capacity while retaining a 5% scheduling
 margin. It does not claim that BPZ test uses 95% of aggregate CPU capacity.
 
-The v3 defaults derived from this pilot are consequently:
+The current v3 retry settings are consequently:
 
 ```text
-maximum concurrency: 146 tasks
-memory per task:      24 GiB
+maximum concurrency: 138 tasks
+memory per task:      26 GiB (provisional retry value)
 walltime per task:    02:00:00
 ```
 

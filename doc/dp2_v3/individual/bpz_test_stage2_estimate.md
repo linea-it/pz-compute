@@ -66,12 +66,14 @@ sacct -j "$jobid" --units=G \
 
 Pilot array job `217091` completed all five largest shards. Its maximum RSS was
 20.53 GiB, its longest task took 53 minutes 31 seconds, and aggregate CPU use
-was 0.993 logical CPU per running task. The resulting defaults are 146
-concurrent tasks, 24 GiB, and two hours per task. The memory request retains a
-16.9% margin over the observed maximum; the concurrency is 95% of the 154 tasks
-that fit by memory across `apl01-25`. See
+was 0.993 logical CPU per running task. A subsequent full-catalog attempt with
+24 GiB produced OOM kills, so that request is rejected. The revised trial
+defaults are 138 concurrent tasks, 26 GiB, and two hours per task. This is
+26.6% above the pilot maximum; the concurrency is 95% of the 145 tasks that fit
+by memory across `apl01-25`. See
 [`bpz_test_runs.md`](../references/bpz_test_runs.md) for the measurements and
-capacity calculation.
+capacity calculation. Treat 26 GiB as provisional until the failed tasks have
+completed successfully on retry.
 
 Override these values with `PZ_BPZ_TEST_MAX_CONCURRENT`,
 `PZ_BPZ_TEST_MEMORY`, and `PZ_BPZ_TEST_TIME` only when newer test-pilot

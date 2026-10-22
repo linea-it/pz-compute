@@ -104,10 +104,10 @@ sacct -j <jobid> --format=JobID%30,State,ExitCode,Elapsed,MaxRSS
 
 The supplied official BPZ defaults (20 concurrent tasks, 40 GiB, 24 hours) are
 conservative starting values, not measured production claims. DNF defaults to
-105 concurrent tasks, 34 GiB, and two hours based on pilot job `217097`.
-FlexZBoost defaults to 105 concurrent tasks, 34 GiB, and one hour based on
-pilot job `217085`. These two 34-GiB requests retain 19.0% and 16.9% above
-their observed peaks, respectively, and each 105-task throttle targets 95% of
+97 concurrent tasks, 36 GiB, and two hours based on pilot job `217097`.
+FlexZBoost defaults to 97 concurrent tasks, 37 GiB, and one hour based on
+pilot job `217085`. These requests retain 26.0% and 27.2% above their observed
+peaks, respectively, and each 97-task throttle targets 95% of
 the resulting discrete cluster capacity. Override resources with the
 corresponding `PZ_<ALGORITHM>_*` variables when newer evidence or a different
 partition requires it.

@@ -25,8 +25,8 @@ because Apollo schedules a whole physical core. This pilot does not support
 requesting more CPUs per task; throughput should come from independent array
 tasks.
 
-The 28.57 GiB maximum supports a homogeneous 34 GiB request, leaving 5.43 GiB
-or approximately 19.0% above the observed peak. The two-hour walltime is kept
+The 28.57 GiB maximum supports a homogeneous 36 GiB request, leaving 7.43 GiB
+or approximately 26.0% above the observed peak. The two-hour walltime is kept
 separate from that memory-margin policy and provides operational tolerance
 over the 56-minute-26-second pilot maximum.
 
@@ -40,26 +40,26 @@ The production `cpu_photoz` allocation exposes 25 Apollo nodes and excludes
 - 9 nodes `apl17-25`, each with 104 effective CPUs, `RealMemory=253132 MiB`,
   and `MemSpecLimit=4096 MiB`.
 
-With a 34 GiB request (`34816 MiB`), memory remains the limiting resource:
+With a 36 GiB request (`36864 MiB`), memory remains the limiting resource:
 
 ```text
-apl01-16: floor((124080 - 4096) / 34816) = 3 tasks/node
-apl17-25: floor((253132 - 4096) / 34816) = 7 tasks/node
+apl01-16: floor((124080 - 4096) / 36864) = 3 tasks/node
+apl17-25: floor((253132 - 4096) / 36864) = 6 tasks/node
 
-theoretical capacity = 16 * 3 + 9 * 7 = 111 tasks
-round(0.95 * 111) = 105 concurrent tasks
+theoretical capacity = 16 * 3 + 9 * 6 = 102 tasks
+round(0.95 * 102) = 97 concurrent tasks
 ```
 
-At full concurrency Slurm allocates 210 logical CPUs, about 11% of the 1,832
-available on `apl01-25`. The 105-task throttle targets approximately 95% of
+At full concurrency Slurm allocates 194 logical CPUs, about 11% of the 1,832
+available on `apl01-25`. The 97-task throttle targets approximately 95% of
 the discrete per-node memory capacity while retaining a 5% scheduling margin;
 it does not claim 95% aggregate CPU use.
 
 The v3 defaults derived from this pilot are:
 
 ```text
-maximum concurrency: 105 tasks
-memory per task:      34 GiB
+maximum concurrency: 97 tasks
+memory per task:      36 GiB
 walltime per task:    02:00:00
 ```
 

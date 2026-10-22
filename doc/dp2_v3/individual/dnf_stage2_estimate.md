@@ -44,9 +44,9 @@ sacct -j "$jobid" --units=G \
 
 Pilot array job `217097` completed all five largest shards. Its maximum RSS was
 28.57 GiB, its longest task took 56 minutes 26 seconds, and aggregate CPU use
-was 0.994 logical CPU per running task. The resulting defaults are 105
-concurrent tasks, 34 GiB, and two hours per task. The memory request retains a
-19.0% margin over the observed maximum; the throttle is 95% of the 111 tasks
+was 0.994 logical CPU per running task. The resulting defaults are 97
+concurrent tasks, 36 GiB, and two hours per task. The memory request retains a
+26.0% margin over the observed maximum; the throttle is 95% of the 102 tasks
 that fit by memory across `apl01-25`. See
 [`dnf_runs.md`](../references/dnf_runs.md) for the measurements and capacity
 calculation. Override `PZ_DNF_MAX_CONCURRENT`, `PZ_DNF_MEMORY`, and
