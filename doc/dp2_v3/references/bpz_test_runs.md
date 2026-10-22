@@ -26,23 +26,31 @@ because Apollo schedules a whole physical core. More CPUs per task are not
 supported by this evidence; throughput should come from independent array
 tasks.
 
-The 20.53 GiB maximum supports a homogeneous 26 GiB trial request, leaving
-5.47 GiB or approximately 26.6% above the observed pilot peak. The two-hour
+The 20.53 GiB maximum supports a homogeneous 32 GiB trial request, leaving
+11.47 GiB or approximately 55.9% above the observed pilot peak. The two-hour
 limit is more than twice the 53-minute-31-second maximum on the five largest
 files.
 
-## 2026-10-22 full-catalog 24 GiB attempt
+## 2026-10-22 full-catalog OOM attempts
 
 Full-catalog array job `217148` showed that the earlier 24 GiB request was not
 sufficient outside the five-file pilot. The retained error-log scan identifies
 at least 15 array tasks terminated by Slurm with an `oom_kill` event. Because a
 killed process cannot report the memory it would have required to finish, this
-evidence rejects 24 GiB but does not prove that 26 GiB is sufficient.
+evidence rejects 24 GiB.
 
-The new 26 GiB value is therefore a retry setting derived from the requested
-25--30% pilot margin, not a completed-production measurement. The failed tasks
-must finish and the final accounting and HDF5 validation must pass before this
-request is considered validated.
+Array job `217765` then retried with 26 GiB. Task `217765_21` ran for 58 minutes
+25 seconds on `apl06` before Slurm recorded `OUT_OF_MEMORY` and an `oom_kill`
+for batch job `217787`. This rejects 26 GiB as well. The accompanying QP
+warnings also reported non-finite PDF values; that is a separate output-quality
+issue and must not be treated as solved by increasing memory.
+
+The 32 GiB value is a retry setting derived from the pilot peak and the two
+failed lower-memory attempts, not a completed-production measurement. The
+pilot itself requested 40 GiB; 32 GiB has not yet been demonstrated on the
+full catalog. The failed tasks must finish
+and the final accounting, finite-PDF checks, and HDF5 validation must pass
+before this request is considered validated.
 
 ## Stage 2 capacity calculation
 
@@ -54,26 +62,26 @@ The production `cpu_photoz` allocation exposes 25 Apollo nodes and excludes
 - 9 nodes `apl17-25`, each with 104 effective CPUs, `RealMemory=253132 MiB`,
   and `MemSpecLimit=4096 MiB`.
 
-With a 26 GiB request (`26624 MiB`), memory remains the limiting resource:
+With a 32 GiB request (`32768 MiB`), memory remains the limiting resource:
 
 ```text
-apl01-16: floor((124080 - 4096) / 26624) = 4 tasks/node
-apl17-25: floor((253132 - 4096) / 26624) = 9 tasks/node
+apl01-16: floor((124080 - 4096) / 32768) = 3 tasks/node
+apl17-25: floor((253132 - 4096) / 32768) = 7 tasks/node
 
-theoretical capacity = 16 * 4 + 9 * 9 = 145 tasks
-round(0.95 * 145) = 138 concurrent tasks
+theoretical capacity = 16 * 3 + 9 * 7 = 111 tasks
+round(0.95 * 111) = 105 concurrent tasks
 ```
 
-At full concurrency Slurm allocates 276 logical CPUs, about 15% of the 1,832
-available on `apl01-25`. The 138-task throttle therefore targets approximately
+At full concurrency Slurm allocates 210 logical CPUs, about 11% of the 1,832
+available on `apl01-25`. The 105-task throttle therefore targets approximately
 95% of the discrete per-node memory capacity while retaining a 5% scheduling
 margin. It does not claim that BPZ test uses 95% of aggregate CPU capacity.
 
 The current v3 retry settings are consequently:
 
 ```text
-maximum concurrency: 138 tasks
-memory per task:      26 GiB (provisional retry value)
+maximum concurrency: 105 tasks
+memory per task:      32 GiB (provisional retry value)
 walltime per task:    02:00:00
 ```
 

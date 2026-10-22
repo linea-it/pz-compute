@@ -18,8 +18,8 @@ dp2_algorithm_config() {
             PZ_MODEL_BASENAME=model_dp2_v3p1_fzboost_dp2_6band_gold.pickle
             PZ_TRAIN_CONFIG=$PZ_DP2_DOC_DIR/config/fzboost-train.yaml
             PZ_ESTIMATE_CONFIG=$PZ_DP2_DOC_DIR/config/fzboost-estimate.yaml
-            PZ_DEFAULT_MAX_CONCURRENT=97
-            PZ_DEFAULT_MEMORY=37G
+            PZ_DEFAULT_MAX_CONCURRENT=82
+            PZ_DEFAULT_MEMORY=40G
             PZ_DEFAULT_TIME=01:00:00
             ;;
         bpz)
@@ -39,8 +39,8 @@ dp2_algorithm_config() {
             PZ_MODEL_BASENAME=model_dp2_v3p1_dnf_dp2_6band_gold.pickle
             PZ_TRAIN_CONFIG=$PZ_DP2_DOC_DIR/config/dnf-train.yaml
             PZ_ESTIMATE_CONFIG=$PZ_DP2_DOC_DIR/config/dnf-estimate.yaml
-            PZ_DEFAULT_MAX_CONCURRENT=97
-            PZ_DEFAULT_MEMORY=36G
+            PZ_DEFAULT_MAX_CONCURRENT=82
+            PZ_DEFAULT_MEMORY=40G
             PZ_DEFAULT_TIME=02:00:00
             ;;
         bpz_test)
@@ -49,8 +49,8 @@ dp2_algorithm_config() {
             PZ_MODEL_BASENAME=model_dp2_v3p1_bpz_test_cosmos31_gold.pickle
             PZ_TRAIN_CONFIG=$PZ_DP2_DOC_DIR/config/bpz-test-train.yaml
             PZ_ESTIMATE_CONFIG=$PZ_DP2_DOC_DIR/config/bpz-test-estimate.yaml
-            PZ_DEFAULT_MAX_CONCURRENT=138
-            PZ_DEFAULT_MEMORY=26G
+            PZ_DEFAULT_MAX_CONCURRENT=105
+            PZ_DEFAULT_MEMORY=32G
             PZ_DEFAULT_TIME=02:00:00
             PZ_BPZ_DATA_ROOT=${PZ_BPZ_TEST_DATA_ROOT:-$(
                 "$PZ_PY" - <<'PY'

@@ -41,11 +41,11 @@ Elapsed time ranged from 11 min 31 s to 12 min 09 s, with a median of
 21.99 GiB. Aggregate CPU efficiency was approximately 55.7% relative to the
 two allocated logical CPUs per task.
 
-The measured 29.09 GiB peak supports a homogeneous 37 GiB memory request,
-leaving 7.91 GiB or approximately 27.2% above the observed maximum. The Stage
+The measured 29.09 GiB peak supports a homogeneous 40 GiB memory request,
+leaving 10.91 GiB or approximately 37.5% above the observed maximum. The Stage
 2 FlexZBoost task limit is reduced from the 12-hour pilot request to one hour,
 which leaves nearly five times the observed maximum runtime. The capacity
-calculation below raises the canonical throttle to 97 tasks on the
+calculation below retains the canonical throttle of 82 tasks on the
 `cpu_photoz` production partition. Long-lived Stage 3 driver and Dask-worker
 limits are not changed by this Stage 2 evidence.
 
@@ -246,22 +246,22 @@ The retained technical acceptance criteria are:
 ## Stage 2 production profile carried into v3
 
 The established runner processes one Object parquet per Slurm array task. A
-37 GiB, one-hour task request and a maximum concurrency of 97 are the v3
+40 GiB, one-hour task request and a maximum concurrency of 82 are the v3
 defaults. The concurrency value is capacity-derived from schedulable memory
 after the 4 GiB per-node system reservation:
 
 ```text
-apl01-16: floor((124080 - 4096) / 37888) = 3 tasks/node
-apl17-25: floor((253132 - 4096) / 37888) = 6 tasks/node
+apl01-16: floor((124080 - 4096) / 40960) = 2 tasks/node
+apl17-25: floor((253132 - 4096) / 40960) = 6 tasks/node
 
-theoretical capacity = 16 * 3 + 9 * 6 = 102 tasks
-round(0.95 * 102) = 97 concurrent tasks
+theoretical capacity = 16 * 2 + 9 * 6 = 86 tasks
+round(0.95 * 86) = 82 concurrent tasks
 ```
 
 This is a scheduling rationale, not a substitute for a current pilot. The five
 largest shards must complete with exit code `0:0`, valid HDF5 markers, and no
 memory errors before using the production default. Future changes must use
-observed `MaxRSS` and `Elapsed` rather than treating 37 GiB, one hour, or 97 as
+observed `MaxRSS` and `Elapsed` rather than treating 40 GiB, one hour, or 82 as
 scientific constants. The current values incorporate the secondary-catalog
 pilot recorded above.
 
