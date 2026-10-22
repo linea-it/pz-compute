@@ -53,9 +53,12 @@ correction would double-correct the training photometry.
 
 At estimation time, the DP2 Object table supplies GAaP fluxes and flux errors
 in nJy, plus `ebv`. The workflow constructs AB magnitudes with
-`31.4 - 2.5 log10(flux_nJy)` and applies the DP2 SFD coefficients
-`[4.81, 3.64, 2.70, 2.06, 1.58, 1.31]` in `ugrizy` order. The resulting Stage
-2 names end in `_sfd`. See the Rubin DP2
+`31.4 - 2.5 log10(flux_nJy)` and applies the LSSTCam coefficients pinned by
+the DP2 catalog definition: `[4.78, 3.65, 2.70, 2.06, 1.58, 1.31]` in
+`ugrizy` order. They are versioned in
+[`dp2-v3-sfd-lsstcam.yaml`](../config/dp2-v3-sfd-lsstcam.yaml), rather than
+changing the legacy global defaults used by older workflows. The resulting
+Stage 2 names end in `_sfd`. See the Rubin DP2
 [photometry documentation](https://dp2.lsst.io/v/SP-3082/tutorials/notebook/201/notebook-201-01.html#photometry)
 and [dust-correction tutorial](https://dp2.lsst.io/v/SP-3082/tutorials/notebook/311/notebook-311-1.html#correct-the-effects-of-dust).
 

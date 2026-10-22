@@ -3,6 +3,7 @@ import pandas as pd
 
 from rail_scripts.photometry import (
     materialize_sfd_columns,
+    normalize_sfd_coefficients,
     parse_column_list,
     projected_input_columns,
     table_row_count,
@@ -41,6 +42,39 @@ def test_materialize_sfd_columns_from_njy_fluxes():
     )
     assert np.isnan(table.loc[1, "i_psfMag_sfd"])
     assert np.isnan(table.loc[1, "i_psfMagErr_sfd"])
+
+
+def test_materialize_sfd_columns_with_explicit_dp2_v3_coefficients():
+    table = pd.DataFrame(
+        {
+            "u_psfMag": [22.0],
+            "g_psfMag": [21.0],
+            "ebv": [0.1],
+        }
+    )
+    coefficients = {
+        "u": 4.78,
+        "g": 3.65,
+        "r": 2.70,
+        "i": 2.06,
+        "z": 1.58,
+        "y": 1.31,
+    }
+
+    materialize_sfd_columns(
+        table,
+        ["u_psfMag_sfd", "g_psfMag_sfd"],
+        sfd_a_ebv=coefficients,
+    )
+
+    np.testing.assert_allclose(table["u_psfMag_sfd"], [21.522])
+    np.testing.assert_allclose(table["g_psfMag_sfd"], [20.635])
+    assert normalize_sfd_coefficients(coefficients) == coefficients
+
+
+def test_sfd_coefficients_require_exactly_six_lsst_bands():
+    with np.testing.assert_raises(ValueError):
+        normalize_sfd_coefficients({"u": 4.78})
 
 
 def test_projection_prefers_magnitudes_over_fluxes():

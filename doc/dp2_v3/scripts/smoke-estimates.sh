@@ -2,12 +2,12 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 fzboost|bpz|all" >&2
+    echo "Usage: $0 fzboost|bpz|bpz_test|all" >&2
 }
 
 selection=${1:-}
 case "$selection" in
-    fzboost|bpz) algorithms=("$selection") ;;
+    fzboost|bpz|bpz_test) algorithms=("$selection") ;;
     all) algorithms=(fzboost bpz) ;;
     *) usage; exit 2 ;;
 esac
@@ -81,6 +81,18 @@ for algorithm in "${algorithms[@]}"; do
         echo "Missing model: $model" >&2
         exit 1
     }
+    if [ "$PZ_RAIL_ALGORITHM" = bpz ]; then
+        mkdir -p "$PZ_BPZ_DATA_ROOT/AB" || {
+            echo "BPZ AB cache is not writable: $PZ_BPZ_DATA_ROOT/AB" >&2
+            exit 1
+        }
+        test -w "$PZ_BPZ_DATA_ROOT/AB" || {
+            echo "BPZ AB cache is not writable: $PZ_BPZ_DATA_ROOT/AB" >&2
+            exit 1
+        }
+        "$scripts_dir/validate-bpz-reference-data.py" \
+          "$PZ_BPZ_DATA_ROOT" "$PZ_BPZ_SPECTRA_FILE" "$PZ_BPZ_EXPECTED_SEDS"
+    fi
 done
 
 for algorithm in "${algorithms[@]}"; do
@@ -99,22 +111,35 @@ for algorithm in "${algorithms[@]}"; do
     rm -f "$run_dir/smoke/READY"
 
     echo "Smoke test: $algorithm"
+    bpz_args=()
+    if [ "$PZ_RAIL_ALGORITHM" = bpz ]; then
+        bpz_args+=(--bpz-ref-data-path="$PZ_BPZ_DATA_ROOT")
+        echo "BPZ reference data: $PZ_BPZ_DATA_ROOT"
+    fi
+
     "$PZ_COMPUTE_DIR/rail_scripts/rail-estimate" \
       "$smoke_input" \
       "$output" \
-      --algorithm="$algorithm" \
+      --algorithm="$PZ_RAIL_ALGORITHM" \
       --calibration-file="$model" \
       --bins=601 \
       --param-file="$PZ_ESTIMATE_CONFIG" \
       --sfd-deredden \
+      --sfd-coefficients-file="$PZ_SFD_CONFIG" \
       --column-template='{band}_gaap1p0Mag_sfd' \
       --column-template-error='{band}_gaap1p0MagErr_sfd' \
       --row-id-column=objectId \
-      --output-columns=i_gaap1p0Mag_sfd
+      --output-columns=i_gaap1p0Mag_sfd \
+      "${bpz_args[@]}"
 
-    "$PZ_PY" - "$output" <<'PY'
+    "$PZ_PY" - "$output" "$PZ_SFD_CONFIG" <<'PY'
 import h5py
+import numpy as np
 import sys
+import yaml
+
+with open(sys.argv[2], encoding="utf-8") as stream:
+    expected_sfd = yaml.safe_load(stream)["sfd_a_ebv"]
 
 with h5py.File(sys.argv[1], "r") as handle:
     rows, bins = handle["data/yvals"].shape
@@ -124,7 +149,23 @@ with h5py.File(sys.argv[1], "r") as handle:
     assert bool(marker["complete"])
     assert int(marker["row_count"]) == rows
     assert marker["row_id_column"] == "objectId"
+    assert marker["sfd_bands"] == "ugrizy"
+    np.testing.assert_allclose(
+        marker["sfd_a_ebv"],
+        [expected_sfd[band] for band in "ugrizy"],
+        rtol=0,
+        atol=0,
+    )
 print("valid:", sys.argv[1], rows)
 PY
-    sha256sum "$model" "$PZ_ESTIMATE_CONFIG" > "$run_dir/smoke/READY"
+    ready_files=("$model" "$PZ_ESTIMATE_CONFIG" "$PZ_SFD_CONFIG")
+    if [ "$PZ_RAIL_ALGORITHM" = bpz ]; then
+        mapfile -t bpz_reference_files < <(
+            "$scripts_dir/validate-bpz-reference-data.py" \
+              "$PZ_BPZ_DATA_ROOT" "$PZ_BPZ_SPECTRA_FILE" \
+              "$PZ_BPZ_EXPECTED_SEDS" --list-files
+        )
+        ready_files+=("${bpz_reference_files[@]}")
+    fi
+    sha256sum "${ready_files[@]}" > "$run_dir/smoke/READY"
 done

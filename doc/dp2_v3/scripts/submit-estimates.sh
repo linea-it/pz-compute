@@ -2,12 +2,12 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 fzboost|bpz|all" >&2
+    echo "Usage: $0 fzboost|bpz|bpz_test|all" >&2
 }
 
 selection=${1:-}
 case "$selection" in
-    fzboost|bpz) algorithms=("$selection") ;;
+    fzboost|bpz|bpz_test) algorithms=("$selection") ;;
     all) algorithms=(fzboost bpz) ;;
     *) usage; exit 2 ;;
 esac
@@ -41,8 +41,21 @@ for algorithm in "${algorithms[@]}"; do
     model=$PZ_DP2_ROOT/$algorithm/stage1/model/$PZ_MODEL_BASENAME
     run_dir=$PZ_DP2_ROOT/$algorithm/stage2
     test -f "$model" || { echo "Missing model: $model" >&2; exit 1; }
+    if [ "$PZ_RAIL_ALGORITHM" = bpz ]; then
+        "$scripts_dir/validate-bpz-reference-data.py" \
+          "$PZ_BPZ_DATA_ROOT" "$PZ_BPZ_SPECTRA_FILE" "$PZ_BPZ_EXPECTED_SEDS"
+        test -w "$PZ_BPZ_DATA_ROOT/AB" || {
+            echo "BPZ AB cache is not writable: $PZ_BPZ_DATA_ROOT/AB" >&2
+            exit 1
+        }
+    fi
     test -f "$run_dir/smoke/READY" || {
         echo "Run $scripts_dir/smoke-estimates.sh $algorithm first" >&2
+        exit 1
+    }
+    sfd_checksum=$(sha256sum "$PZ_SFD_CONFIG")
+    grep -Fqx "$sfd_checksum" "$run_dir/smoke/READY" || {
+        echo "SFD configuration is absent or changed; rerun the $algorithm smoke test" >&2
         exit 1
     }
     sha256sum --check --status "$run_dir/smoke/READY" || {
@@ -73,7 +86,7 @@ for algorithm in "${algorithms[@]}"; do
       --mem="$memory" \
       --time="$walltime" \
       --array="0-$((nfiles - 1))%$concurrency" \
-      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_MODEL="$model",PZ_ESTIMATE_CONFIG="$PZ_ESTIMATE_CONFIG",PZ_OUTPUT_DIR="$output_dir",PZ_FILE_LIST="$manifest" \
+      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_RAIL_ALGORITHM="$PZ_RAIL_ALGORITHM",PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_MODEL="$model",PZ_ESTIMATE_CONFIG="$PZ_ESTIMATE_CONFIG",PZ_SFD_CONFIG="$PZ_SFD_CONFIG",PZ_OUTPUT_DIR="$output_dir",PZ_FILE_LIST="$manifest",PZ_BPZ_DATA_ROOT="${PZ_BPZ_DATA_ROOT:-}" \
       "$scripts_dir/run-one-estimate.sbatch")
     job_id=${job_id%%;*}
     printf '%s\t%s\t%s\n' "$(date --iso-8601=seconds)" "$algorithm" "$job_id" >> "$job_log"

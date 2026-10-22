@@ -2,12 +2,12 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 fzboost|bpz|all" >&2
+    echo "Usage: $0 fzboost|bpz|bpz_test|all" >&2
 }
 
 selection=${1:-}
 case "$selection" in
-    fzboost|bpz) algorithms=("$selection") ;;
+    fzboost|bpz|bpz_test) algorithms=("$selection") ;;
     all) algorithms=(fzboost bpz) ;;
     *) usage; exit 2 ;;
 esac
@@ -37,7 +37,11 @@ for algorithm in "${algorithms[@]}"; do
     }
 
     stage3_run=$PZ_DP2_ROOT/$algorithm/stage3
-    run_tag=production-$(date -u +%Y%m%dT%H%M%SZ)
+    if [ "$algorithm" = bpz_test ]; then
+        run_tag=test-$(date -u +%Y%m%dT%H%M%SZ)
+    else
+        run_tag=production-$(date -u +%Y%m%dT%H%M%SZ)
+    fi
     driver_log_dir=$stage3_run/log/driver-$run_tag
     job_log=$stage3_run/submitted-job-ids.tsv
     mkdir -p "$driver_log_dir" "$stage3_run/output" "$stage3_run/benchmark"

@@ -11,6 +11,13 @@ from rail.core.model import Model
 CREATION_CLASSES = {
     "fzboost": "rail.estimation.algos.flexzboost.FlexZBoostInformer",
     "bpz": "rail.estimation.algos.bpz_lite.BPZliteInformer",
+    "bpz_test": "rail.estimation.algos.bpz_lite.BPZliteInformer",
+}
+
+FLAVORS = {
+    "fzboost": "dp2_6band",
+    "bpz": "dp2_6band",
+    "bpz_test": "cosmos31_test",
 }
 
 
@@ -32,7 +39,7 @@ def main() -> None:
         catalog_tag="lsst_gaap_1p0",
         provenance={
             "project": "dp2_v3p1",
-            "flavor": "dp2_6band",
+            "flavor": FLAVORS[args.algorithm],
             "selection": "gold",
         },
     )

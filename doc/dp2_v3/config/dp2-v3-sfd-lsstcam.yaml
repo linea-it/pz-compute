@@ -1,0 +1,9 @@
+# LSSTCam A_band / E(B-V) coefficients pinned by the DP2 catalog definition.
+# Source: LSSTDESC/rail_project_config@c1014cf, dp2/dp2_catalogs.yaml.
+sfd_a_ebv:
+  u: 4.78
+  g: 3.65
+  r: 2.70
+  i: 2.06
+  z: 1.58
+  y: 1.31

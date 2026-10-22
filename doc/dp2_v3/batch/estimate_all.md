@@ -44,6 +44,10 @@ not redefine those choices.
 
 ## 3. Run mandatory smoke tests
 
+The batch route is production-oriented and therefore expects the official BPZ
+136-SED tree described in
+[`bpz_reference_data.md`](../references/bpz_reference_data.md).
+
 Run a 10,000-row sample from one shard through both algorithms:
 
 ```bash
@@ -59,8 +63,10 @@ For BPZ this is also a cache-warming step. RAIL/desc-bpz builds missing AB
 template files below its reference-data directory. Letting hundreds of array
 tasks attempt that creation simultaneously risks races and unnecessary I/O.
 The submitter refuses an algorithm whose smoke test has not written its
-`smoke/READY` marker. That marker records the model and YAML checksums; changing
-either artifact forces a new smoke test.
+`smoke/READY` marker. That marker records the model, estimator YAML, and
+versioned DP2 v3 LSSTCam SFD-configuration checksums; changing any of them
+forces a new smoke test. For BPZ it also records the SED-list, SED-file, and
+filter checksums.
 
 Inspect each smoke output before continuing:
 

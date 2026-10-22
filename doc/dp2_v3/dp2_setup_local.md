@@ -158,6 +158,14 @@ chmod +x "$PZ_INSTALL_ROOT/env-dp2-stage3-hats.sh"
 Neither loader calls `conda activate`; both select their environment by placing
 its `bin` directory first in `PATH` and by defining `PZ_PY` explicitly.
 
+For an official BPZ run, install the reviewed reference-data tree at
+`$PZ_INSTALL_ROOT/bpz_dp2_v3p1_data` or export
+`PZ_BPZ_OFFICIAL_DATA_ROOT` to another absolute location. Its required layout
+is documented in
+[`references/bpz_reference_data.md`](references/bpz_reference_data.md). The
+standalone public-COSMOS31 engineering workflow is documented separately in
+[`references/bpz_test_science.md`](references/bpz_test_science.md).
+
 ## 5. Validate both environments
 
 Replace `/path/to/pz-dp2-work` below with the same root selected in Section 1.

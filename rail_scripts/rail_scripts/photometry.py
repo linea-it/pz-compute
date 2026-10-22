@@ -12,6 +12,8 @@ from math import log
 import numpy as np
 
 
+# Legacy default retained for callers outside the versioned DP2 v3 workflow.
+# DP2 v3 passes its pinned LSSTCam coefficients explicitly.
 SFD_A_EBV = {
     "u": 4.81,
     "g": 3.64,
@@ -20,6 +22,7 @@ SFD_A_EBV = {
     "z": 1.58,
     "y": 1.31,
 }
+SFD_BANDS = tuple("ugrizy")
 SFD_SUFFIX = "_sfd"
 AB_NJY_ZEROPOINT = 31.4
 MAG_ERROR_FACTOR = 2.5 / log(10.0)
@@ -133,7 +136,35 @@ def _magnitude_error_from_flux(flux: np.ndarray, flux_error: np.ndarray) -> np.n
     return result
 
 
-def materialize_sfd_columns(table, columns: Sequence[str], ebv_column: str = "ebv") -> None:
+def normalize_sfd_coefficients(
+    coefficients: Mapping[str, float] | None,
+) -> dict[str, float]:
+    """Validate and normalize an SFD coefficient mapping for all LSST bands."""
+    source = SFD_A_EBV if coefficients is None else coefficients
+    if not isinstance(source, Mapping):
+        raise ValueError("SFD coefficients must be a band-to-value mapping")
+    missing = [band for band in SFD_BANDS if band not in source]
+    extra = sorted(set(source) - set(SFD_BANDS))
+    if missing or extra:
+        raise ValueError(
+            f"SFD coefficients require exactly {''.join(SFD_BANDS)}; "
+            f"missing={missing}, extra={extra}"
+        )
+    try:
+        normalized = {band: float(source[band]) for band in SFD_BANDS}
+    except (TypeError, ValueError) as error:
+        raise ValueError("SFD coefficients must be numeric") from error
+    if not all(np.isfinite(value) and value >= 0 for value in normalized.values()):
+        raise ValueError("SFD coefficients must be finite and non-negative")
+    return normalized
+
+
+def materialize_sfd_columns(
+    table,
+    columns: Sequence[str],
+    ebv_column: str = "ebv",
+    sfd_a_ebv: Mapping[str, float] | None = None,
+) -> None:
     """Materialize requested SFD columns in place, computing each at most once.
 
     Magnitudes are corrected as ``mag_sfd = mag - R_band * E(B-V)``. Magnitude
@@ -141,6 +172,7 @@ def materialize_sfd_columns(table, columns: Sequence[str], ebv_column: str = "eb
     foreground correction does not change the measurement uncertainty. If raw
     magnitude columns are absent, LSST fluxes in nJy are converted first.
     """
+    coefficients = normalize_sfd_coefficients(sfd_a_ebv)
     for output_name in dict.fromkeys(columns):
         if not output_name.endswith(SFD_SUFFIX):
             continue
@@ -182,7 +214,7 @@ def materialize_sfd_columns(table, columns: Sequence[str], ebv_column: str = "eb
                         f"{raw_name} or {flux_name}"
                     )
                 magnitude = _magnitude_from_flux(_column(table, flux_name))
-            values = magnitude - SFD_A_EBV[band] * np.asarray(
+            values = magnitude - coefficients[band] * np.asarray(
                 _column(table, ebv_column), dtype=np.float64
             )
         else:

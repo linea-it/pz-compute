@@ -9,6 +9,7 @@ set -euo pipefail
 source /scripts/$(whoami)/ondemand/env-dp2-gaap1p0.sh
 
 : "${PZ_ALGORITHM:?missing PZ_ALGORITHM}"
+: "${PZ_RAIL_ALGORITHM:?missing PZ_RAIL_ALGORITHM}"
 : "${PZ_TRAINING_DATA:?missing PZ_TRAINING_DATA}"
 : "${PZ_TRAIN_CONFIG:?missing PZ_TRAIN_CONFIG}"
 : "${PZ_RAW_MODEL:?missing PZ_RAW_MODEL}"
@@ -23,7 +24,7 @@ export NUMEXPR_NUM_THREADS=1
 "$PZ_COMPUTE_DIR/rail_scripts/rail-train" \
   "$PZ_TRAINING_DATA" \
   "$PZ_RAW_MODEL" \
-  --algorithm="$PZ_ALGORITHM" \
+  --algorithm="$PZ_RAIL_ALGORITHM" \
   --bins=601 \
   --column-template='{band}_gaap1p0Mag' \
   --column-template-error='{band}_gaap1p0MagErr' \

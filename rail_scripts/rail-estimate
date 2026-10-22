@@ -27,11 +27,15 @@ Options:
                                magnitudes (or LSST fluxes in nJy) and input ebv.
     --ebv-column=<name>        Input E(B-V) column used by --sfd-deredden
                                [default: ebv].
+    --sfd-coefficients-file=<file>  YAML file containing an sfd_a_ebv mapping
+                                    for ugrizy [default: ].
     --output-columns=<columns> Comma-separated input or generated columns to
                                retain with the PDFs and downstream HATS product
                                [default: ].
     --row-id-column=<name>     Input identifier column used to fingerprint row
                                identity and order [default: ].
+    --bpz-ref-data-path=<path> BPZ reference-data root containing SED, FILTER,
+                               and writable AB directories. Valid only for BPZ.
 
 
 Available algorithms: bpz, fzboost, tpz, gpz, lephare"""
@@ -63,6 +67,7 @@ from rail_scripts.integrity import (
 from rail_scripts.photometry import (
     copy_columns,
     materialize_sfd_columns,
+    normalize_sfd_coefficients,
     parse_column_list,
     projected_input_columns,
     table_column_names,
@@ -88,6 +93,7 @@ Configuration = namedtuple(
         "column_template_error",
         "sfd_deredden",
         "ebv_column",
+        "sfd_coefficients",
         "output_columns",
         "row_id_column",
         "extra_args",
@@ -116,6 +122,8 @@ def parse_cmdline():
         error("Invalid --output-columns: %s" % err)
         abort()
     param_file = args['--param-file']
+    bpz_ref_data_path = args["--bpz-ref-data-path"]
+    sfd_coefficients_file = args["--sfd-coefficients-file"]
 
     try:
         num_bins = int(args["--bins"])
@@ -132,6 +140,31 @@ def parse_cmdline():
             error('Error loading parameter file: %s' % e)
             abort()
 
+    if bpz_ref_data_path:
+        if estimator != "bpz":
+            error("--bpz-ref-data-path is valid only with --algorithm=bpz")
+            abort()
+        extra_args["bpz_ref_data_path"] = bpz_ref_data_path
+
+    sfd_coefficients = normalize_sfd_coefficients(None)
+    if sfd_coefficients_file:
+        if not args["--sfd-deredden"]:
+            error("--sfd-coefficients-file requires --sfd-deredden")
+            abort()
+        try:
+            with open(sfd_coefficients_file, encoding="utf-8") as stream:
+                coefficient_document = safe_load(stream)
+            if not isinstance(coefficient_document, dict):
+                raise ValueError("expected a YAML mapping")
+            if "sfd_a_ebv" not in coefficient_document:
+                raise ValueError("missing sfd_a_ebv mapping")
+            sfd_coefficients = normalize_sfd_coefficients(
+                coefficient_document["sfd_a_ebv"]
+            )
+        except (OSError, YAMLError, ValueError) as err:
+            error(f"Invalid --sfd-coefficients-file: {err}")
+            abort()
+
     info("Estimator algorithm: %s" % estimator)
     info("Estimator calibration file: %s" % calibration_file)
     info("Bins: %d" % num_bins)
@@ -140,9 +173,17 @@ def parse_cmdline():
     info('Column template for error data: "%s"' % column_template_error)
     info("SFD dereddening: %s" % args["--sfd-deredden"])
     info('E(B-V) column: "%s"' % args["--ebv-column"])
+    if args["--sfd-deredden"]:
+        info(
+            "SFD A/E(B-V) coefficients (ugrizy): %s"
+            % ", ".join(str(sfd_coefficients[band]) for band in "ugrizy")
+        )
     info("Output columns: %s" % (", ".join(output_columns) or "(none)"))
     info('Row identifier column: "%s"' % args["--row-id-column"])
     info('Extra parameter file: "%s"' % param_file)
+    if estimator == "bpz":
+        reference_path = bpz_ref_data_path or "package default"
+        info('BPZ reference data path: "%s"' % reference_path)
 
     return Configuration(
         input=args["<input>"],
@@ -155,6 +196,7 @@ def parse_cmdline():
         column_template_error=column_template_error,
         sfd_deredden=args["--sfd-deredden"],
         ebv_column=args["--ebv-column"],
+        sfd_coefficients=sfd_coefficients,
         output_columns=output_columns,
         row_id_column=args["--row-id-column"],
         extra_args=extra_args,
@@ -265,7 +307,12 @@ def prepare_input(cfg, input_handle):
     estimator_columns = required_estimator_columns(cfg)
     generated_columns = estimator_columns + list(cfg.output_columns)
     if cfg.sfd_deredden:
-        materialize_sfd_columns(input_handle.data, generated_columns, cfg.ebv_column)
+        materialize_sfd_columns(
+            input_handle.data,
+            generated_columns,
+            cfg.ebv_column,
+            cfg.sfd_coefficients,
+        )
 
     fingerprint = None
     if cfg.row_id_column:
@@ -295,7 +342,9 @@ def write_empty_estimate_output(output_file, estimator):
         ancil.create_dataset("distribution_type", shape=(0,), dtype=np.int64)
 
 
-def finalize_output(output_file, columns, row_id_column, fingerprint):
+def finalize_output(
+    output_file, columns, row_id_column, fingerprint, sfd_coefficients=None
+):
     with h5py.File(output_file, "a") as handle:
         integrity = handle.require_group(INTEGRITY_GROUP)
         integrity.attrs["complete"] = False
@@ -323,6 +372,14 @@ def finalize_output(output_file, columns, row_id_column, fingerprint):
             group.create_dataset(name, data=values)
 
         integrity.attrs["row_count"] = expected_rows
+        for name in ("sfd_bands", "sfd_a_ebv"):
+            if name in integrity.attrs:
+                del integrity.attrs[name]
+        if sfd_coefficients is not None:
+            integrity.attrs["sfd_bands"] = "ugrizy"
+            integrity.attrs["sfd_a_ebv"] = np.asarray(
+                [sfd_coefficients[band] for band in "ugrizy"], dtype=np.float64
+            )
         for name in (
             "row_id_column",
             "row_id_fingerprint_algorithm",
@@ -414,7 +471,11 @@ def estimate(cfg, ctx):
             ctx.estimator.estimate(ctx.input)
 
     finalize_output(
-        cfg.output, ctx.output_columns, cfg.row_id_column, ctx.row_id_fingerprint
+        cfg.output,
+        ctx.output_columns,
+        cfg.row_id_column,
+        ctx.row_id_fingerprint,
+        cfg.sfd_coefficients if cfg.sfd_deredden else None,
     )
 
     info("Estimate done.")

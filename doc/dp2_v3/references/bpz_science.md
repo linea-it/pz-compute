@@ -1,4 +1,4 @@
-# BPZ scientific choices for DP2
+# Official BPZ scientific choices for DP2
 
 This note documents every scientific decision encoded in
 [`bpz-train.yaml`](../config/bpz-train.yaml) and
@@ -43,7 +43,10 @@ flux errors, and `ebv`. The transformation and provenance are documented in
 the Rubin DP2 [photometry documentation](https://dp2.lsst.io/v/SP-3082/tutorials/notebook/201/notebook-201-01.html#photometry),
 the [dust-correction tutorial](https://dp2.lsst.io/v/SP-3082/tutorials/notebook/311/notebook-311-1.html#correct-the-effects-of-dust),
 and the RTN-124 preprocessing description. The same transform applies before
-either estimator is called.
+either estimator is called. Its LSSTCam `A_band/E(B-V)` values are explicitly
+versioned in
+[`dp2-v3-sfd-lsstcam.yaml`](../config/dp2-v3-sfd-lsstcam.yaml):
+`[4.78, 3.65, 2.70, 2.06, 1.58, 1.31]` in `ugrizy` order.
 
 The six magnitude limits are `26.5, 27.8, 27.1, 26.7, 25.8, 24.6` in `ugrizy`
 order. `nondetect_val: .nan` matches missing training magnitudes and magnitudes
@@ -117,6 +120,10 @@ and provenance `{project: dp2_v3p1, flavor: dp2_6band, selection: gold}`.
 The choice of COSMOS SEDs is distinct from the default BPZ CWWSB template set.
 The [RAIL BPZ documentation](https://github.com/LSSTDESC/rail_bpz) describes
 the alternate COSMOS templates and the BPZ-lite marginalized PDF product.
+
+The production contract requires the exact 136-entry
+`cosmossedswdust136.list` and its SED files; their deployment and checksums are
+described in [`bpz_reference_data.md`](bpz_reference_data.md).
 
 ## Cache and output implications
 

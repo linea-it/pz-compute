@@ -82,7 +82,34 @@ Run the installation only when intentionally creating or updating the shared
 scientific environment. Once Stage 1 begins, keep it unchanged until Stage 2
 is complete.
 
-## 4. Create the Stage 3 HATS environment
+## 4. Install the official BPZ reference data
+
+The public packages do not contain the official DP2 set of 136 dust-expanded
+SEDs. Install the reviewed LineA copy as a separate, versioned data tree:
+
+```text
+$PZ_INSTALL_ROOT/bpz_dp2_v3p1_data/
+├── SED/cosmossedswdust136.list
+├── SED/<136 referenced .sed files>
+├── FILTER/lsstcam_{u,g,r,i,z,y}.res
+└── AB/
+```
+
+If LineA deploys it at another absolute location, add this to
+`env-dp2-gaap1p0.sh`:
+
+```bash
+export PZ_BPZ_OFFICIAL_DATA_ROOT=/absolute/path/to/bpz_dp2_v3p1_data
+```
+
+`AB/` must be writable by the smoke-test process and Slurm tasks. Do not
+substitute the 31-template public COSMOS list for production. Official data
+validation is defined in
+[`references/bpz_reference_data.md`](references/bpz_reference_data.md); the
+fully separate engineering workflow is defined in
+[`references/bpz_test_science.md`](references/bpz_test_science.md).
+
+## 5. Create the Stage 3 HATS environment
 
 ```bash
 if [ ! -d "$PZ_STAGE3_CONDA_ENV" ]; then
@@ -107,7 +134,7 @@ fi
     lsdb hats-import hats
 ```
 
-## 5. Create command links and environment loaders
+## 6. Create command links and environment loaders
 
 ```bash
 for command in rail-train rail-estimate pz-build-hats; do
@@ -165,7 +192,7 @@ chmod +x "$PZ_INSTALL_ROOT/env-dp2-stage3-hats.sh"
 The loaders deliberately avoid `conda activate`. This makes them safe to use
 inside non-interactive Slurm jobs.
 
-## 6. Validate and record both environments
+## 7. Validate and record both environments
 
 Confirm that the Apollo Slurm commands and the lightweight production profiler
 are available:

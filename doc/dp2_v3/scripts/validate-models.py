@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate trusted DP2 model artifacts for one algorithm or the full registry."""
+"""Validate official DP2 models or the standalone BPZ test candidate."""
 
 import argparse
 import os
@@ -10,8 +10,9 @@ import numpy as np
 from rail.core.model import Model
 
 
-ALGORITHMS = ("fzboost", "bpz")
-PROVENANCE = {
+OFFICIAL_ALGORITHMS = ("fzboost", "bpz")
+ALGORITHMS = (*OFFICIAL_ALGORITHMS, "bpz_test")
+OFFICIAL_PROVENANCE = {
     "project": "dp2_v3p1",
     "flavor": "dp2_6band",
     "selection": "gold",
@@ -28,17 +29,28 @@ def load_model(path: Path) -> Model:
     return model
 
 
-def validate_wrapper(path: Path, expected_class: str) -> Model:
+TEST_PROVENANCE = {
+    "project": "dp2_v3p1",
+    "flavor": "cosmos31_test",
+    "selection": "gold",
+}
+
+
+def validate_wrapper(
+    path: Path, expected_class: str, expected_provenance: dict[str, str]
+) -> Model:
     model = load_model(path)
     assert model.creation_class_name == expected_class, path
     assert model.catalog_tag == "lsst_gaap_1p0", path
-    assert model.provenance == PROVENANCE, path
+    assert model.provenance == expected_provenance, path
     return model
 
 
 def validate_fzboost(path: Path) -> None:
     wrapped = validate_wrapper(
-        path, "rail.estimation.algos.flexzboost.FlexZBoostInformer"
+        path,
+        "rail.estimation.algos.flexzboost.FlexZBoostInformer",
+        OFFICIAL_PROVENANCE,
     )
     model = wrapped.data
     assert model.max_basis == 50
@@ -65,8 +77,12 @@ def validate_fzboost(path: Path) -> None:
             assert params[key] == value, (path, key)
 
 
-def validate_bpz(path: Path) -> None:
-    wrapped = validate_wrapper(path, "rail.estimation.algos.bpz_lite.BPZliteInformer")
+def validate_bpz_prior(
+    path: Path, nt_array: list[int], provenance: dict[str, str]
+) -> None:
+    wrapped = validate_wrapper(
+        path, "rail.estimation.algos.bpz_lite.BPZliteInformer", provenance
+    )
     prior = wrapped.data["priormodel"]
     expected = {
         "fo_arr": [0.35, 0.5],
@@ -78,19 +94,33 @@ def validate_bpz(path: Path) -> None:
     for name, values in expected.items():
         np.testing.assert_allclose(prior[name], values, rtol=0, atol=0)
     assert prior["mo"] == 20.0
-    assert prior["nt_array"] == [7, 57, 72]
+    assert prior["nt_array"] == nt_array
     np.testing.assert_array_equal(wrapped.data["zp_offsets"]["offsets"], np.zeros(6))
 
 
-def paths_for(root: Path, algorithm: str) -> tuple[Path, Path]:
-    basename = f"model_dp2_v3p1_{algorithm}_dp2_6band_gold.pickle"
+def validate_bpz(path: Path) -> None:
+    validate_bpz_prior(path, [7, 57, 72], OFFICIAL_PROVENANCE)
+
+
+def validate_bpz_test(path: Path) -> None:
+    validate_bpz_prior(path, [7, 12, 12], TEST_PROVENANCE)
+
+
+def paths_for(root: Path, algorithm: str) -> tuple[Path | None, Path]:
+    basenames = {
+        "fzboost": "model_dp2_v3p1_fzboost_dp2_6band_gold.pickle",
+        "bpz": "model_dp2_v3p1_bpz_dp2_6band_gold.pickle",
+        "bpz_test": "model_dp2_v3p1_bpz_test_cosmos31_gold.pickle",
+    }
+    basename = basenames[algorithm]
     model_dir = root / algorithm / "stage1" / "model"
-    return model_dir / "reference" / basename, model_dir / basename
+    reference = None if algorithm == "bpz_test" else model_dir / "reference" / basename
+    return reference, model_dir / basename
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Validate trusted reference and candidate DP2 model pickles."
+        description="Validate official reference/candidate models or BPZ test."
     )
     parser.add_argument("selection", choices=(*ALGORITHMS, "all"))
     args = parser.parse_args()
@@ -100,11 +130,18 @@ def main() -> None:
     except KeyError as error:
         raise SystemExit("PZ_DP2_ROOT is not set") from error
 
-    algorithms = ALGORITHMS if args.selection == "all" else (args.selection,)
-    validators = {"fzboost": validate_fzboost, "bpz": validate_bpz}
+    algorithms = OFFICIAL_ALGORITHMS if args.selection == "all" else (args.selection,)
+    validators = {
+        "fzboost": validate_fzboost,
+        "bpz": validate_bpz,
+        "bpz_test": validate_bpz_test,
+    }
     for algorithm in algorithms:
         reference, candidate = paths_for(root, algorithm)
-        for label, path in (("reference", reference), ("candidate", candidate)):
+        paths = [("candidate", candidate)]
+        if reference is not None:
+            paths.insert(0, ("reference", reference))
+        for label, path in paths:
             validators[algorithm](path)
             print(f"{algorithm} {label}: compatible ({path})")
 

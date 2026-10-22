@@ -24,6 +24,12 @@ and redshift grid is maintained in
 [`bpz_science.md`](../references/bpz_science.md). `objectId` records row
 identity and order in the HDF5 output.
 
+BPZ also requires the official 136-template reference-data tree. Follow
+[`bpz_reference_data.md`](../references/bpz_reference_data.md) and place it at
+`$PZ_INSTALL_ROOT/bpz_dp2_v3p1_data`, or export
+`PZ_BPZ_OFFICIAL_DATA_ROOT` to its absolute location. The `bpz` command always
+selects this official contract; no test-selection variable exists.
+
 ## 3. Mandatory smoke test
 
 ```bash
@@ -35,6 +41,8 @@ The command first creates a 10,000-row projected Parquet sample under
 when needed. In addition to validating the model, columns, and output, it
 creates any missing SED/filter AB files. Do not submit the full array before
 this warm-up: concurrent cache creation can cause races and unnecessary I/O.
+It also validates the official list length, all 136 SED files, the six filters,
+and AB-cache writability before invoking BPZ.
 
 The smoke test writes:
 
@@ -43,8 +51,10 @@ $PZ_DP2_ROOT/bpz/stage2/smoke/smoke-test.hdf5
 $PZ_DP2_ROOT/bpz/stage2/smoke/READY
 ```
 
-The `READY` marker contains model and YAML checksums. If either changes, the
-launcher requires a new smoke test.
+The `READY` marker contains model, estimator YAML, and DP2 v3 LSSTCam SFD
+configuration checksums. If any changes, the launcher requires a new smoke
+test. For BPZ it also contains checksums for the SED list, every referenced
+SED, and the filters.
 
 ## 4. Pilot and submit production
 

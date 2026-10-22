@@ -18,7 +18,10 @@ doc/dp2_v3/scripts/smoke-estimates.sh fzboost
 The command creates a 10,000-row projected Parquet sample under
 `$PZ_DP2_ROOT/common/smoke/` before running the estimator. Set
 `PZ_SMOKE_ROWS` to a different positive row count if needed; it does not read a
-complete shard into the smoke output.
+complete shard into the smoke output. It uses the versioned LSSTCam SFD
+coefficients in
+[`dp2-v3-sfd-lsstcam.yaml`](../config/dp2-v3-sfd-lsstcam.yaml), and their
+checksum is part of the `smoke/READY` marker.
 
 ## 2. Pilot and submit production
 

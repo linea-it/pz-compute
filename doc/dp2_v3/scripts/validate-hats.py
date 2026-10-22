@@ -10,7 +10,8 @@ import lsdb
 import pyarrow.parquet as pq
 
 
-ALGORITHMS = ("fzboost", "bpz")
+OFFICIAL_ALGORITHMS = ("fzboost", "bpz")
+ALGORITHMS = (*OFFICIAL_ALGORITHMS, "bpz_test")
 SUMMARY_COLUMNS = [
     "objectId",
     "coord_ra",
@@ -99,7 +100,7 @@ def main() -> None:
             "/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset",
         )
     )
-    algorithms = ALGORITHMS if args.selection == "all" else (args.selection,)
+    algorithms = OFFICIAL_ALGORITHMS if args.selection == "all" else (args.selection,)
     for algorithm in algorithms:
         validate(root, input_root, algorithm)
 

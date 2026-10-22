@@ -2,12 +2,12 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 fzboost|bpz|all" >&2
+    echo "Usage: $0 fzboost|bpz|bpz_test|all" >&2
 }
 
 selection=${1:-}
 case "$selection" in
-    fzboost|bpz) algorithms=("$selection") ;;
+    fzboost|bpz|bpz_test) algorithms=("$selection") ;;
     all) algorithms=(fzboost bpz) ;;
     *) usage; exit 2 ;;
 esac
@@ -18,21 +18,21 @@ command -v sbatch >/dev/null
 
 scripts_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 doc_dir=$(cd "$scripts_dir/.." && pwd)
+source "$scripts_dir/algorithm-config.sh"
 PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
 training_data=$PZ_DP2_ROOT/common/training/train_clipped_v3_gaap1p0.hdf5
 
 test -f "$training_data" || { echo "Missing training data: $training_data" >&2; exit 1; }
 
 for algorithm in "${algorithms[@]}"; do
+    dp2_algorithm_config "$algorithm"
     case "$algorithm" in
         fzboost)
-            config=$doc_dir/config/fzboost-train.yaml
             basename=model_dp2_v3p1_fzboost_dp2_6band_gold
             resources=(--nodelist=apl[17-25] --cpus-per-task=98 --mem=231G --time=03:00:00)
             ;;
-        bpz)
-            config=$doc_dir/config/bpz-train.yaml
-            basename=model_dp2_v3p1_bpz_dp2_6band_gold
+        bpz|bpz_test)
+            basename=${PZ_MODEL_BASENAME%.pickle}
             resources=(--cpus-per-task=1 --mem=8G --time=01:00:00)
             ;;
     esac
@@ -49,7 +49,7 @@ for algorithm in "${algorithms[@]}"; do
       --output="$log_dir/train-$algorithm-%j.out" \
       --error="$log_dir/train-$algorithm-%j.err" \
       "${resources[@]}" \
-      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_TRAINING_DATA="$training_data",PZ_TRAIN_CONFIG="$config",PZ_RAW_MODEL="$raw_model",PZ_MODEL="$model",PZ_DP2_DOC_DIR="$doc_dir" \
+      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_RAIL_ALGORITHM="$PZ_RAIL_ALGORITHM",PZ_TRAINING_DATA="$training_data",PZ_TRAIN_CONFIG="$PZ_TRAIN_CONFIG",PZ_RAW_MODEL="$raw_model",PZ_MODEL="$model",PZ_DP2_DOC_DIR="$doc_dir" \
       "$scripts_dir/run-one-train.sbatch")
     job_id=${job_id%%;*}
     printf '%s\t%s\t%s\n' "$(date --iso-8601=seconds)" "$algorithm" "$job_id" >> "$job_log"

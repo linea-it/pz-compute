@@ -11,6 +11,11 @@ set -o pipefail
 : "${PZ_PY:?missing PZ_PY}"
 command -v pz-build-hats >/dev/null
 
+case "$PZ_ALGORITHM" in
+    fzboost|bpz|bpz_test) ;;
+    *) echo "Unsupported PZ_ALGORITHM: $PZ_ALGORITHM" >&2; exit 2 ;;
+esac
+
 stage2_output=$PZ_DP2_ROOT/$PZ_ALGORITHM/stage2/output
 stage3_run=$PZ_DP2_ROOT/$PZ_ALGORITHM/stage3
 hats_dir=$stage3_run/output/pz-$PZ_ALGORITHM-gaap1p0-clipped-hats
