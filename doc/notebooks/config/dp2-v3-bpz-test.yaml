@@ -1,0 +1,56 @@
+run:
+  name: DP2 BPZ test COSMOS 31 gold
+  release: DP2
+  algorithm: bpz_test
+
+# These are the products expected after bpz_test Stage 3 finishes.
+paths:
+  summary_hats: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/bpz_test/stage3/output/pz-bpz_test-gaap1p0-clipped-hats/pz_summary
+  pdf_dir: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/bpz_test/stage3/output/pz-bpz_test-gaap1p0-clipped-hats.pdf
+  xvals_file: xvals.parquet
+  pdf_glob: "*-pdf-part*.parquet"
+  report_dir: null
+
+expected:
+  pdf_bins: 601
+  z_min: 0.0
+  z_max: 6.0
+
+selections:
+  - name: all
+    label: All objects
+  - name: clean_i_lt_25
+    label: "i_gaap1p0Mag_sfd < 25"
+    enabled: false
+    filters:
+      - column: i_gaap1p0Mag_sfd
+        maximum: 25.0
+        finite: true
+
+metrics:
+  pdf_batch_rows: 10000
+  pdf_edge_bins: 1
+  crosscheck_sample_size: 10000
+  # Exact nunique requires a distributed shuffle; fingerprints remain enabled.
+  exact_id_uniqueness: false
+
+thresholds:
+  max_invalid_pdf_fraction: 0.0
+  max_point_outside_fraction: 0.0
+  max_nonfinite_point_fraction: 0.0
+  summary_pdf_abs_tolerance: 1.0e-5
+
+cluster:
+  type: slurm
+  minimum_jobs: 10
+  maximum_jobs: 40
+  cores: 8
+  memory: 24GB
+  processes: 1
+  queue: cpu
+  account: hpc-public
+  interface: ib0
+  walltime: "02:00:00"
+  wait_timeout: 600
+  job_extra_directives:
+    - --propagate
