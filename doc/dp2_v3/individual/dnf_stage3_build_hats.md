@@ -10,6 +10,10 @@ cd "$PZ_COMPUTE_DIR"
 doc/dp2_v3/scripts/submit-hats.sh dnf
 ```
 
+Use the [Stage 3 terminal commands](inspect_runs.md#stage-3-hats-build) with
+`algorithm=dnf` to follow the driver, inspect Dask worker logs, check its exit
+marker, and validate the final row counts and schemas.
+
 After the driver completes, validate the DNF products:
 
 ```bash

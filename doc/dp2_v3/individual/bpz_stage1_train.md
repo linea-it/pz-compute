@@ -36,6 +36,10 @@ cd "$PZ_COMPUTE_DIR"
 doc/dp2_v3/scripts/submit-training.sh bpz
 ```
 
+Monitor the job, follow its logs, and inspect the resulting model with the
+[Stage 1 terminal commands](inspect_runs.md#stage-1-training), using
+`algorithm=bpz`.
+
 The job writes:
 
 ```text

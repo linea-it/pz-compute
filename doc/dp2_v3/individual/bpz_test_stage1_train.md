@@ -27,6 +27,10 @@ cd "$PZ_COMPUTE_DIR"
 doc/dp2_v3/scripts/submit-training.sh bpz_test
 ```
 
+Monitor the job, follow its logs, and inspect the resulting model with the
+[Stage 1 terminal commands](inspect_runs.md#stage-1-training), using
+`algorithm=bpz_test`.
+
 [`bpz-test-train.yaml`](../config/bpz-test-train.yaml) creates a test-specific
 HDFN prior with `nt_array=[7,12,12]`, matching the 31 public COSMOS templates.
 The resulting artifact is:

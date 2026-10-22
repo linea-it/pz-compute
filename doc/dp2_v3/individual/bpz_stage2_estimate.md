@@ -74,6 +74,10 @@ After checking `MaxRSS` and `Elapsed`, submit all catalogs:
 doc/dp2_v3/scripts/submit-estimates.sh bpz
 ```
 
+Use the [Stage 2 terminal commands](inspect_runs.md#stage-2-estimation-array)
+with `algorithm=bpz` to watch task states and output counts, summarize
+completed and failed tasks, inspect logs, and validate every HDF5 afterward.
+
 The job remains in Slurm after logout. The initial defaults are 20 concurrent
 tasks, 40 GiB, and 24 hours per task. They are conservative; tune
 `PZ_BPZ_MAX_CONCURRENT`, `PZ_BPZ_MEMORY`, and `PZ_BPZ_TIME` from pilot evidence.

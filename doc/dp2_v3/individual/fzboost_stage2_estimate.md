@@ -40,6 +40,10 @@ After checking `MaxRSS` and `Elapsed`, submit the complete catalog:
 doc/dp2_v3/scripts/submit-estimates.sh fzboost
 ```
 
+Use the [Stage 2 terminal commands](inspect_runs.md#stage-2-estimation-array)
+with `algorithm=fzboost` to watch task states and output counts, summarize
+completed and failed tasks, inspect logs, and validate every HDF5 afterward.
+
 The defaults are 105 concurrent tasks, 34 GiB, and one hour per task. The
 memory request is 16.9% above the 29.09 GiB peak from the five-largest-shard
 secondary-catalog pilot, and the throttle is 95% of the resulting discrete

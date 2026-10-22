@@ -84,6 +84,11 @@ evidence supports a change. These measurements do not predict official
 doc/dp2_v3/scripts/submit-estimates.sh bpz_test
 ```
 
+Use the [Stage 2 terminal commands](inspect_runs.md#stage-2-estimation-array)
+with `algorithm=bpz_test` to watch task states and output counts, summarize
+completed and failed tasks, inspect logs, and validate every test HDF5
+afterward.
+
 Outputs and logs remain in:
 
 ```text

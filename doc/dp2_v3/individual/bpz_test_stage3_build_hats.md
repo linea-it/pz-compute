@@ -15,6 +15,10 @@ cd "$PZ_COMPUTE_DIR"
 doc/dp2_v3/scripts/submit-hats.sh bpz_test
 ```
 
+Use the [Stage 3 terminal commands](inspect_runs.md#stage-3-hats-build) with
+`algorithm=bpz_test` to follow the driver, inspect Dask worker logs, check its
+exit marker, and validate the final test-product row counts and schemas.
+
 After the driver and Dask workers complete, validate only the test product:
 
 ```bash

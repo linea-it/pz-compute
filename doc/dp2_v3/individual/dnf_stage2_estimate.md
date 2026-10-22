@@ -61,6 +61,10 @@ After accepting the pilot:
 doc/dp2_v3/scripts/submit-estimates.sh dnf
 ```
 
+Use the [Stage 2 terminal commands](inspect_runs.md#stage-2-estimation-array)
+with `algorithm=dnf` to watch task states and output counts, summarize
+completed and failed tasks, inspect logs, and validate every HDF5 afterward.
+
 Outputs and logs remain isolated:
 
 ```text
