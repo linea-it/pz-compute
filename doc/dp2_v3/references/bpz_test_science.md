@@ -48,3 +48,6 @@ checks the test-specific template partition and provenance. Stage 2 requires a
 test smoke marker, and Stage 3 consumes only `bpz_test/stage2/output`; these
 guards prevent an official model or output tree from being mixed into the
 test workflow and vice versa.
+
+Operational evidence and resource defaults for this non-production workflow
+are recorded separately in [`bpz_test_runs.md`](bpz_test_runs.md).

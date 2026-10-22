@@ -40,9 +40,9 @@ dp2_algorithm_config() {
             PZ_MODEL_BASENAME=model_dp2_v3p1_bpz_test_cosmos31_gold.pickle
             PZ_TRAIN_CONFIG=$PZ_DP2_DOC_DIR/config/bpz-test-train.yaml
             PZ_ESTIMATE_CONFIG=$PZ_DP2_DOC_DIR/config/bpz-test-estimate.yaml
-            PZ_DEFAULT_MAX_CONCURRENT=20
-            PZ_DEFAULT_MEMORY=40G
-            PZ_DEFAULT_TIME=24:00:00
+            PZ_DEFAULT_MAX_CONCURRENT=129
+            PZ_DEFAULT_MEMORY=28G
+            PZ_DEFAULT_TIME=02:00:00
             PZ_BPZ_DATA_ROOT=${PZ_BPZ_TEST_DATA_ROOT:-$(
                 "$PZ_PY" - <<'PY'
 import sysconfig

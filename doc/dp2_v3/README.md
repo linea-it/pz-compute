@@ -64,9 +64,11 @@ Scientific provenance and production evidence are intentionally separate:
 - [`references/bpz_science.md`](references/bpz_science.md)
 - [`references/bpz_reference_data.md`](references/bpz_reference_data.md)
 - [`references/bpz_test_science.md`](references/bpz_test_science.md)
+- [`references/bpz_test_runs.md`](references/bpz_test_runs.md)
 
-There is no BPZ run-history document until a real BPZ production run has been
-completed and validated.
+There is no official BPZ run-history document until a real BPZ production run
+has been completed and validated. The BPZ test pilot is recorded separately
+and cannot validate or size the official 136-template workflow.
 
 ## Canonical Stage 2 input
 

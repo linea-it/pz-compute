@@ -64,10 +64,19 @@ sacct -j "$jobid" --units=G \
   --format=JobID%30,State,ExitCode,Elapsed,TotalCPU,AllocCPUS,MaxRSS,ReqMem
 ```
 
-The provisional defaults are 20 concurrent tasks, 40 GiB, and 24 hours per
-task. Override them with `PZ_BPZ_TEST_MAX_CONCURRENT`, `PZ_BPZ_TEST_MEMORY`,
-and `PZ_BPZ_TEST_TIME` only from test-pilot evidence. Those measurements do not
-predict official 136-template BPZ reliably.
+Pilot array job `217091` completed all five largest shards. Its maximum RSS was
+20.53 GiB, its longest task took 53 minutes 31 seconds, and aggregate CPU use
+was 0.993 logical CPU per running task. The resulting defaults are 129
+concurrent tasks, 28 GiB, and two hours per task. The memory request retains a
+36% margin over the observed maximum; the concurrency is 95% of the 136 tasks
+that fit by memory across `apl01-25`. See
+[`bpz_test_runs.md`](../references/bpz_test_runs.md) for the measurements and
+capacity calculation.
+
+Override these values with `PZ_BPZ_TEST_MAX_CONCURRENT`,
+`PZ_BPZ_TEST_MEMORY`, and `PZ_BPZ_TEST_TIME` only when newer test-pilot
+evidence supports a change. These measurements do not predict official
+136-template BPZ reliably.
 
 ## 4. Run the full test estimate
 

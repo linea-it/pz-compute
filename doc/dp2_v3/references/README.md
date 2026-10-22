@@ -12,6 +12,7 @@ notes here explain every choice made in those files. The guides under
 | [`bpz_science.md`](bpz_science.md) | official BPZ scientific rationale and provenance |
 | [`bpz_reference_data.md`](bpz_reference_data.md) | official BPZ 136-SED deployment contract |
 | [`bpz_test_science.md`](bpz_test_science.md) | standalone, non-production COSMOS31 workflow and risk statement |
+| [`bpz_test_runs.md`](bpz_test_runs.md) | validated BPZ test run history and Stage 2 resource rationale |
 
 There is intentionally no `bpz_runs.md` yet. Add it only after a BPZ pilot or
 production run has completed and its job IDs, environment, metrics, and output
