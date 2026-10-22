@@ -4,8 +4,9 @@ Run this setup once on the LineA Apollo cluster before following the three DP2
 stages. It clones `pz-compute`, defines the shared paths and creates two conda
 environments:
 
-- `pz_compute_dp2_gaap1p0` is the frozen FlexZBoost/BPZ scientific environment
-  shared by Stage 1 training and Stage 2 estimation;
+- `pz_compute_dp2_gaap1p0` is the scientific environment shared by Stage 1
+  training and Stage 2 estimation. It installs all seven DP2 algorithms: BPZ,
+  DNF, FlexZBoost, GPz, KNN, LePhare, and TPZ;
 - `pz_compute_dp2_stage3_hats` contains the additional HATS dependencies used
   only by Stage 3.
 
@@ -59,20 +60,23 @@ revalidating the environment and regenerating the model.
 
 ```bash
 if [ ! -d "$PZ_CONDA_ENV" ]; then
-    conda create -y --prefix "$PZ_CONDA_ENV" python=3.12 pip
+    conda create -y \
+      --prefix "$PZ_CONDA_ENV" \
+      --solver=libmamba \
+      --override-channels \
+      -c conda-forge \
+      python=3.12 pip
 fi
 
 conda activate "$PZ_CONDA_ENV"
 PZ_INSTALL_ROOT="$PZ_INSTALL_ROOT" "$PZ_COMPUTE_DIR/rail_scripts/install-pz-rail"
 ```
 
-When prompted by `install-pz-rail`, confirm with `yes`. Install the remaining
-I/O packages:
-
-```bash
-conda install -y --prefix "$PZ_CONDA_ENV" -c conda-forge \
-    pyarrow tables-io hdf5 h5py
-```
+When prompted by `install-pz-rail`, confirm with `yes`. The installer uses the
+`libmamba` solver and only `conda-forge`, avoiding the much larger search caused
+by mixing `conda-forge` with `defaults`. It installs the shared I/O stack and
+all seven algorithm packages in one pass; do not run a separate I/O-package
+installation afterward.
 
 Run the installation only when intentionally creating or updating the shared
 scientific environment. Once Stage 1 begins, keep it unchanged until Stage 2
@@ -82,14 +86,25 @@ is complete.
 
 ```bash
 if [ ! -d "$PZ_STAGE3_CONDA_ENV" ]; then
-    conda create -y --prefix "$PZ_STAGE3_CONDA_ENV" python=3.12 pip
+    conda create -y \
+      --prefix "$PZ_STAGE3_CONDA_ENV" \
+      --solver=libmamba \
+      --override-channels \
+      -c conda-forge \
+      python=3.12 pip numpy pyarrow hdf5 h5py astropy distributed \
+      dask-jobqueue docopt pyyaml pyxdg
+else
+    conda install -y \
+      --prefix "$PZ_STAGE3_CONDA_ENV" \
+      --solver=libmamba \
+      --override-channels \
+      -c conda-forge \
+      numpy pyarrow hdf5 h5py astropy distributed dask-jobqueue docopt \
+      pyyaml pyxdg
 fi
 
-conda install -y --prefix "$PZ_STAGE3_CONDA_ENV" -c conda-forge \
-    numpy pyarrow hdf5 h5py astropy distributed dask-jobqueue docopt \
-    pyyaml pyxdg
-
-"$PZ_STAGE3_CONDA_ENV/bin/python" -m pip install lsdb hats-import hats
+"$PZ_STAGE3_CONDA_ENV/bin/python" -m pip install --prefer-binary \
+    lsdb hats-import hats
 ```
 
 ## 5. Create command links and environment loaders
@@ -167,20 +182,41 @@ source /scripts/$(whoami)/ondemand/env-dp2-gaap1p0.sh
 cd "$PZ_COMPUTE_DIR"
 
 "$PZ_PY" - <<'PY'
+import importlib
+
 import flexcode
 import pyarrow
 import rail
 import sklearn
 import tables_io
 import xgboost
-from rail.estimation.algos import bpz_lite, flexzboost
 
-print("Stage 1/Stage 2 environment is importable")
+algorithm_modules = (
+    "rail.estimation.algos.bpz_lite",
+    "rail.estimation.algos.dnf",
+    "rail.estimation.algos.flexzboost",
+    "rail.estimation.algos.gpz",
+    "rail.estimation.algos.k_nearneigh",
+    "rail.estimation.algos.lephare",
+    "rail.estimation.algos.tpz_lite",
+)
+for module in algorithm_modules:
+    importlib.import_module(module)
+
+print("Stage 1/Stage 2 environment and all seven algorithms are importable")
 PY
 
+"$PZ_PY" -m pip check
 "$PZ_PY" -m pip freeze > "$PZ_INSTALL_ROOT/dp2-gaap1p0-setup-freeze.txt"
+conda list --explicit --prefix "$PZ_CONDA_ENV" > \
+  "$PZ_INSTALL_ROOT/dp2-gaap1p0-conda-linux-64.lock"
 git rev-parse HEAD > "$PZ_INSTALL_ROOT/pz-compute-revision.txt"
 ```
+
+Keep both the Pip freeze and the platform-specific Conda explicit lock with the
+run provenance. The lock recreates the Conda layer without another dependency
+solve; the freeze records the exact Python distributions, including the seven
+RAIL algorithm packages.
 
 ```bash
 source /scripts/$(whoami)/ondemand/env-dp2-stage3-hats.sh

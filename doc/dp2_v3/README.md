@@ -46,6 +46,12 @@ The files under `config/` are the reviewed scientific parameters. The files
 under `scripts/` are reusable launchers; do not copy a FlexZBoost command and
 edit it by hand for BPZ.
 
+The shared scientific environment installs all seven algorithms represented by
+the DP2 reference models: BPZ, DNF, FlexZBoost, GPz, KNN, LePhare, and TPZ.
+The current v3 orchestration and reviewed configurations deliberately expose
+only FlexZBoost and BPZ; installing all seven keeps the environment ready for
+the remaining algorithms without claiming that their v3 workflows are ready.
+
 Scientific provenance and production evidence are intentionally separate:
 
 - [`references/fzboost_science.md`](references/fzboost_science.md)

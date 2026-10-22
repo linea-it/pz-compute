@@ -46,8 +46,14 @@ fi
 
 set -x
 
-conda install -y -c conda-forge \
+conda install -y \
+    --solver=libmamba \
+    --override-channels \
+    -c conda-forge \
     h5py \
+    hdf5 \
+    pyarrow \
+    tables-io \
     pyyaml \
     pandas \
     matplotlib \
@@ -69,11 +75,13 @@ conda install -y -c conda-forge \
     pyxdg \
     pip
 
-pip install \
+"${CONDA_PREFIX}/bin/python" -m pip install --prefer-binary \
     pz-rail \
     pz-rail-bpz \
+    pz-rail-dnf \
     pz-rail-flexzboost \
-    pz-rail-tpz \
     pz-rail-gpz-v1 \
     pz-rail-lephare \
+    pz-rail-sklearn \
+    pz-rail-tpz \
     flexcode
