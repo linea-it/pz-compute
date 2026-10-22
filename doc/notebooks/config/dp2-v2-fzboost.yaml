@@ -29,9 +29,15 @@ selections:
 metrics:
   pdf_batch_rows: 10000
   pdf_edge_bins: 1
+  low_z_threshold: 0.1
   crosscheck_sample_size: 10000
   # Exact nunique requires a distributed shuffle; fingerprints remain enabled.
   exact_id_uniqueness: false
+
+plots:
+  # Robust display only: off-scale peaks are annotated and remain in all metrics.
+  nz_ymax_quantile: 0.995
+  nz_ymax_headroom: 1.10
 
 thresholds:
   max_invalid_pdf_fraction: 0.0

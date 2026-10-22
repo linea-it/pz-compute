@@ -60,6 +60,24 @@ Every filter column must exist in both the HATS summary and PDF parquet
 product. Multiple filters within a selection are combined with logical AND.
 `minimum` is inclusive and `maximum` is exclusive.
 
+## N(z) display range and low-redshift peaks
+
+The standard configurations report `low_z_fraction` for `z <= 0.1` and the
+fractions in the first and last redshift-grid bins. These metrics help
+distinguish a concentration of point-estimate modes at `z = 0` from integrated
+posterior probability in the stacked PDFs.
+
+N(z) panels use a robust y-axis display range so isolated boundary spikes do
+not flatten the scientifically useful part of the curves. Off-scale maxima are
+annotated with their amplitude and redshift, and the uncapped values remain in
+every calculation and exported table. To show the full linear range instead:
+
+```yaml
+plots:
+  nz_ymax_quantile: 1.0
+  nz_ymax_headroom: 1.10
+```
+
 ## Outputs and interpretation
 
 The notebook reports:

@@ -515,10 +515,13 @@ def run_qa(config: dict) -> QAResult:
     sample_probability = min(1.0, target_sample / max(1, expected_rows))
     batch_rows = int(metric_settings.get("pdf_batch_rows", 10_000))
     edge_bins = int(metric_settings.get("pdf_edge_bins", 1))
+    low_z_threshold = float(metric_settings.get("low_z_threshold", 0.1))
     if batch_rows <= 0:
         raise ValueError("metrics.pdf_batch_rows must be positive")
     if not 1 <= edge_bins <= len(grid) // 2:
         raise ValueError("metrics.pdf_edge_bins must be between 1 and half the grid size")
+    if not grid[0] <= low_z_threshold <= grid[-1]:
+        raise ValueError("metrics.low_z_threshold must lie inside the redshift grid")
 
     summary_tasks = [
         delayed(_summary_partition)(part, selections, edges, grid, sample_probability)
@@ -561,6 +564,9 @@ def run_qa(config: dict) -> QAResult:
                 "median": _hist_quantile(values["hist"], grid, 0.50),
                 "p84": _hist_quantile(values["hist"], grid, 0.84),
                 "outside_grid_fraction": values["outside"] / max(1, values["finite"]),
+                "low_z_fraction": float(values["hist"][grid <= low_z_threshold].sum()) / max(1, values["finite"]),
+                "lower_edge_fraction": values["lower_edge"] / max(1, values["finite"]),
+                "upper_edge_fraction": values["upper_edge"] / max(1, values["finite"]),
                 "edge_fraction": (values["lower_edge"] + values["upper_edge"]) / max(1, values["finite"]),
             })
             nz[name][column] = values["hist"].astype(float)
@@ -577,6 +583,9 @@ def run_qa(config: dict) -> QAResult:
                 "median": _hist_quantile(stack, grid, 0.50),
                 "p84": _hist_quantile(stack, grid, 0.84),
                 "outside_grid_fraction": 0.0,
+                "low_z_fraction": float(normalized_pdf[grid <= low_z_threshold].sum()),
+                "lower_edge_fraction": float(normalized_pdf[0]),
+                "upper_edge_fraction": float(normalized_pdf[-1]),
                 "edge_fraction": pdf_stats["edge_mass_total"] / max(1, pdf_stats["valid"]),
             })
             for column in POINT_COLUMNS:
@@ -685,6 +694,7 @@ def run_qa(config: dict) -> QAResult:
     grid_report = pd.Series({
         "bins": len(grid), "z minimum": grid[0], "z maximum": grid[-1],
         "minimum spacing": differences.min(), "maximum spacing": differences.max(),
+        "low-z diagnostic threshold": low_z_threshold,
     }, name="value")
     distance_table = pd.DataFrame(distance_rows)
     if len(distance_table):
@@ -707,21 +717,66 @@ def run_qa(config: dict) -> QAResult:
     )
 
 
+def _set_robust_y_range(axis, curves, grid, quantile, headroom):
+    """Cap display range robustly and disclose every off-scale curve maximum."""
+    positive_curves = [values[values > 0] for _, values in curves if np.any(values > 0)]
+    if not positive_curves or quantile >= 1:
+        return
+    positive = np.concatenate(positive_curves)
+    ceiling = float(np.quantile(positive, quantile))
+    if not np.isfinite(ceiling) or ceiling <= 0:
+        return
+    display_max = ceiling * headroom
+    off_scale = []
+    for label, values in curves:
+        index = int(np.argmax(values))
+        peak = float(values[index])
+        if peak > display_max:
+            off_scale.append(f"{label}: {peak:.3g} at z={grid[index]:.3g}")
+    if not off_scale:
+        return
+    axis.set_ylim(0, display_max)
+    axis.text(
+        0.99,
+        0.72,
+        "Off-scale peaks (retained in metrics):\n" + "\n".join(off_scale),
+        transform=axis.transAxes,
+        horizontalalignment="right",
+        verticalalignment="top",
+        fontsize=8,
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "edgecolor": "0.6", "alpha": 0.9},
+    )
+
+
 def plot_nz(result: QAResult):
     """Plot counts and normalized N(z) for each configured selection."""
     grid_path = Path(result.config["paths"]["pdf_dir"]) / result.config["paths"].get("xvals_file", "xvals.parquet")
     grid = pq.read_table(grid_path, columns=["z"]).column("z").to_numpy()
     selections = result.config["selections"]
+    plot_settings = result.config.get("plots", {})
+    ymax_quantile = float(plot_settings.get("nz_ymax_quantile", 0.995))
+    ymax_headroom = float(plot_settings.get("nz_ymax_headroom", 1.10))
+    if not 0 < ymax_quantile <= 1:
+        raise ValueError("plots.nz_ymax_quantile must be in (0, 1]")
+    if ymax_headroom <= 1:
+        raise ValueError("plots.nz_ymax_headroom must be greater than 1")
     fig, axes = plt.subplots(len(selections), 2, figsize=(15, 4.5 * len(selections)), squeeze=False, constrained_layout=True)
     colors = {"zmode": "#0072B2", "zmean": "#D55E00", "zmedian": "#009E73", "stacked_pdf": "black"}
     for row, selection in enumerate(selections):
         name, label = selection["name"], selection.get("label", selection["name"])
+        count_curves = []
+        normalized_curves = []
         for estimator, values in result.nz[name].items():
             curve_label = "Parquet stacked PDF" if estimator == "stacked_pdf" else f"HATS {estimator}"
             if estimator != "stacked_pdf":
                 axes[row, 0].step(grid, values, where="mid", label=curve_label, color=colors[estimator], linewidth=1.5)
+                count_curves.append((curve_label, values))
             if values.sum():
-                axes[row, 1].plot(grid, values / values.sum(), label=curve_label, color=colors[estimator], linewidth=2 if estimator == "stacked_pdf" else 1.5)
+                normalized = values / values.sum()
+                axes[row, 1].plot(grid, normalized, label=curve_label, color=colors[estimator], linewidth=2 if estimator == "stacked_pdf" else 1.5)
+                normalized_curves.append((curve_label, normalized))
+        _set_robust_y_range(axes[row, 0], count_curves, grid, ymax_quantile, ymax_headroom)
+        _set_robust_y_range(axes[row, 1], normalized_curves, grid, ymax_quantile, ymax_headroom)
         axes[row, 0].set(title=f"{label}: HATS point-estimate N(z)", xlabel="Photometric redshift", ylabel="Objects per bin")
         axes[row, 1].set(title=f"{label}: HATS estimates vs parquet PDF stack", xlabel="Photometric redshift", ylabel="Fraction per bin")
         axes[row, 0].legend()
