@@ -3,8 +3,9 @@
 This note records the scientific configuration and provenance of the official
 six-band DP2 DNF workflow. Operational instructions live under
 [`individual/`](../individual/README.md) and [`batch/`](../batch/README.md).
-No LineA DNF production run or resource profile is claimed until its pilot and
-full-run evidence are retained.
+The scientific configuration is independent of operational resource sizing.
+The retained LineA pilot and Stage 2 resource rationale are recorded separately
+in [`dnf_runs.md`](dnf_runs.md); no full LineA DNF production run is claimed.
 
 ## Pinned DP2 configuration
 

@@ -26,8 +26,8 @@ because Apollo schedules a whole physical core. More CPUs per task are not
 supported by this evidence; throughput should come from independent array
 tasks.
 
-The 20.53 GiB maximum supports a homogeneous 28 GiB request, leaving 7.47 GiB
-or approximately 36% above the observed peak. The two-hour limit is more than
+The 20.53 GiB maximum supports a homogeneous 24 GiB request, leaving 3.47 GiB
+or approximately 16.9% above the observed peak. The two-hour limit is more than
 twice the 53-minute-31-second maximum on the five largest files.
 
 ## Stage 2 capacity calculation
@@ -40,26 +40,26 @@ The production `cpu_photoz` allocation exposes 25 Apollo nodes and excludes
 - 9 nodes `apl17-25`, each with 104 effective CPUs, `RealMemory=253132 MiB`,
   and `MemSpecLimit=4096 MiB`.
 
-With a 28 GiB request (`28672 MiB`), memory remains the limiting resource:
+With a 24 GiB request (`24576 MiB`), memory remains the limiting resource:
 
 ```text
-apl01-16: floor((124080 - 4096) / 28672) = 4 tasks/node
-apl17-25: floor((253132 - 4096) / 28672) = 8 tasks/node
+apl01-16: floor((124080 - 4096) / 24576) = 4 tasks/node
+apl17-25: floor((253132 - 4096) / 24576) = 10 tasks/node
 
-theoretical capacity = 16 * 4 + 9 * 8 = 136 tasks
-round(0.95 * 136) = 129 concurrent tasks
+theoretical capacity = 16 * 4 + 9 * 10 = 154 tasks
+round(0.95 * 154) = 146 concurrent tasks
 ```
 
-At full concurrency Slurm allocates 258 logical CPUs, about 14% of the 1,832
-available on `apl01-25`. The 129-task throttle therefore targets approximately
+At full concurrency Slurm allocates 292 logical CPUs, about 16% of the 1,832
+available on `apl01-25`. The 146-task throttle therefore targets approximately
 95% of the discrete per-node memory capacity while retaining a 5% scheduling
 margin. It does not claim that BPZ test uses 95% of aggregate CPU capacity.
 
 The v3 defaults derived from this pilot are consequently:
 
 ```text
-maximum concurrency: 129 tasks
-memory per task:      28 GiB
+maximum concurrency: 146 tasks
+memory per task:      24 GiB
 walltime per task:    02:00:00
 ```
 

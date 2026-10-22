@@ -102,14 +102,15 @@ tail -1 "$PZ_DP2_ROOT/dnf/stage2/submitted-job-ids.tsv"
 sacct -j <jobid> --format=JobID%30,State,ExitCode,Elapsed,MaxRSS
 ```
 
-The supplied BPZ defaults (20 concurrent tasks, 40 GiB, 24 hours) are
-conservative starting values, not measured production claims. DNF initially
-uses the same conservative 20-task, 40-GiB, 24-hour shape. Override them
-from pilot evidence with `PZ_BPZ_MAX_CONCURRENT`, `PZ_BPZ_MEMORY`, and
-`PZ_BPZ_TIME`, or the corresponding `PZ_DNF_*` variables. FlexZBoost defaults
-to 82 concurrent tasks, 40 GiB, and one hour
-per task based on the retained production evidence and secondary-catalog pilot;
-it has the equivalent `PZ_FZBOOST_*` override variables.
+The supplied official BPZ defaults (20 concurrent tasks, 40 GiB, 24 hours) are
+conservative starting values, not measured production claims. DNF defaults to
+105 concurrent tasks, 34 GiB, and two hours based on pilot job `217097`.
+FlexZBoost defaults to 105 concurrent tasks, 34 GiB, and one hour based on
+pilot job `217085`. These two 34-GiB requests retain 19.0% and 16.9% above
+their observed peaks, respectively, and each 105-task throttle targets 95% of
+the resulting discrete cluster capacity. Override resources with the
+corresponding `PZ_<ALGORITHM>_*` variables when newer evidence or a different
+partition requires it.
 
 ## 5. Submit all algorithms over the complete catalog
 

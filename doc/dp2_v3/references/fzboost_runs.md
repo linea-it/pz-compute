@@ -41,13 +41,13 @@ Elapsed time ranged from 11 min 31 s to 12 min 09 s, with a median of
 21.99 GiB. Aggregate CPU efficiency was approximately 55.7% relative to the
 two allocated logical CPUs per task.
 
-The measured 29.09 GiB peak supports retaining the homogeneous 40 GiB memory
-request. The Stage 2 FlexZBoost task limit is reduced from 12 hours to one hour,
-which leaves nearly five times the observed maximum runtime. The canonical
-82-task throttle remains unchanged because it describes capacity on the
-`cpu_photoz` production partition; this five-task pilot used a different,
-smaller partition. Long-lived Stage 3 driver and Dask-worker limits are not
-changed by this Stage 2 evidence.
+The measured 29.09 GiB peak supports a homogeneous 34 GiB memory request,
+leaving 4.91 GiB or approximately 16.9% above the observed maximum. The Stage
+2 FlexZBoost task limit is reduced from the 12-hour pilot request to one hour,
+which leaves nearly five times the observed maximum runtime. The capacity
+calculation below raises the canonical throttle to 105 tasks on the
+`cpu_photoz` production partition. Long-lived Stage 3 driver and Dask-worker
+limits are not changed by this Stage 2 evidence.
 
 ## 2026-10-21 FlexZBoost production run
 
@@ -246,15 +246,22 @@ The retained technical acceptance criteria are:
 ## Stage 2 production profile carried into v3
 
 The established runner processes one Object parquet per Slurm array task. A
-40 GiB, one-hour task request and a maximum concurrency of 82 are the v3
-defaults. The concurrency value is capacity-derived: with 40 GiB
-tasks, the 16 smaller Apollo nodes fit two tasks each and the nine larger nodes
-fit six each, for 86 theoretical slots; rounding 95% gives 82.
+34 GiB, one-hour task request and a maximum concurrency of 105 are the v3
+defaults. The concurrency value is capacity-derived from schedulable memory
+after the 4 GiB per-node system reservation:
+
+```text
+apl01-16: floor((124080 - 4096) / 34816) = 3 tasks/node
+apl17-25: floor((253132 - 4096) / 34816) = 7 tasks/node
+
+theoretical capacity = 16 * 3 + 9 * 7 = 111 tasks
+round(0.95 * 111) = 105 concurrent tasks
+```
 
 This is a scheduling rationale, not a substitute for a current pilot. The five
 largest shards must complete with exit code `0:0`, valid HDF5 markers, and no
 memory errors before using the production default. Future changes must use
-observed `MaxRSS` and `Elapsed` rather than treating 40 GiB, one hour, or 82 as
+observed `MaxRSS` and `Elapsed` rather than treating 34 GiB, one hour, or 105 as
 scientific constants. The current values incorporate the secondary-catalog
 pilot recorded above.
 
