@@ -140,7 +140,6 @@ def validate_dnf(path: Path) -> None:
         "n_jobs": None,
         "n_neighbors": 5,
         "p": 2,
-        "radius": 1.0,
         "weights": "uniform",
     }
     params = clf.get_params()
