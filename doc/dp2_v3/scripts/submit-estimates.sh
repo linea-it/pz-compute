@@ -21,7 +21,7 @@ scripts_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$scripts_dir/algorithm-config.sh"
 
 PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
-PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/primary/catalogs/object}
+PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset}
 default_manifest=$PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
 manifest=${PZ_INPUT_MANIFEST:-$default_manifest}
 
@@ -32,7 +32,7 @@ if [ -n "${PZ_INPUT_MANIFEST:-}" ]; then
 fi
 nfiles=$(wc -l < "$manifest")
 if [ "$nfiles" -eq 0 ]; then
-    echo "No .parq files found below $PZ_DP2_INPUT_DATASET" >&2
+    echo "No .parquet files found below $PZ_DP2_INPUT_DATASET" >&2
     exit 1
 fi
 

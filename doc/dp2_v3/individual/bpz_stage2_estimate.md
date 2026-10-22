@@ -9,7 +9,7 @@ under `$PZ_DP2_ROOT/bpz/stage2/`.
 ```bash
 source /scripts/$(whoami)/ondemand/env-dp2-gaap1p0.sh
 export PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
-export PZ_DP2_INPUT_DATASET=/data/cl/lsst/dp2/primary/catalogs/object
+export PZ_DP2_INPUT_DATASET=/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset
 cd "$PZ_COMPUTE_DIR"
 
 test -f "$PZ_DP2_ROOT/bpz/stage1/model/model_dp2_v3p1_bpz_dp2_6band_gold.pickle"
@@ -70,7 +70,7 @@ tasks, 40 GiB, and 24 hours per task. They are conservative; tune
 
 ```text
 $PZ_DP2_ROOT/bpz/stage2/
-├── output/object_*.hdf5
+├── output/Norder=*/Dir=*/Npix=*.hdf5
 ├── log/
 │   ├── slurm-*.out
 │   └── slurm-*.err

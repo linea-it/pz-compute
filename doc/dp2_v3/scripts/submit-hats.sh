@@ -19,10 +19,10 @@ command -v pz-build-hats >/dev/null
 
 scripts_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
-PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/primary/catalogs/object}
+PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset}
 PZ_HATS_WORKERS=${PZ_HATS_WORKERS:-82}
 
-input_count=$(find "$PZ_DP2_INPUT_DATASET" -name '*.parq' | wc -l)
+input_count=$(find "$PZ_DP2_INPUT_DATASET" -type f -name '*.parquet' | wc -l)
 test "$input_count" -gt 0 || {
     echo "No input parquet files found under $PZ_DP2_INPUT_DATASET" >&2
     exit 1

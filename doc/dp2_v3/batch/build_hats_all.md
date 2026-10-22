@@ -13,10 +13,10 @@ Complete the shared [Apollo setup](../dp2_setup_apollo.md) and
 ```bash
 source /scripts/$(whoami)/ondemand/env-dp2-stage3-hats.sh
 export PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
-export PZ_DP2_INPUT_DATASET=/data/cl/lsst/dp2/primary/catalogs/object
+export PZ_DP2_INPUT_DATASET=/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset
 cd "$PZ_COMPUTE_DIR"
 
-inputs=$(find "$PZ_DP2_INPUT_DATASET" -name '*.parq' | wc -l)
+inputs=$(find "$PZ_DP2_INPUT_DATASET" -type f -name '*.parquet' | wc -l)
 for algorithm in fzboost bpz; do
     outputs=$(find "$PZ_DP2_ROOT/$algorithm/stage2/output" \
       -name '*.hdf5' | wc -l)

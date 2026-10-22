@@ -8,7 +8,7 @@ under `$PZ_DP2_ROOT/fzboost/stage2/`, separate from BPZ and Stage 1.
 ```bash
 source /scripts/$(whoami)/ondemand/env-dp2-gaap1p0.sh
 export PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
-export PZ_DP2_INPUT_DATASET=/data/cl/lsst/dp2/primary/catalogs/object
+export PZ_DP2_INPUT_DATASET=/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset
 cd "$PZ_COMPUTE_DIR"
 
 test -f "$PZ_DP2_ROOT/fzboost/stage1/model/model_dp2_v3p1_fzboost_dp2_6band_gold.pickle"
@@ -36,7 +36,7 @@ doc/dp2_v3/scripts/submit-estimates.sh fzboost
 
 ```text
 $PZ_DP2_ROOT/fzboost/stage2/
-├── output/object_*.hdf5
+├── output/Norder=*/Dir=*/Npix=*.hdf5
 ├── log/slurm-*.out
 ├── log/slurm-*.err
 ├── smoke/

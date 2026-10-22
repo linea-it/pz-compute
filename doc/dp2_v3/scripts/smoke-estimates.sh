@@ -20,7 +20,7 @@ scripts_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$scripts_dir/algorithm-config.sh"
 
 PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
-PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/primary/catalogs/object}
+PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset}
 manifest=$PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
 
 PZ_DP2_ROOT="$PZ_DP2_ROOT" PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET" \

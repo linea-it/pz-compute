@@ -29,7 +29,7 @@ if [ -z "$input_file" ]; then
 fi
 
 relative_path=${input_file#"$PZ_DP2_INPUT_DATASET"/}
-output_file=$PZ_OUTPUT_DIR/${relative_path%.parq}.hdf5
+output_file=$PZ_OUTPUT_DIR/${relative_path%.parquet}.hdf5
 mkdir -p "$(dirname "$output_file")"
 
 if [ -f "$output_file" ]; then

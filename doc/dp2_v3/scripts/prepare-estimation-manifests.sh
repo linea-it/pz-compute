@@ -14,17 +14,17 @@ esac
 : "${PZ_RUN_ROOT:?source env-dp2-gaap1p0.sh first}"
 
 PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
-PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/primary/catalogs/object}
+PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset}
 manifest_dir=$PZ_DP2_ROOT/common/manifests
 full_manifest=$manifest_dir/input-parquet-files.txt
 pilot_manifest=$manifest_dir/pilot-parquet-files.txt
 
 mkdir -p "$manifest_dir"
 full_tmp=$(mktemp "$manifest_dir/input-parquet-files.tmp.XXXXXX")
-find "$PZ_DP2_INPUT_DATASET" -type f -name '*.parq' | LC_ALL=C sort > "$full_tmp"
+find "$PZ_DP2_INPUT_DATASET" -type f -name '*.parquet' | LC_ALL=C sort > "$full_tmp"
 if [ ! -s "$full_tmp" ]; then
     rm -f "$full_tmp"
-    echo "No .parq files found below $PZ_DP2_INPUT_DATASET" >&2
+    echo "No .parquet files found below $PZ_DP2_INPUT_DATASET" >&2
     exit 1
 fi
 mv "$full_tmp" "$full_manifest"

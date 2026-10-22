@@ -33,7 +33,7 @@ PDF_COLUMNS = [
 
 def stage2_rows(input_root: Path, output_root: Path) -> int:
     total = 0
-    for input_path in input_root.glob("**/*.parq"):
+    for input_path in input_root.glob("**/*.parquet"):
         relative = input_path.relative_to(input_root)
         output_path = output_root / relative.with_suffix(".hdf5")
         if not output_path.is_file():
@@ -95,7 +95,8 @@ def main() -> None:
         raise SystemExit("PZ_DP2_ROOT is not set") from error
     input_root = Path(
         os.environ.get(
-            "PZ_DP2_INPUT_DATASET", "/data/cl/lsst/dp2/primary/catalogs/object"
+            "PZ_DP2_INPUT_DATASET",
+            "/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset",
         )
     )
     algorithms = ALGORITHMS if args.selection == "all" else (args.selection,)

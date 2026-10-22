@@ -55,6 +55,20 @@ Scientific provenance and production evidence are intentionally separate:
 There is no BPZ run-history document until a real BPZ production run has been
 completed and validated.
 
+## Canonical Stage 2 input
+
+Stage 2 reads the partitioned DP2 Object catalog expected to provide more
+balanced shards at:
+
+```text
+/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset
+```
+
+Its Parquet files are discovered recursively below
+`Norder=*/Dir=*/Npix=*.parquet`. The Stage 2 output tree preserves those
+relative directories and replaces only the `.parquet` suffix with `.hdf5`.
+The catalog has the same column schema as the former DP2 Object input.
+
 ## Canonical run layout
 
 Individual and batch launchers use exactly the same layout below
