@@ -1,6 +1,7 @@
 run:
-  name: DP1 FZBoost GAaP 1.0 matched v4
-  release: DP1
+  name: DP1-v2 FZBoost GAaP 1.0 matched v4
+  data_release: DP1
+  processing_version: dp1-v2
   algorithm: fzboost
 
 paths:
@@ -18,13 +19,11 @@ expected:
 selections:
   - name: all
     label: All objects
-  # Enable only if this ancillary column is present in both final products.
-  - name: clean_i_lt_25
-    label: "i_gaap1p0Mag_sfd < 25"
-    enabled: false
+  - name: clean_i_lt_26
+    label: "i_gaap1p0Mag_sfd < 26"
     filters:
       - column: i_gaap1p0Mag_sfd
-        maximum: 25.0
+        maximum: 26.0
         finite: true
 
 metrics:

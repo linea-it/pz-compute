@@ -4,16 +4,20 @@
 catalogs and their companion PDF parquet products. Run layout, selections,
 thresholds, and Dask resources live in YAML instead of notebook cells.
 
-Available production configurations:
+Available run configurations:
 
-- `config/dp1-fzboost.yaml`
+- `config/dp1-v2-fzboost.yaml`
 - `config/dp2-v2-fzboost.yaml`
 - `config/dp2-v3-bpz-test.yaml`
+
+The first two configurations describe the completed DP1-v2 and DP2-v2
+FZBoost products. DP2-v3 currently has only the standalone `bpz_test`
+engineering product; there is intentionally no DP2-v3 FZBoost configuration.
 
 From the repository root, start Jupyter with the selected configuration:
 
 ```bash
-PZ_QA_CONFIG=doc/notebooks/config/dp1-fzboost.yaml jupyter lab
+PZ_QA_CONFIG=doc/notebooks/config/dp1-v2-fzboost.yaml jupyter lab
 ```
 
 Open `doc/notebooks/pz_compute_qa.ipynb` and run all cells. If
@@ -24,19 +28,18 @@ variables such as `${PZ_RUN_ROOT}` are expanded.
 ## Quality-selected curves
 
 Selections are evaluated alongside the full sample in the same partition
-passes. To enable the example magnitude cut, change `enabled: false` to
-`enabled: true` and set the scientifically intended threshold:
+passes. All standard configurations produce both the complete-sample metrics
+and a finite `i_gaap1p0Mag_sfd < 26` selection:
 
 ```yaml
 selections:
   - name: all
     label: All objects
-  - name: clean_i_lt_25
-    label: "i_gaap1p0Mag_sfd < 25"
-    enabled: true
+  - name: clean_i_lt_26
+    label: "i_gaap1p0Mag_sfd < 26"
     filters:
       - column: i_gaap1p0Mag_sfd
-        maximum: 25.0
+        maximum: 26.0
         finite: true
 ```
 
