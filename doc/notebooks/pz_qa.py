@@ -717,12 +717,13 @@ def plot_nz(result: QAResult):
     for row, selection in enumerate(selections):
         name, label = selection["name"], selection.get("label", selection["name"])
         for estimator, values in result.nz[name].items():
+            curve_label = "Parquet stacked PDF" if estimator == "stacked_pdf" else f"HATS {estimator}"
             if estimator != "stacked_pdf":
-                axes[row, 0].step(grid, values, where="mid", label=estimator, color=colors[estimator], linewidth=1.5)
+                axes[row, 0].step(grid, values, where="mid", label=curve_label, color=colors[estimator], linewidth=1.5)
             if values.sum():
-                axes[row, 1].plot(grid, values / values.sum(), label=estimator, color=colors[estimator], linewidth=2 if estimator == "stacked_pdf" else 1.5)
-        axes[row, 0].set(title=f"{label}: point-estimate N(z)", xlabel="Photometric redshift", ylabel="Objects per bin")
-        axes[row, 1].set(title=f"{label}: normalized N(z)", xlabel="Photometric redshift", ylabel="Fraction per bin")
+                axes[row, 1].plot(grid, values / values.sum(), label=curve_label, color=colors[estimator], linewidth=2 if estimator == "stacked_pdf" else 1.5)
+        axes[row, 0].set(title=f"{label}: HATS point-estimate N(z)", xlabel="Photometric redshift", ylabel="Objects per bin")
+        axes[row, 1].set(title=f"{label}: HATS estimates vs parquet PDF stack", xlabel="Photometric redshift", ylabel="Fraction per bin")
         axes[row, 0].legend()
         axes[row, 1].legend()
     return fig

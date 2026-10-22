@@ -25,6 +25,19 @@ Open `doc/notebooks/pz_compute_qa.ipynb` and run all cells. If
 configuration paths are resolved relative to the YAML file; environment
 variables such as `${PZ_RUN_ROOT}` are expanded.
 
+After execution, export a report without input cells using:
+
+```bash
+jupyter nbconvert \
+  --to html \
+  --no-input \
+  --output pz-compute-qa.html \
+  doc/notebooks/pz_compute_qa.ipynb
+```
+
+Section text, output captions, table definitions, product provenance, and plot
+legends are written to remain understandable when the Python code is hidden.
+
 ## Quality-selected curves
 
 Selections are evaluated alongside the full sample in the same partition
