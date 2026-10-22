@@ -17,7 +17,7 @@ Algorithm-neutral input preparation is maintained in
 The batch entry points consistently use `all`:
 
 ```bash
-# Stage 1: submit all training jobs; validate after both jobs complete.
+# Stage 1: submit all training jobs; validate after all three jobs complete.
 doc/dp2_v3/scripts/submit-training.sh all
 doc/dp2_v3/scripts/validate-models.py all
 
@@ -25,7 +25,7 @@ doc/dp2_v3/scripts/validate-models.py all
 doc/dp2_v3/scripts/smoke-estimates.sh all
 doc/dp2_v3/scripts/submit-estimates.sh all
 
-# Stage 3: submit all HATS drivers; validate after both jobs complete.
+# Stage 3: submit all HATS drivers; validate after all three jobs complete.
 doc/dp2_v3/scripts/submit-hats.sh all
 doc/dp2_v3/scripts/validate-hats.py all
 ```

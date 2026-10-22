@@ -12,7 +12,7 @@ set -o pipefail
 command -v pz-build-hats >/dev/null
 
 case "$PZ_ALGORITHM" in
-    fzboost|bpz|bpz_test) ;;
+    fzboost|bpz|dnf|bpz_test) ;;
     *) echo "Unsupported PZ_ALGORITHM: $PZ_ALGORITHM" >&2; exit 2 ;;
 esac
 

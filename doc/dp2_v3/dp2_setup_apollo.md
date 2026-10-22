@@ -11,7 +11,7 @@ environments:
   only by Stage 3.
 
 Keeping these environments separate prevents Stage 3 package installation from
-changing the library versions used to train or load either model pickle.
+changing the library versions used to train or load the model pickles.
 
 ## 1. Login and shared paths
 

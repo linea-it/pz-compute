@@ -17,7 +17,7 @@ export PZ_DP2_INPUT_DATASET=/data/cl/lsst/dp2/secondary/catalogs/object_collecti
 cd "$PZ_COMPUTE_DIR"
 
 inputs=$(find "$PZ_DP2_INPUT_DATASET" -type f -name '*.parquet' | wc -l)
-for algorithm in fzboost bpz; do
+for algorithm in fzboost bpz dnf; do
     outputs=$(find "$PZ_DP2_ROOT/$algorithm/stage2/output" \
       -name '*.hdf5' | wc -l)
     printf '%s: inputs=%s outputs=%s\n' "$algorithm" "$inputs" "$outputs"
@@ -25,9 +25,9 @@ for algorithm in fzboost bpz; do
 done
 ```
 
-Do not continue unless both algorithms have one complete HDF5 output per input
-parquet. Stage 2 smoke outputs live outside the production output trees and
-are therefore not included in these counts.
+Do not continue unless all three algorithms have one complete HDF5 output per
+input parquet. Stage 2 smoke outputs live outside the production output trees
+and are therefore not included in these counts.
 
 ## 2. Submit all HATS builds
 
@@ -35,13 +35,13 @@ are therefore not included in these counts.
 doc/dp2_v3/scripts/submit-hats.sh all
 ```
 
-`all` submits one independent Slurm driver for FlexZBoost and one for BPZ.
+`all` submits one independent Slurm driver for each official algorithm.
 Each driver starts its own Dask cluster through `dask-jobqueue`; Slurm may run
-or queue the two builds according to cluster capacity. The login shell can be
-closed as soon as both driver job IDs have been returned.
+or queue the three builds according to cluster capacity. The login shell can be
+closed as soon as all driver job IDs have been returned.
 
 The default request is 82 Dask worker jobs per algorithm, with 8 CPUs and
-40 GiB per worker. Override the worker count for both builds before submission
+40 GiB per worker. Override the worker count for all builds before submission
 when required:
 
 ```bash
@@ -54,6 +54,7 @@ The command writes one job ledger per algorithm:
 ```text
 $PZ_DP2_ROOT/fzboost/stage3/submitted-job-ids.tsv
 $PZ_DP2_ROOT/bpz/stage3/submitted-job-ids.tsv
+$PZ_DP2_ROOT/dnf/stage3/submitted-job-ids.tsv
 ```
 
 All artifacts remain isolated:
@@ -78,7 +79,7 @@ statistics and `i_gaap1p0Mag_sfd`; the separate PDF product stores 601-element
 ## 3. Monitor all submitted drivers
 
 ```bash
-for algorithm in fzboost bpz; do
+for algorithm in fzboost bpz dnf; do
     printf '\n%s\n' "$algorithm"
     cat "$PZ_DP2_ROOT/$algorithm/stage3/submitted-job-ids.tsv"
 done
@@ -90,7 +91,7 @@ algorithm directories.
 
 ## 4. Validate all HATS artifacts
 
-After both drivers complete, validate both output trees with one command:
+After all drivers complete, validate all output trees with one command:
 
 ```bash
 doc/dp2_v3/scripts/validate-hats.py all
@@ -102,7 +103,8 @@ counts, and removal of temporary parquet staging after successful completion.
 
 Scientific output contracts are documented in
 [`fzboost_science.md`](../references/fzboost_science.md) and
-[`bpz_science.md`](../references/bpz_science.md). Validated FlexZBoost resource
+[`bpz_science.md`](../references/bpz_science.md), and
+[`dnf_science.md`](../references/dnf_science.md). Validated FlexZBoost resource
 history is kept separately in
 [`fzboost_runs.md`](../references/fzboost_runs.md); no BPZ production history
-is claimed yet.
+or DNF production history is claimed yet.

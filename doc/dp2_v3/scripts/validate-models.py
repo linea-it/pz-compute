@@ -10,7 +10,7 @@ import numpy as np
 from rail.core.model import Model
 
 
-OFFICIAL_ALGORITHMS = ("fzboost", "bpz")
+OFFICIAL_ALGORITHMS = ("fzboost", "bpz", "dnf")
 ALGORITHMS = (*OFFICIAL_ALGORITHMS, "bpz_test")
 OFFICIAL_PROVENANCE = {
     "project": "dp2_v3p1",
@@ -106,10 +106,57 @@ def validate_bpz_test(path: Path) -> None:
     validate_bpz_prior(path, [7, 12, 12], TEST_PROVENANCE)
 
 
+def validate_dnf(path: Path) -> None:
+    wrapped = validate_wrapper(
+        path,
+        "rail.estimation.algos.dnf.DNFInformer",
+        OFFICIAL_PROVENANCE,
+    )
+    assert wrapped.version == 0, path
+    model = wrapped.data
+    assert set(model) == {"train_mag", "train_err", "truez", "clf", "train_norm"}
+
+    train_mag = model["train_mag"]
+    train_err = model["train_err"]
+    truez = model["truez"]
+    train_norm = model["train_norm"]
+    assert train_mag.shape == (554_676, 6), path
+    assert train_err.shape == train_mag.shape, path
+    assert truez.shape == (554_676,), path
+    assert train_norm.shape == truez.shape, path
+    assert np.isclose(truez.min(), 0.0010000000474974513), path
+    assert np.isclose(truez.max(), 9.975), path
+    assert int((truez > 6.0).sum()) == 501, path
+    np.testing.assert_allclose(
+        train_norm, np.linalg.norm(train_mag, axis=1), rtol=1e-13, atol=0
+    )
+
+    clf = model["clf"]
+    expected = {
+        "algorithm": "auto",
+        "leaf_size": 30,
+        "metric": "minkowski",
+        "metric_params": None,
+        "n_jobs": None,
+        "n_neighbors": 5,
+        "p": 2,
+        "radius": 1.0,
+        "weights": "uniform",
+    }
+    params = clf.get_params()
+    for key, value in expected.items():
+        assert params[key] == value, (path, key, params[key], value)
+    assert clf.n_features_in_ == 6, path
+    assert clf.n_samples_fit_ == 554_676, path
+    assert clf.effective_metric_ == "euclidean", path
+    assert clf._fit_method == "kd_tree", path
+
+
 def paths_for(root: Path, algorithm: str) -> tuple[Path | None, Path]:
     basenames = {
         "fzboost": "model_dp2_v3p1_fzboost_dp2_6band_gold.pickle",
         "bpz": "model_dp2_v3p1_bpz_dp2_6band_gold.pickle",
+        "dnf": "model_dp2_v3p1_dnf_dp2_6band_gold.pickle",
         "bpz_test": "model_dp2_v3p1_bpz_test_cosmos31_gold.pickle",
     }
     basename = basenames[algorithm]
@@ -134,6 +181,7 @@ def main() -> None:
     validators = {
         "fzboost": validate_fzboost,
         "bpz": validate_bpz,
+        "dnf": validate_dnf,
         "bpz_test": validate_bpz_test,
     }
     for algorithm in algorithms:

@@ -38,7 +38,7 @@ Options:
                                and writable AB directories. Valid only for BPZ.
 
 
-Available algorithms: bpz, fzboost, tpz, gpz, lephare"""
+Available algorithms: bpz, dnf, fzboost, tpz, gpz, lephare"""
 
 from collections import namedtuple
 from math import nan
@@ -227,6 +227,8 @@ def load_slow_modules(estimator):
         from rail.estimation.algos.gpz import GPzEstimator as Estimator
     elif estimator == 'lephare':
         from rail.estimation.algos.lephare import LephareEstimator as Estimator
+    elif estimator == 'dnf':
+        from rail.estimation.algos.dnf import DNFEstimator as Estimator
     else:
         raise ValueError("Invalid estimator identifier: %s" % estimator)
 

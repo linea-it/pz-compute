@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Source this file, then call dp2_algorithm_config fzboost|bpz|bpz_test.
+# Source this file, then call dp2_algorithm_config fzboost|bpz|dnf|bpz_test.
 # `bpz_test` is an independent workflow name even though it uses RAIL's BPZ
 # implementation internally.
 dp2_algorithm_config() {
@@ -34,6 +34,16 @@ dp2_algorithm_config() {
             PZ_BPZ_SPECTRA_FILE=cosmossedswdust136.list
             PZ_BPZ_EXPECTED_SEDS=136
             ;;
+        dnf)
+            PZ_RAIL_ALGORITHM=dnf
+            PZ_MODEL_BASENAME=model_dp2_v3p1_dnf_dp2_6band_gold.pickle
+            PZ_TRAIN_CONFIG=$PZ_DP2_DOC_DIR/config/dnf-train.yaml
+            PZ_ESTIMATE_CONFIG=$PZ_DP2_DOC_DIR/config/dnf-estimate.yaml
+            # Conservative until a five-largest-shard DNF pilot is retained.
+            PZ_DEFAULT_MAX_CONCURRENT=20
+            PZ_DEFAULT_MEMORY=40G
+            PZ_DEFAULT_TIME=24:00:00
+            ;;
         bpz_test)
             : "${PZ_PY:?missing PZ_PY}"
             PZ_RAIL_ALGORITHM=bpz
@@ -56,7 +66,7 @@ PY
             echo "WARNING: bpz_test is non-production and must not be interpreted as official DP2 BPZ." >&2
             ;;
         *)
-            echo "Unsupported algorithm: $algorithm (expected fzboost, bpz, or bpz_test)" >&2
+            echo "Unsupported algorithm: $algorithm (expected fzboost, bpz, dnf, or bpz_test)" >&2
             return 2
             ;;
     esac

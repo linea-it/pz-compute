@@ -20,7 +20,7 @@ source /scripts/$(whoami)/ondemand/env-dp2-gaap1p0.sh
 : "${PZ_FILE_LIST:?missing PZ_FILE_LIST}"
 
 case "$PZ_ALGORITHM" in
-    fzboost|bpz|bpz_test) ;;
+    fzboost|bpz|dnf|bpz_test) ;;
     *) echo "Unsupported PZ_ALGORITHM: $PZ_ALGORITHM" >&2; exit 2 ;;
 esac
 

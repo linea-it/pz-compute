@@ -11,12 +11,14 @@ from rail.core.model import Model
 CREATION_CLASSES = {
     "fzboost": "rail.estimation.algos.flexzboost.FlexZBoostInformer",
     "bpz": "rail.estimation.algos.bpz_lite.BPZliteInformer",
+    "dnf": "rail.estimation.algos.dnf.DNFInformer",
     "bpz_test": "rail.estimation.algos.bpz_lite.BPZliteInformer",
 }
 
 FLAVORS = {
     "fzboost": "dp2_6band",
     "bpz": "dp2_6band",
+    "dnf": "dp2_6band",
     "bpz_test": "cosmos31_test",
 }
 

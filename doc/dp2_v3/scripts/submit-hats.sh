@@ -2,13 +2,13 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 fzboost|bpz|bpz_test|all" >&2
+    echo "Usage: $0 fzboost|bpz|dnf|bpz_test|all" >&2
 }
 
 selection=${1:-}
 case "$selection" in
-    fzboost|bpz|bpz_test) algorithms=("$selection") ;;
-    all) algorithms=(fzboost bpz) ;;
+    fzboost|bpz|dnf|bpz_test) algorithms=("$selection") ;;
+    all) algorithms=(fzboost bpz dnf) ;;
     *) usage; exit 2 ;;
 esac
 

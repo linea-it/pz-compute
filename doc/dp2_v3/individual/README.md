@@ -22,6 +22,15 @@ commands relevant to that algorithm.
 3. [`bpz_stage3_build_hats.md`](bpz_stage3_build_hats.md): build HATS products
    while keeping Dask logs under the BPZ directory.
 
+## DNF
+
+1. [`dnf_stage1_train.md`](dnf_stage1_train.md): reproduce and validate the
+   six-band DP2 nearest-neighbor model.
+2. [`dnf_stage2_estimate.md`](dnf_stage2_estimate.md): smoke test, pilot, and
+   production estimation over the DP2 catalogs.
+3. [`dnf_stage3_build_hats.md`](dnf_stage3_build_hats.md): build and validate
+   the DNF HATS products.
+
 ## BPZ test (standalone, non-production)
 
 1. [`bpz_test_stage1_train.md`](bpz_test_stage1_train.md): create and validate
@@ -32,7 +41,7 @@ commands relevant to that algorithm.
    validate HATS products that remain explicitly marked as test artifacts.
 
 `bpz_test` is never included in `all`; the batch route contains only official
-BPZ and FlexZBoost.
+BPZ, DNF, and FlexZBoost.
 
 The shared environment is documented in
 [`dp2_setup_apollo.md`](../dp2_setup_apollo.md). Prepare the algorithm-neutral

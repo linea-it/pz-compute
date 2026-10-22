@@ -20,7 +20,7 @@ printf '%s  %s\n' \
   common/training/train_clipped_v3.parquet | sha256sum --check
 ```
 
-Create one HDF5 table containing the columns required by both algorithms. The
+Create one HDF5 table containing the columns required by all official algorithms. The
 conversion copies values without filtering, sorting, sampling, imputation, or
 another extinction correction:
 
@@ -62,6 +62,6 @@ $PZ_DP2_ROOT/common/training/train_clipped_v3_gaap1p0.hdf5
 
 It contains `redshift`, six already-dereddened GAaP 1.0 magnitudes, and six
 magnitude errors in `ugrizy` order. Although the output grid ends at redshift
-6, retain the 501 training rows above 6 to reproduce the FlexZBoost reference
-input. BPZ with `output_hdfn: true` does not fit those rows, but uses the same
-file to preserve the shared column contract.
+6, retain the 501 training rows above 6 to reproduce the FlexZBoost and DNF
+reference inputs. BPZ with `output_hdfn: true` does not fit those rows, but
+uses the same file to preserve the shared column contract.

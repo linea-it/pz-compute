@@ -10,7 +10,7 @@ import lsdb
 import pyarrow.parquet as pq
 
 
-OFFICIAL_ALGORITHMS = ("fzboost", "bpz")
+OFFICIAL_ALGORITHMS = ("fzboost", "bpz", "dnf")
 ALGORITHMS = (*OFFICIAL_ALGORITHMS, "bpz_test")
 SUMMARY_COLUMNS = [
     "objectId",

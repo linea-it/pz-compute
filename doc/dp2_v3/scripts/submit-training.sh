@@ -2,13 +2,13 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 fzboost|bpz|bpz_test|all" >&2
+    echo "Usage: $0 fzboost|bpz|dnf|bpz_test|all" >&2
 }
 
 selection=${1:-}
 case "$selection" in
-    fzboost|bpz|bpz_test) algorithms=("$selection") ;;
-    all) algorithms=(fzboost bpz) ;;
+    fzboost|bpz|dnf|bpz_test) algorithms=("$selection") ;;
+    all) algorithms=(fzboost bpz dnf) ;;
     *) usage; exit 2 ;;
 esac
 
@@ -31,7 +31,7 @@ for algorithm in "${algorithms[@]}"; do
             basename=model_dp2_v3p1_fzboost_dp2_6band_gold
             resources=(--nodelist=apl[17-25] --cpus-per-task=98 --mem=231G --time=03:00:00)
             ;;
-        bpz|bpz_test)
+        bpz|bpz_test|dnf)
             basename=${PZ_MODEL_BASENAME%.pickle}
             resources=(--cpus-per-task=1 --mem=8G --time=01:00:00)
             ;;
