@@ -13,7 +13,7 @@ dp2_algorithm_config() {
             PZ_ESTIMATE_CONFIG=$PZ_DP2_DOC_DIR/config/fzboost-estimate.yaml
             PZ_DEFAULT_MAX_CONCURRENT=82
             PZ_DEFAULT_MEMORY=40G
-            PZ_DEFAULT_TIME=12:00:00
+            PZ_DEFAULT_TIME=01:00:00
             ;;
         bpz)
             PZ_MODEL_BASENAME=model_dp2_v3p1_bpz_dp2_6band_gold.pickle

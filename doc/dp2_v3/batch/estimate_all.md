@@ -95,7 +95,9 @@ sacct -j <jobid> --format=JobID%30,State,ExitCode,Elapsed,MaxRSS
 The supplied BPZ defaults (20 concurrent tasks, 40 GiB, 24 hours) are
 conservative starting values, not measured production claims. Override them
 from pilot evidence with `PZ_BPZ_MAX_CONCURRENT`, `PZ_BPZ_MEMORY`, and
-`PZ_BPZ_TIME`. FlexZBoost has the equivalent `PZ_FZBOOST_*` variables.
+`PZ_BPZ_TIME`. FlexZBoost defaults to 82 concurrent tasks, 40 GiB, and one hour
+per task based on the retained production evidence and secondary-catalog pilot;
+it has the equivalent `PZ_FZBOOST_*` override variables.
 
 ## 5. Submit both algorithms over the complete catalog
 

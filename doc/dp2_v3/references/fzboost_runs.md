@@ -20,6 +20,35 @@ artifact organization; they do not constitute a new completed production run.
 When v3 is executed, append the job IDs, environment freeze, benchmark summary,
 input/output counts, and validation result here.
 
+## 2026-10-22 secondary-catalog Stage 2 pilot
+
+Slurm array job `217085` ran FlexZBoost over the five largest shards selected
+from the partitioned secondary Object catalog. It used account
+`hpc-pipelines`, partition `cpu_pipelines`, five concurrent tasks, two logical
+CPUs and 40 GiB per task, and a 12-hour pilot limit. All five tasks completed
+with exit code `0:0`.
+
+| task | elapsed | maximum RSS | total CPU |
+|---|---:|---:|---:|
+| `217085_0` | 12 min 09 s | 29.09 GiB | 13 min 32.770 s |
+| `217085_1` | 12 min 01 s | 5.28 GiB | 13 min 24.141 s |
+| `217085_2` | 11 min 31 s | 4.94 GiB | 12 min 47.537 s |
+| `217085_3` | 11 min 38 s | 28.52 GiB | 12 min 58.547 s |
+| `217085_4` | 11 min 42 s | 21.99 GiB | 13 min 02.286 s |
+
+Elapsed time ranged from 11 min 31 s to 12 min 09 s, with a median of
+11 min 42 s. Maximum RSS ranged from 4.94 to 29.09 GiB, with a median of
+21.99 GiB. Aggregate CPU efficiency was approximately 55.7% relative to the
+two allocated logical CPUs per task.
+
+The measured 29.09 GiB peak supports retaining the homogeneous 40 GiB memory
+request. The Stage 2 FlexZBoost task limit is reduced from 12 hours to one hour,
+which leaves nearly five times the observed maximum runtime. The canonical
+82-task throttle remains unchanged because it describes capacity on the
+`cpu_photoz` production partition; this five-task pilot used a different,
+smaller partition. Long-lived Stage 3 driver and Dask-worker limits are not
+changed by this Stage 2 evidence.
+
 ## 2026-10-21 FlexZBoost production run
 
 This run used the legacy DP2/FlexZBoost orchestration documented in
@@ -217,16 +246,17 @@ The retained technical acceptance criteria are:
 ## Stage 2 production profile carried into v3
 
 The established runner processes one Object parquet per Slurm array task. A
-40 GiB, 12-hour task request and a maximum concurrency of 82 are the v3
-starting defaults. The concurrency value is capacity-derived: with 40 GiB
+40 GiB, one-hour task request and a maximum concurrency of 82 are the v3
+defaults. The concurrency value is capacity-derived: with 40 GiB
 tasks, the 16 smaller Apollo nodes fit two tasks each and the nine larger nodes
 fit six each, for 86 theoretical slots; rounding 95% gives 82.
 
 This is a scheduling rationale, not a substitute for a current pilot. The five
 largest shards must complete with exit code `0:0`, valid HDF5 markers, and no
 memory errors before using the production default. Future changes must use
-observed `MaxRSS` and `Elapsed` rather than treating 40 GiB or 82 as scientific
-constants.
+observed `MaxRSS` and `Elapsed` rather than treating 40 GiB, one hour, or 82 as
+scientific constants. The current values incorporate the secondary-catalog
+pilot recorded above.
 
 One schema-validation shard recorded by the legacy workflow was
 `object_6310_lsst_cells_v2_LSSTCam_runs_DRP_DP2_v30_0_8_DM-55060_stage3_20260606T114559Z.parq`,

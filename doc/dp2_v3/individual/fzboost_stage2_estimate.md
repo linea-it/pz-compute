@@ -37,6 +37,12 @@ After checking `MaxRSS` and `Elapsed`, submit the complete catalog:
 doc/dp2_v3/scripts/submit-estimates.sh fzboost
 ```
 
+The defaults are 82 concurrent tasks, 40 GiB, and one hour per task. The memory
+and walltime incorporate the five-largest-shard secondary-catalog pilot recorded
+in [`fzboost_runs.md`](../references/fzboost_runs.md). Override them with
+`PZ_FZBOOST_MAX_CONCURRENT`, `PZ_FZBOOST_MEMORY`, and `PZ_FZBOOST_TIME` when a
+different partition or a new pilot requires it.
+
 ## 3. Output layout
 
 ```text
