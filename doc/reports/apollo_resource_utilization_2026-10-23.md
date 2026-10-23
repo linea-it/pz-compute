@@ -166,10 +166,10 @@ The current configuration was safe and completed production, but it is not the f
 
 Primary local evidence:
 
-- DP1 and DP2 Slurm summaries under `not-tracked/pz-compute-succesful-execution-logs/`;
+- DP1 and DP2 Slurm summaries retained from the production runs;
 - Stage 2 task-level accounting for array `214803`;
 - Stage 3 task-level accounting for workers `216977-217058` and the successful driver log;
-- the operational chronology in `work_summary.txt`;
+- retained execution configurations and run-context records;
 - the resource derivations retained in `doc/dp2_v2/`.
 
 Public references:
