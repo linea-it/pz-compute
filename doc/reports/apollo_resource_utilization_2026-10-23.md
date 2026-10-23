@@ -7,7 +7,7 @@ This resource-focused analysis complements the broader
 which documents the scientific products, inputs, execution outcomes, and
 remaining BPZ work.
 
-## Executive answer
+## Key findings
 
 The largest successful photo-z production used **all 25 Apollo nodes available to the `hpc-photoz` account in the `cpu_photoz` partition**. It did not use all 28 physical nodes advertised for Apollo because `apl26-28` were reserved for Jupyter and other LIneA pipelines and were outside the production node set.
 
@@ -158,7 +158,7 @@ The current configuration was safe and completed production, but it is not the f
 8. **Archive a topology snapshot with each production.** Retain `sinfo`, `scontrol show partition`, and relevant `scontrol show node` output so future reports distinguish advertised, eligible, free, allocated, and used resources without relying on operator transcripts.
 9. **Keep algorithm-specific sizing.** FlexZBoost, DNF, BPZ, and HATS construction have different CPU and memory behavior. A single cluster-wide job shape should not be treated as an efficiency target.
 
-## 5. Recommended concise response to management
+## 5. Concise resource-allocation rationale
 
 > Apollo has 28 nodes, but 25 nodes were available to the photo-z production account; the other three were assigned to Jupyter and LIneA pipelines. The DP2 production used all 25 eligible nodes. We ran 82 simultaneous jobs, which is 95.35% of the safe 40 GiB job slots that fit on those nodes. We did not allocate all CPU threads because the estimator currently runs one process per catalog shard and is constrained first by per-task memory, not by CPU availability. We also did not attempt to fill every RAM byte because memory is allocated in whole per-node job slots and shard memory varies from 2.67 GiB at the median to 33.85 GiB at the maximum. Stage 3 similarly needed close to 40 GiB per worker but included I/O and coordination phases that do not saturate CPUs. The run completed all 786.42 million objects successfully; the next efficiency gains are memory-classed arrays, CPU-scaling benchmarks, smaller chunks, and better time-aligned telemetry.
 
