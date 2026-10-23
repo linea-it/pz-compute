@@ -1,0 +1,17 @@
+# DP2 uses the pz-rail-dnf 2.0.4 defaults. Pin the configurable defaults here;
+# Nneighbors=80, presel=4000, fit=True, and pdf=True are fixed by that release.
+zmin: 0.0
+zmax: 6.0
+nzbins: 601
+chunk_size: 10000
+nondetect_val: .nan
+mag_limits:
+  u_gaap1p0Mag_sfd: 26.5
+  g_gaap1p0Mag_sfd: 27.8
+  r_gaap1p0Mag_sfd: 27.1
+  i_gaap1p0Mag_sfd: 26.7
+  z_gaap1p0Mag_sfd: 25.8
+  y_gaap1p0Mag_sfd: 24.6
+redshift_col: redshift
+# 0=ENF, 1=ANF, 2=DNF. DP2 does not override the release default (ANF).
+selection_mode: 1

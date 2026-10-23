@@ -39,6 +39,9 @@ from datetime import datetime
 ENV = os.environ.get('ENVIRONMENT') or "dev"
 SCRATCH = os.environ.get('SCRATCH')
 SCRIPTS = os.environ.get('SCRIPTS')
+PZ_RUN_ROOT = os.environ.get('PZ_RUN_ROOT') or SCRATCH or os.getcwd()
+PZ_SRC_DIR = os.environ.get('PZ_SRC_DIR')
+PZ_COMPUTE_DIR = os.environ.get('PZ_COMPUTE_DIR')
 
 APP_PZ_COMPUTE_PATH = '/scratch/users/app.photoz/pz-compute'
 LSST_DP02 = '/data/cl/lsst/dp02/secondary/catalogs/skinny/hdf5/'
@@ -80,8 +83,8 @@ def define_setup_dir(process_id, comment, algorithm, will_train, creation_path, 
         print("Train run not defined, remember to add the .pkl file")
         
     if creation_path is None:
-        print("Creation path not defined, setting it to your scratch")
-        creation_path = SCRATCH
+        print("Creation path not defined, setting it to your PZ run root")
+        creation_path = PZ_RUN_ROOT
     
     process_id = set_process_id(process_id, algorithm, creation_path)
     
@@ -174,6 +177,8 @@ def create_required_dirs(configs):
     try:
         os.makedirs(f'{process_dir}', exist_ok = True)
         os.makedirs(f'{process_dir}/input', exist_ok = True)
+        os.makedirs(f'{process_dir}/output', exist_ok = True)
+        os.makedirs(f'{process_dir}/log', exist_ok = True)
     except OSError as error:
         print('Failed to create directories')
 
@@ -199,7 +204,7 @@ def add_input_data(configs):
             print("The input dir does not exists.")
     else:
         print("\nNot using the complete LSST DP0.2 dataset.")
-        print(f'Please add manually the data in the input dir with the folowing command:\n ln -s <origin_path>/*.hdf5 {configs.process_id}/input/')
+        print(f'Please add manually the data in the input dir with the folowing command:\n ln -s <origin_path>/*.hdf5 {configs.creation_path}/{configs.process_id}/input/')
         print()
 
 def copy_configs_file(configs):
@@ -217,7 +222,8 @@ def copy_configs_file(configs):
         if configs.will_train:
             create_yaml_pz_compute_train(configs)
 
-        src = f'{SCRIPTS}/pz-compute/doc/algorithms_config/{file_algoritm_configs}'
+        src_root = PZ_COMPUTE_DIR or (f'{PZ_SRC_DIR}/pz-compute' if PZ_SRC_DIR else f'{SCRIPTS}/pz-compute')
+        src = f'{src_root}/doc/algorithms_config/{file_algoritm_configs}'
         shutil.copy(src, dst)
     else:
         print("Env not defined, not creating the configurations yaml")
@@ -233,7 +239,8 @@ def copy_run_notebook(configs):
         shutil.copy(src, dst)
 
     elif ENV == "dev":
-        src = f'{SCRATCH}/pz-compute/ondemand/{notebook_file_origin}'
+        src_root = PZ_COMPUTE_DIR or (f'{PZ_SRC_DIR}/pz-compute' if PZ_SRC_DIR else f'{SCRIPTS}/pz-compute')
+        src = f'{src_root}/ondemand/{notebook_file_origin}'
         shutil.copy(src, dst)
     else:
         print("Env not defined, not copying the notebook for the run")
@@ -258,8 +265,8 @@ def create_process_dir(algorithm=None, process_id=None, comment=None, will_train
 
 def main():
     args = parse_cmd() 
-    current_dir = os.getcwd()
+    creation_path = PZ_RUN_ROOT or os.getcwd()
     
-    create_process_dir(args.algorithm, args.process_id, args.comment, args.will_train, current_dir, args.use_all_dp0_dataset, ENV)    
+    create_process_dir(args.algorithm, args.process_id, args.comment, args.will_train, creation_path, args.use_all_dp0_dataset, ENV)
     
 if __name__ == '__main__': main()

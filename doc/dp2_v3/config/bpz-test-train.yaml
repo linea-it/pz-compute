@@ -1,0 +1,25 @@
+# TEST ONLY: independent COSMOS31 BPZ workflow, not official DP2 BPZ.
+zmin: 0.0
+zmax: 6.0
+nzbins: 601
+nondetect_val: .nan
+mag_limits:
+  u_gaap1p0Mag: 26.5
+  g_gaap1p0Mag: 27.8
+  r_gaap1p0Mag: 27.1
+  i_gaap1p0Mag: 26.7
+  z_gaap1p0Mag: 25.8
+  y_gaap1p0Mag: 24.6
+redshift_col: redshift
+filter_list:
+  - lsstcam_u
+  - lsstcam_g
+  - lsstcam_r
+  - lsstcam_i
+  - lsstcam_z
+  - lsstcam_y
+# The public COSMOS list contains 7 elliptical, 12 spiral, and 12 starburst
+# templates. This is deliberately independent from the official [7, 57, 72].
+nt_array: [7, 12, 12]
+output_hdfn: true
+override_file_offsets: false
