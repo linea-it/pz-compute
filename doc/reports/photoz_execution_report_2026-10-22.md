@@ -2,6 +2,10 @@
 
 **Status as of October 22, 2026**
 
+For a detailed comparison of Apollo's published capacity, the resources exposed
+by Slurm, and the resources allocated and consumed by these runs, see the
+[Apollo capacity and photo-z resource utilization report](apollo_resource_utilization_2026-10-23.md).
+
 ## Executive summary
 
 The FlexZBoost processing was completed successfully for both Rubin DP1 and DP2. The production outputs comprise point estimates in HATS format and full redshift probability distributions (PDFs) in Parquet format. The final catalogs contain approximately **2.30 million DP1 objects** and **786.42 million DP2 objects**.
