@@ -35,6 +35,7 @@ $PZ_DP2_ROOT/dnf/stage3/
 ```
 
 The summary HATS catalog retains the common scalar statistics and
-`i_gaap1p0Mag_sfd`; the companion PDF product retains the 601-bin vectors and
-redshift grid. DNF-specific Stage 2 ancillary values remain in the estimator
-HDF5 files and are not added to the common HATS schema by this workflow.
+`i_gaap1p0Mag_sfd` plus `refExtendedness`; the companion PDF product retains
+both columns, the 601-bin vectors, and the redshift grid. DNF-specific Stage 2
+ancillary values remain in the estimator HDF5 files and are not added to the
+common HATS schema by this workflow.

@@ -53,6 +53,7 @@ with h5py.File(sys.argv[1], "r") as handle:
         and int(marker.get("row_count", -1)) == rows
         and "row_id_fingerprint" in marker
         and handle["ancillary/i_gaap1p0Mag_sfd"].shape == (rows,)
+        and handle["ancillary/refExtendedness"].shape == (rows,)
         and marker.get("sfd_bands", "") == "ugrizy"
         and np.array_equal(
             marker.get("sfd_a_ebv", []),
@@ -96,5 +97,5 @@ fi
   --column-template='{band}_gaap1p0Mag_sfd' \
   --column-template-error='{band}_gaap1p0MagErr_sfd' \
   --row-id-column=objectId \
-  --output-columns=i_gaap1p0Mag_sfd \
+  --output-columns=i_gaap1p0Mag_sfd,refExtendedness \
   "${bpz_args[@]}"

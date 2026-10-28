@@ -39,6 +39,8 @@ def validate_file(path: Path, expected_sfd: dict[str, float]) -> int:
             raise ValueError("meta/xvals does not contain 601 bins")
         if handle["ancillary/i_gaap1p0Mag_sfd"].shape != (rows,):
             raise ValueError("retained magnitude shape does not match PDF rows")
+        if handle["ancillary/refExtendedness"].shape != (rows,):
+            raise ValueError("retained extendedness shape does not match PDF rows")
 
         marker = handle["pz_compute"].attrs
         if not bool(marker.get("complete", False)):

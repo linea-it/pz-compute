@@ -156,7 +156,9 @@ behavior; the pickle validator checks only state that is actually persisted.
 
 ## Output contract
 
-Stage 2 stores one 601-bin PDF per object and retains
-`i_gaap1p0Mag_sfd` as ancillary data. `objectId` is used to fingerprint row
+Stage 2 stores one 601-bin PDF per object and retains `i_gaap1p0Mag_sfd` and
+`refExtendedness` as ancillary data. The latter preserves the DP2
+reference-band point-like (`0`) versus extended (`1`) classification, including
+null values for unclassified objects. `objectId` is used to fingerprint row
 identity and order before Stage 3. HATS conversion is representation and
-packaging only; it must not change the grid, PDF values, or retained magnitude.
+packaging only; it must not change the grid, PDF values, or retained columns.

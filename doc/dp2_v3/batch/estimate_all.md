@@ -161,8 +161,8 @@ cat "$PZ_DP2_ROOT/dnf/stage2/submitted-job-ids.tsv"
 
 Use `sacct -j <jobid>` for every production job ID and require every array task
 to be `COMPLETED` with exit code `0:0`. The generic runner also verifies the
-601-bin PDF, retained `i_gaap1p0Mag_sfd`, row count, and `objectId` fingerprint
-before treating an existing HDF5 as complete.
+601-bin PDF, retained `i_gaap1p0Mag_sfd` and `refExtendedness`, row count, and
+`objectId` fingerprint before treating an existing HDF5 as complete.
 
 Continue with [batch Stage 3](build_hats_all.md), which submits all three HATS
 builds with one `all` command.

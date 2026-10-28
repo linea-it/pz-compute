@@ -22,12 +22,14 @@ SUMMARY_COLUMNS = [
     "z_p16",
     "z_p84",
     "i_gaap1p0Mag_sfd",
+    "refExtendedness",
 ]
 PDF_COLUMNS = [
     "objectId",
     "coord_ra",
     "coord_dec",
     "i_gaap1p0Mag_sfd",
+    "refExtendedness",
     "pdf",
 ]
 

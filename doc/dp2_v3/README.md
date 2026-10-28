@@ -160,8 +160,10 @@ Stage 1 model, Stage 2 estimates, Stage 3 HATS products, configurations,
 validation, and documentation. It is not a profile or fallback within `bpz`.
 
 The retained redshift grid is 601 points over `[0, 6]` for all four workflows,
-so Stage 3 receives the same HDF5 shape and the same retained
-`i_gaap1p0Mag_sfd` ancillary column.
+so Stage 3 receives the same HDF5 shape and the same retained ancillary
+columns: `i_gaap1p0Mag_sfd` and `refExtendedness`. The latter is the DP2
+reference-band point-like (`0`) versus extended (`1`) classification; null
+values remain unclassified.
 
 ## Pinned upstream configuration
 

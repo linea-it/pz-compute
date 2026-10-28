@@ -73,8 +73,9 @@ $PZ_DP2_ROOT/<algorithm>/stage3/
 ```
 
 The Stage 2 HDF5 files are retained. The summary product contains scalar photo-z
-statistics and `i_gaap1p0Mag_sfd`; the separate PDF product stores 601-element
-`float32` vectors plus its redshift grid.
+statistics, `i_gaap1p0Mag_sfd`, and `refExtendedness`; the separate PDF product
+stores both retained columns, 601-element `float32` vectors, and its redshift
+grid.
 
 ## 3. Monitor all submitted drivers
 

@@ -134,6 +134,7 @@ combined before a production array and warms the shared cache once.
 
 Stage 2 must emit one 601-bin marginalized redshift PDF per object while
 preserving row identity through `objectId`. The workflow retains
-`i_gaap1p0Mag_sfd` for the same downstream selection contract used by
-FlexZBoost. No claim about production runtime, memory, or scientific output
-validation is made until a real BPZ pilot and production run are recorded.
+`i_gaap1p0Mag_sfd` and `refExtendedness` for the same downstream selection and
+reference-band morphology contract used by FlexZBoost. No claim about
+production runtime, memory, or scientific output validation is made until a
+real BPZ pilot and production run are recorded.

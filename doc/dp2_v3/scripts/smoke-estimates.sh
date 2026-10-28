@@ -60,6 +60,10 @@ if "objectId" not in parquet.schema_arrow.names:
     raise RuntimeError(f"objectId is missing from smoke-test input: {source}")
 if "objectId" not in columns:
     columns.append("objectId")
+if "refExtendedness" not in parquet.schema_arrow.names:
+    raise RuntimeError(f"refExtendedness is missing from smoke-test input: {source}")
+if "refExtendedness" not in columns:
+    columns.append("refExtendedness")
 
 try:
     batch = next(parquet.iter_batches(batch_size=row_limit, columns=columns))
@@ -129,7 +133,7 @@ for algorithm in "${algorithms[@]}"; do
       --column-template='{band}_gaap1p0Mag_sfd' \
       --column-template-error='{band}_gaap1p0MagErr_sfd' \
       --row-id-column=objectId \
-      --output-columns=i_gaap1p0Mag_sfd \
+      --output-columns=i_gaap1p0Mag_sfd,refExtendedness \
       "${bpz_args[@]}"
 
     "$PZ_PY" - "$output" "$PZ_SFD_CONFIG" <<'PY'
@@ -145,6 +149,7 @@ with h5py.File(sys.argv[1], "r") as handle:
     rows, bins = handle["data/yvals"].shape
     assert bins == 601
     assert handle["ancillary/i_gaap1p0Mag_sfd"].shape == (rows,)
+    assert handle["ancillary/refExtendedness"].shape == (rows,)
     marker = handle["pz_compute"].attrs
     assert bool(marker["complete"])
     assert int(marker["row_count"]) == rows
