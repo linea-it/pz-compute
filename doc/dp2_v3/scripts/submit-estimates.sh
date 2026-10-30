@@ -83,6 +83,9 @@ for algorithm in "${algorithms[@]}"; do
 
     job_id=$(cd "$run_dir" && sbatch --parsable \
       --job-name="dp2-$algorithm" \
+      --nodes=1 \
+      --ntasks=1 \
+      --cpus-per-task=1 \
       --mem="$memory" \
       --time="$walltime" \
       --array="0-$((nfiles - 1))%$concurrency" \

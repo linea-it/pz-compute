@@ -73,6 +73,8 @@ for algorithm in "${algorithms[@]}"; do
       --partition=cpu_photoz \
       --account=hpc-photoz \
       --exclude='apl[27-28]' \
+      --nodes=1 \
+      --ntasks=1 \
       --cpus-per-task=2 \
       --mem=8G \
       --time=2-00:00:00 \

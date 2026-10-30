@@ -46,6 +46,8 @@ for algorithm in "${algorithms[@]}"; do
     model=$model_dir/$basename.pickle
     job_id=$(sbatch --parsable \
       --job-name="dp2-train-$algorithm" \
+      --nodes=1 \
+      --ntasks=1 \
       --output="$log_dir/train-$algorithm-%j.out" \
       --error="$log_dir/train-$algorithm-%j.err" \
       "${resources[@]}" \
