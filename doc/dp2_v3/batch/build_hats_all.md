@@ -1,118 +1,70 @@
-# DP2 batch Stage 3: build HATS products for all algorithms
+# Serial batch Stage 3: build, validate, and profile HATS
 
-This stage submits one persistent Slurm driver for every algorithm in the
-registry. Each driver reads only its own Stage 2 HDF5 tree and writes its HATS
-products, driver logs, Dask worker logs, benchmarks, and environment freeze
-under the same algorithm's `stage3/` directory.
+Stage 3 runs only after the current algorithm's complete Stage 2 tree has
+passed validation. The controller submits one persistent HATS driver and waits
+for it to finish before validating products, profiling resources, and moving
+to the next algorithm.
 
-Complete the shared [Apollo setup](../dp2_setup_apollo.md) and
-[batch Stage 2](estimate_all.md) first.
+## 1. Driver and adaptive workers
 
-## 1. Load the shared environment and verify all inputs
+The controller invokes `submit-hats.sh <algorithm>`, not `all`. The standard
+configuration is:
 
-```bash
-source /scripts/$(whoami)/ondemand/env-dp2-stage3-hats.sh
-export PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
-export PZ_DP2_INPUT_DATASET=/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset
-cd "$PZ_COMPUTE_DIR"
+| Component | Resources |
+|---|---|
+| Driver | 1 node, 1 task, 2 CPUs, 8 GiB, 2 days |
+| Dask workers | adaptive 20–80 jobs |
+| Each worker | 8 CPUs, 40 GiB, 12 hours |
+| Worker scale-down delay | 180 seconds |
 
-inputs=$(find "$PZ_DP2_INPUT_DATASET" -type f -name '*.parquet' | wc -l)
-for algorithm in fzboost bpz dnf; do
-    outputs=$(find "$PZ_DP2_ROOT/$algorithm/stage2/output" \
-      -name '*.hdf5' | wc -l)
-    printf '%s: inputs=%s outputs=%s\n' "$algorithm" "$inputs" "$outputs"
-    test "$inputs" -eq "$outputs"
-done
-```
+Only one adaptive cluster exists at a time. It can therefore scale within the
+same 20–80 range as the corresponding individual run without competing with
+DNF, BPZ, or FlexZBoost workers created by this batch workflow.
 
-Do not continue unless all three algorithms have one complete HDF5 output per
-input parquet. Stage 2 smoke outputs live outside the production output trees
-and are therefore not included in these counts.
+## 2. Validation before profiling
 
-## 2. Submit all HATS builds
+When the driver reaches `COMPLETED / 0:0`, the controller runs
+`validate-hats.py <algorithm>`. The validator requires matching Stage 2,
+summary-HATS, and PDF row counts; common schemas; the 601-bin redshift grid;
+and no leftover Parquet staging after successful completion.
 
-```bash
-doc/dp2_v3/scripts/submit-hats.sh all
-```
+A completed Slurm driver is not sufficient by itself. Validation failure stops
+the batch and prevents the next algorithm from starting.
 
-`all` submits one independent Slurm driver for each official algorithm.
-Each driver starts its own Dask cluster through `dask-jobqueue`; Slurm may run
-or queue the three builds according to cluster capacity. The login shell can be
-closed as soon as all driver job IDs have been returned.
+## 3. Driver and worker benchmarks
 
-The default keeps at least 20 Dask worker jobs and scales adaptively up to 80
-jobs per algorithm, with 8 CPUs and 40 GiB per worker. An idle worker becomes
-eligible for scale-down after approximately 180 seconds. Override the range and
-idle delay for all builds before submission when required:
-
-```bash
-export PZ_HATS_MIN_WORKERS=20
-export PZ_HATS_MAX_WORKERS=60
-export PZ_HATS_SCALE_DOWN_DELAY=120
-doc/dp2_v3/scripts/submit-hats.sh all
-```
-
-`PZ_HATS_WORKERS` remains a compatibility alias for the maximum only. New
-commands should use the explicit minimum and maximum variables. The scale-down
-delay is expressed in seconds.
-
-The command writes one job ledger per algorithm:
+After validation, the controller writes two independent profiles below the
+driver's unique run tag:
 
 ```text
-$PZ_DP2_ROOT/fzboost/stage3/submitted-job-ids.tsv
-$PZ_DP2_ROOT/bpz/stage3/submitted-job-ids.tsv
-$PZ_DP2_ROOT/dnf/stage3/submitted-job-ids.tsv
+$PZ_DP2_ROOT/<algorithm>/stage3/benchmark/<run-tag>/
+├── driver/
+├── workers/
+├── worker-job-ids.txt
+└── run-context.log
 ```
 
-All artifacts remain isolated:
+The driver profile must be successful and retains its Slurm allocation and
+end-to-end context. Worker IDs are recovered from the isolated Dask log
+directory, then profiled together with concurrency target 80 and external
+cluster context over `apl01-26`.
 
-```text
-$PZ_DP2_ROOT/<algorithm>/stage3/
-├── output/
-│   ├── pz-<algorithm>-gaap1p0-clipped-hats/
-│   └── pz-<algorithm>-gaap1p0-clipped-hats.pdf/
-├── log/
-│   ├── dask-<run-tag>/
-│   └── driver-<run-tag>/
-├── benchmark/<run-tag>/
-├── environment-freeze.txt
-└── submitted-job-ids.tsv
-```
+Adaptive Dask may cancel healthy workers during scale-down or cluster closure,
+so worker terminal state alone is not the success criterion. The authoritative
+combination is:
 
-The Stage 2 HDF5 files are retained. The summary product contains scalar photo-z
-statistics, `i_gaap1p0Mag_sfd`, and `refExtendedness`; the separate PDF product
-stores both retained columns, 601-element `float32` vectors, and its redshift
-grid.
+- completed driver with zero exit marker;
+- clean driver and worker diagnostics;
+- successful scientific HATS validation;
+- retained `driver-resource-usage.log`;
+- generated driver and worker resource profiles.
 
-## 3. Monitor all submitted drivers
+## 4. Algorithm transition
 
-```bash
-for algorithm in fzboost bpz dnf; do
-    printf '\n%s\n' "$algorithm"
-    cat "$PZ_DP2_ROOT/$algorithm/stage3/submitted-job-ids.tsv"
-done
-```
+Only after all Stage 3 checks and profiles finish does the controller mark the
+algorithm complete and return to Stage 1 for the next name in the serial order.
+After BPZ completes, the controller writes the final batch `summary.md` and
+`SUCCESS` marker.
 
-Pass every recorded production job ID to `sacct` and require `COMPLETED` with
-exit code `0:0`. Driver and worker diagnostics remain inside their respective
-algorithm directories.
-
-## 4. Validate all HATS artifacts
-
-After all drivers complete, validate all output trees with one command:
-
-```bash
-doc/dp2_v3/scripts/validate-hats.py all
-```
-
-The validator checks every registered algorithm. It requires the expected
-summary and PDF schemas, a 601-point PDF grid, equal Stage 2/summary/PDF row
-counts, and removal of temporary parquet staging after successful completion.
-
-Scientific output contracts are documented in
-[`fzboost_science.md`](../references/fzboost_science.md) and
-[`bpz_science.md`](../references/bpz_science.md), and
-[`dnf_science.md`](../references/dnf_science.md). Validated FlexZBoost resource
-history is kept separately in
-[`fzboost_runs.md`](../references/fzboost_runs.md); no BPZ production history
-or DNF production history is claimed yet.
+Any driver failure, timeout, HATS validation error, missing worker log IDs, or
+profiling failure produces the batch failure report and stops the sequence.

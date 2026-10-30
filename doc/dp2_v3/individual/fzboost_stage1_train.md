@@ -49,7 +49,34 @@ $PZ_DP2_ROOT/fzboost/stage1/
 The final model receives `catalog_tag=lsst_gaap_1p0` and provenance
 `dp2_v3p1/dp2_6band/gold`.
 
-## 3. Validate the FlexZBoost model
+## 3. Profile the completed training job
+
+After the job reaches `COMPLETED`, recover its ID and create the lightweight
+Slurm benchmark. The cluster-context query is restricted to the large nodes on
+which this training job was eligible to run:
+
+```bash
+stage1=$PZ_DP2_ROOT/fzboost/stage1
+jobid=$(tail -n 1 "$stage1/submitted-job-ids.tsv" | cut -f3)
+test -n "$jobid"
+
+performance/slurm/slurm-profile \
+  --job-id "$jobid" \
+  --expected-jobs 1 \
+  --concurrency-target 1 \
+  --cluster-context-nodes 'apl[17-26]' \
+  --label "fzboost-stage1-training-$jobid" \
+  --output-dir "$stage1/benchmark/training-$jobid" \
+  --fail-on-unsuccessful
+
+cat "$stage1/benchmark/training-$jobid/summary.log"
+```
+
+This records the training duration, queue wait, CPU and memory use, node
+placement, and overlapping cluster allocations without reading the model or
+training catalog.
+
+## 4. Validate the FlexZBoost model
 
 Download the trusted
 [`FlexZBoost model DP2 gold 6 bands RTN-124`](https://pzserver.linea.org.br/product/435_flexzboost_model_dp2_gold_6_bands_rtn124)

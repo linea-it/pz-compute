@@ -42,7 +42,31 @@ $PZ_DP2_ROOT/bpz_test/stage1/model/model_dp2_v3p1_bpz_test_cosmos31_gold.pickle
 Its provenance flavor is `cosmos31_test`, preventing it from validating as an
 official BPZ model.
 
-## 3. Validate the test model
+## 3. Profile the completed test training job
+
+After the job reaches `COMPLETED`, recover its ID and create a benchmark kept
+inside the independent test tree:
+
+```bash
+stage1=$PZ_DP2_ROOT/bpz_test/stage1
+jobid=$(tail -n 1 "$stage1/submitted-job-ids.tsv" | cut -f3)
+test -n "$jobid"
+
+performance/slurm/slurm-profile \
+  --job-id "$jobid" \
+  --expected-jobs 1 \
+  --concurrency-target 1 \
+  --cluster-context-nodes 'apl[01-26]' \
+  --label "bpz-test-stage1-training-$jobid" \
+  --output-dir "$stage1/benchmark/training-$jobid" \
+  --fail-on-unsuccessful
+
+cat "$stage1/benchmark/training-$jobid/summary.log"
+```
+
+This is an engineering-resource profile, not evidence for official BPZ.
+
+## 4. Validate the test model
 
 After the Slurm job completes successfully:
 

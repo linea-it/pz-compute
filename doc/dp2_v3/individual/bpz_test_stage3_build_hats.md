@@ -31,6 +31,63 @@ After the driver and Dask workers complete, validate only the test product:
 doc/dp2_v3/scripts/validate-hats.py bpz_test
 ```
 
+## Profile the test driver and Dask workers
+
+After validation passes, recover the test driver ID and run tag from its
+independent submission ledger:
+
+```bash
+stage3=$PZ_DP2_ROOT/bpz_test/stage3
+IFS=$'\t' read -r submitted recorded_algorithm jobid run_tag < \
+  <(tail -n 1 "$stage3/submitted-job-ids.tsv")
+test "$recorded_algorithm" = bpz_test
+test -n "$jobid"
+test -n "$run_tag"
+
+benchmark_dir=$stage3/benchmark/$run_tag
+driver_logs=$stage3/log/driver-$run_tag
+worker_logs=$stage3/log/dask-$run_tag
+
+performance/slurm/slurm-profile \
+  --job-id "$jobid" \
+  --expected-jobs 1 \
+  --concurrency-target 1 \
+  --label "bpz-test-stage3-driver-$jobid" \
+  --output-dir "$benchmark_dir/driver" \
+  --fail-on-unsuccessful
+```
+
+Then extract the IDs of workers that started and profile their actual
+allocation and concurrency:
+
+```bash
+find "$worker_logs" -type f -name 'slurm-*.out' -printf '%f\n' |
+  sed -n 's/^slurm-\([0-9][0-9]*\)\.out$/\1/p' |
+  sort -n -u > "$benchmark_dir/worker-job-ids.txt"
+
+worker_count=$(wc -l < "$benchmark_dir/worker-job-ids.txt")
+worker_target=${PZ_HATS_MAX_WORKERS:-80}
+test "$worker_count" -gt 0
+
+performance/slurm/slurm-profile \
+  --job-id-file "$benchmark_dir/worker-job-ids.txt" \
+  --expected-jobs "$worker_count" \
+  --concurrency-target "$worker_target" \
+  --cluster-context-nodes 'apl[01-26]' \
+  --label "bpz-test-stage3-workers-$run_tag" \
+  --output-dir "$benchmark_dir/workers"
+
+cat "$benchmark_dir/driver/summary.log"
+cat "$benchmark_dir/workers/summary.log"
+cat "$driver_logs/driver-resource-usage.log"
+```
+
+Do not add `--fail-on-unsuccessful` to the worker profile: adaptive Dask can
+cancel healthy workers while scaling down or closing the cluster. Success
+still requires the completed test driver, its zero exit marker, clean logs,
+and successful test-product validation. These artifacts are engineering
+benchmarks and must not be cited as official BPZ measurements.
+
 All artifacts remain visibly separated:
 
 ```text
@@ -39,7 +96,11 @@ $PZ_DP2_ROOT/bpz_test/stage3/
 │   ├── pz-bpz_test-gaap1p0-clipped-hats/
 │   └── pz-bpz_test-gaap1p0-clipped-hats.pdf/
 ├── log/{dask-*,driver-*}/
-├── benchmark/
+├── benchmark/<run-tag>/
+│   ├── driver/
+│   ├── workers/
+│   ├── worker-job-ids.txt
+│   └── run-context.log
 ├── environment-freeze.txt
 └── submitted-job-ids.tsv
 ```

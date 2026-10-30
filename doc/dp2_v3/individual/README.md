@@ -4,6 +4,12 @@ Use this directory to run and monitor one algorithm in isolation. Every
 filename includes the algorithm name and contains only the decisions and
 commands relevant to that algorithm.
 
+This is the canonical route for a new data release and for any execution that
+may require fine tuning after a pilot. It exposes the decision points needed
+to review memory, duration, CPU use, queue behavior, and concurrency before
+submitting production. Use the serial batch route only after those choices are
+validated and encoded as stable defaults.
+
 Use [`inspect_runs.md`](inspect_runs.md) from a second terminal to recover the
 latest job ID, follow logs, count completed array tasks and output files,
 inspect failures, and validate Stage 1 models, Stage 2 HDF5 files, and Stage 3
@@ -54,5 +60,5 @@ inputs through [`common/README.md`](../common/README.md). The individual guides
 do not depend on batch instructions and every launcher accepts the named
 algorithm without requiring the other model or output tree.
 
-To prepare and dispatch every algorithm together instead, use
-[`batch/README.md`](../batch/README.md).
+To replay already validated official configurations as one serial, fail-fast
+automation, use [`batch/README.md`](../batch/README.md).

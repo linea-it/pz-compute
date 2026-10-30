@@ -144,6 +144,26 @@ The adaptive floor is 25% of the maximum. `PZ_HATS_MIN_WORKERS`,
 `PZ_HATS_MAX_WORKERS`, and `PZ_HATS_SCALE_DOWN_DELAY` can override these values
 per submission.
 
+### Serial batch controller request
+
+The automated batch route runs `fzboost`, `dnf`, and `bpz` serially. Each
+algorithm completes Stages 1–3, validation, and profiling before the next one
+starts; child workloads retain the requests listed above.
+
+| Setting | Value |
+|---|---|
+| Partition / account | `cpu_photoz` / `hpc-photoz` |
+| Node request | 1 node selected from `apl01-16`; `apl27-28` excluded |
+| Task / CPU request | 1 task, 2 CPUs |
+| Memory | 8 GiB |
+| Walltime | 14 days, configurable |
+| Child-job wait timeout | 10 days per submitted job, configurable |
+| Accounting poll interval | 30 seconds |
+| Default algorithm order | `fzboost,dnf,bpz` |
+| Initial storage threshold | 24 TiB free for three retained workflows |
+| Per-algorithm storage threshold | 8 TiB free before starting each algorithm |
+| Failure policy | stop at first failure, cancel an active child if the controller is interrupted, and write a failure report |
+
 ### Storage preflight
 
 | Setting | Value |

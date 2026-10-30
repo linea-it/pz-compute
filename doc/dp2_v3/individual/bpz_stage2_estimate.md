@@ -56,7 +56,7 @@ configuration checksums. If any changes, the launcher requires a new smoke
 test. For BPZ it also contains checksums for the SED list, every referenced
 SED, and the filters.
 
-## 4. Pilot and submit production
+## 4. Run and profile the mandatory pilot
 
 Create the full and five-largest-shard manifests using the
 [shared manifest procedure](../common/prepare_estimation_manifests.md). For the
@@ -68,21 +68,81 @@ PZ_BPZ_MAX_CONCURRENT=5 \
   doc/dp2_v3/scripts/submit-estimates.sh bpz
 ```
 
-After checking `MaxRSS` and `Elapsed`, submit all catalogs:
+Save the pilot ID before making another submission. Use the
+[Stage 2 terminal commands](inspect_runs.md#stage-2-estimation-array) with
+`algorithm=bpz` to monitor it. Once all five tasks have completed, create the
+pilot benchmark:
+
+```bash
+stage2=$PZ_DP2_ROOT/bpz/stage2
+pilot_jobid=$(tail -n 1 "$stage2/submitted-job-ids.tsv" | cut -f3)
+pilot_manifest=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.txt
+pilot_expected=$(wc -l < "$pilot_manifest")
+test -n "$pilot_jobid"
+
+performance/slurm/slurm-profile \
+  --job-id "$pilot_jobid" \
+  --expected-jobs "$pilot_expected" \
+  --concurrency-target 5 \
+  --cluster-context-nodes 'apl[01-26]' \
+  --label "bpz-stage2-pilot-$pilot_jobid" \
+  --output-dir "$stage2/benchmark/pilot-$pilot_jobid" \
+  --fail-on-unsuccessful
+
+cat "$stage2/benchmark/pilot-$pilot_jobid/summary.log"
+```
+
+Inspect `MaxRSS` and `Elapsed` before accepting or changing the conservative
+production defaults. BPZ test measurements are not a substitute for this
+official 136-template pilot.
+
+## 5. Submit and profile the complete catalog
+
+After accepting the pilot, submit all catalogs and retain the new array ID:
 
 ```bash
 doc/dp2_v3/scripts/submit-estimates.sh bpz
+
+stage2=$PZ_DP2_ROOT/bpz/stage2
+production_jobid=$(tail -n 1 "$stage2/submitted-job-ids.tsv" | cut -f3)
+test -n "$production_jobid"
 ```
 
 Use the [Stage 2 terminal commands](inspect_runs.md#stage-2-estimation-array)
 with `algorithm=bpz` to watch task states and output counts, summarize
 completed and failed tasks, inspect logs, and validate every HDF5 afterward.
 
+After the array leaves `squeue`, all tasks are successful, and Stage 2
+validation passes, generate its production benchmark:
+
+```bash
+stage2=$PZ_DP2_ROOT/bpz/stage2
+production_jobid=$(tail -n 1 "$stage2/submitted-job-ids.tsv" | cut -f3)
+production_manifest=$PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
+production_expected=$(wc -l < "$production_manifest")
+test -n "$production_jobid"
+
+performance/slurm/slurm-profile \
+  --job-id "$production_jobid" \
+  --expected-jobs "$production_expected" \
+  --concurrency-target 20 \
+  --cluster-context-nodes 'apl[01-26]' \
+  --label "bpz-stage2-production-$production_jobid" \
+  --output-dir "$stage2/benchmark/production-$production_jobid" \
+  --fail-on-unsuccessful
+
+cat "$stage2/benchmark/production-$production_jobid/summary.log"
+```
+
+If retries are needed, retain every array ID. The generic
+[Slurm profiling guide](../../slurm_profile.md) explains how to combine all
+attempts with `--job-id-file` instead of profiling only the last array.
+
 The job remains in Slurm after logout. The initial defaults are 20 concurrent
 tasks, 40 GiB, and 24 hours per task. They are conservative; tune
 `PZ_BPZ_MAX_CONCURRENT`, `PZ_BPZ_MEMORY`, and `PZ_BPZ_TIME` from pilot evidence.
 
-## 5. Outputs
+## 6. Outputs
 
 ```text
 $PZ_DP2_ROOT/bpz/stage2/

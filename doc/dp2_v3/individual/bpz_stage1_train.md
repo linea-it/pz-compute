@@ -56,7 +56,32 @@ $PZ_DP2_ROOT/bpz/stage1/
 The launcher also adds `catalog_tag=lsst_gaap_1p0` and provenance
 `dp2_v3p1/dp2_6band/gold`, matching the published artifact.
 
-## 4. Validate
+## 4. Profile the completed training job
+
+After the job reaches `COMPLETED`, recover its ID and create the lightweight
+Slurm benchmark:
+
+```bash
+stage1=$PZ_DP2_ROOT/bpz/stage1
+jobid=$(tail -n 1 "$stage1/submitted-job-ids.tsv" | cut -f3)
+test -n "$jobid"
+
+performance/slurm/slurm-profile \
+  --job-id "$jobid" \
+  --expected-jobs 1 \
+  --concurrency-target 1 \
+  --cluster-context-nodes 'apl[01-26]' \
+  --label "bpz-stage1-training-$jobid" \
+  --output-dir "$stage1/benchmark/training-$jobid" \
+  --fail-on-unsuccessful
+
+cat "$stage1/benchmark/training-$jobid/summary.log"
+```
+
+This records duration, queue wait, CPU and memory use, node placement, and
+overlapping cluster allocations without reading the model or training data.
+
+## 5. Validate
 
 Download the trusted
 [`BPZ model DP2 gold 6 bands RTN-124`](https://pzserver.linea.org.br/product/433_bpz_model_dp2_gold_6_bands_rtn124)

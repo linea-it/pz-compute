@@ -44,7 +44,7 @@ $PZ_DP2_ROOT/bpz_test/stage2/smoke/READY
 Never bypass this warm-up: BPZ may create AB cache files, and concurrent array
 tasks must not race to initialize them.
 
-## 3. Run the five-file pilot
+## 3. Run and profile the five-file pilot
 
 Prepare the manifests using the
 [shared procedure](../common/prepare_estimation_manifests.md), then run:
@@ -56,12 +56,28 @@ PZ_BPZ_TEST_MAX_CONCURRENT=5 \
   doc/dp2_v3/scripts/submit-estimates.sh bpz_test
 ```
 
-Inspect its recorded job and resource usage before changing the defaults:
+Save the pilot ID before making another submission. Use the
+[Stage 2 terminal commands](inspect_runs.md#stage-2-estimation-array) with
+`algorithm=bpz_test` to monitor it. Once all five tasks have completed, create
+the pilot benchmark inside the independent test tree:
 
 ```bash
-jobid=$(tail -1 "$PZ_DP2_ROOT/bpz_test/stage2/submitted-job-ids.tsv" | cut -f3)
-sacct -j "$jobid" --units=G \
-  --format=JobID%30,State,ExitCode,Elapsed,TotalCPU,AllocCPUS,MaxRSS,ReqMem
+stage2=$PZ_DP2_ROOT/bpz_test/stage2
+pilot_jobid=$(tail -n 1 "$stage2/submitted-job-ids.tsv" | cut -f3)
+pilot_manifest=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.txt
+pilot_expected=$(wc -l < "$pilot_manifest")
+test -n "$pilot_jobid"
+
+performance/slurm/slurm-profile \
+  --job-id "$pilot_jobid" \
+  --expected-jobs "$pilot_expected" \
+  --concurrency-target 5 \
+  --cluster-context-nodes 'apl[01-26]' \
+  --label "bpz-test-stage2-pilot-$pilot_jobid" \
+  --output-dir "$stage2/benchmark/pilot-$pilot_jobid" \
+  --fail-on-unsuccessful
+
+cat "$stage2/benchmark/pilot-$pilot_jobid/summary.log"
 ```
 
 Pilot array job `217091` completed all five largest shards. Its maximum RSS was
@@ -83,16 +99,49 @@ Override these values with `PZ_BPZ_TEST_MAX_CONCURRENT`,
 evidence supports a change. These measurements do not predict official
 136-template BPZ reliably.
 
-## 4. Run the full test estimate
+## 4. Run and profile the full test estimate
 
 ```bash
 doc/dp2_v3/scripts/submit-estimates.sh bpz_test
+
+stage2=$PZ_DP2_ROOT/bpz_test/stage2
+production_jobid=$(tail -n 1 "$stage2/submitted-job-ids.tsv" | cut -f3)
+test -n "$production_jobid"
 ```
 
 Use the [Stage 2 terminal commands](inspect_runs.md#stage-2-estimation-array)
 with `algorithm=bpz_test` to watch task states and output counts, summarize
 completed and failed tasks, inspect logs, and validate every test HDF5
 afterward.
+
+Only after every task completes successfully with the provisional 32 GiB
+request, generate the full-test benchmark:
+
+```bash
+stage2=$PZ_DP2_ROOT/bpz_test/stage2
+production_jobid=$(tail -n 1 "$stage2/submitted-job-ids.tsv" | cut -f3)
+production_manifest=$PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
+production_expected=$(wc -l < "$production_manifest")
+test -n "$production_jobid"
+
+performance/slurm/slurm-profile \
+  --job-id "$production_jobid" \
+  --expected-jobs "$production_expected" \
+  --concurrency-target 105 \
+  --cluster-context-nodes 'apl[01-26]' \
+  --label "bpz-test-stage2-full-$production_jobid" \
+  --output-dir "$stage2/benchmark/full-$production_jobid" \
+  --fail-on-unsuccessful
+
+cat "$stage2/benchmark/full-$production_jobid/summary.log"
+```
+
+If retries are needed, retain every array ID and combine them with
+`--job-id-file` as described in the
+[Slurm profiling guide](../../slurm_profile.md). This remains an engineering
+benchmark and must not be cited as official BPZ performance.
+
+## 5. Outputs
 
 Outputs and logs remain in:
 

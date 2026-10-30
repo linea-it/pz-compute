@@ -18,8 +18,8 @@ live under `common/`; after preparing them, choose an execution route:
 | route | use when | entry point |
 |---|---|---|
 | `common/` | preparing inputs reused by either execution route | [`common/README.md`](common/README.md) |
-| `individual/` | running and diagnosing one named algorithm | [`individual/README.md`](individual/README.md) |
-| `batch/` | queueing and validating FlexZBoost, BPZ, and DNF together | [`batch/README.md`](batch/README.md) |
+| `individual/` | canonical path for new releases, pilots, tuning, and one named algorithm | [`individual/README.md`](individual/README.md) |
+| `batch/` | replaying already validated official configurations under one serial fail-fast controller | [`batch/README.md`](batch/README.md) |
 
 The individual files always include the algorithm in the filename:
 
@@ -36,19 +36,23 @@ The individual files always include the algorithm in the filename:
 - [`bpz_test_stage2_estimate.md`](individual/bpz_test_stage2_estimate.md)
 - [`bpz_test_stage3_build_hats.md`](individual/bpz_test_stage3_build_hats.md)
 
-The batch route keeps only shared or multi-algorithm procedures:
+The batch route documents the serial controller and its per-stage behavior:
 
 - [`train_all.md`](batch/train_all.md)
 - [`estimate_all.md`](batch/estimate_all.md)
 - [`build_hats_all.md`](batch/build_hats_all.md)
 
-The individual guides never require instructions from `batch/`. Both routes
-refer to the same neutral prerequisites:
+The individual guides never require instructions from `batch/`. The batch
+controller calls the same named launchers, validators, and profiler used by
+those guides, but runs `fzboost`, then `dnf`, then `bpz` without overlapping
+algorithms. Both routes refer to the same neutral prerequisites:
 
 - [`prepare_training_catalog.md`](common/prepare_training_catalog.md)
 - [`prepare_estimation_manifests.md`](common/prepare_estimation_manifests.md)
 
-`sbatch` owns the jobs after submission, so the login shell may be closed.
+`sbatch` owns individual jobs after submission. In the batch route, a small
+Slurm controller owns the complete serial sequence, so the login shell may
+also be closed after its single submission command returns.
 
 The files under `config/` are the reviewed scientific parameters. The files
 under `scripts/` are reusable launchers; do not copy a FlexZBoost command and
@@ -117,17 +121,26 @@ dp2-v3/
 │   ├── stage1/{model,log,benchmark}/
 │   ├── stage2/{output,log,smoke,benchmark}/
 │   └── stage3/{output,log/{dask-*,driver-*},smoke,benchmark}/
-└── bpz_test/
-    ├── stage1/{model,log,benchmark}/
-    ├── stage2/{output,log,smoke,benchmark}/
-    └── stage3/{output,log/{dask-*,driver-*},smoke,benchmark}/
+├── bpz_test/
+│   ├── stage1/{model,log,benchmark}/
+│   ├── stage2/{output,log,smoke,benchmark}/
+│   └── stage3/{output,log/{dask-*,driver-*},smoke,benchmark}/
+└── batch/
+    ├── submitted-controller-job-ids.tsv
+    └── production-<UTC timestamp>/
+        ├── status.tsv
+        ├── jobs.tsv
+        ├── artifacts.tsv
+        ├── run-context.log
+        ├── summary.md or failure-report.md
+        └── SUCCESS or FAILED
 ```
 
 Each stage also keeps its own `submitted-job-ids.tsv` when applicable. Thus
 every official algorithm remains below its own `dp2-v3/<algorithm>/` tree.
-Only immutable or shared inputs live below `common/`. The non-production
-workflow is confined to `dp2-v3/bpz_test/`; it is never included in batch
-`all` commands.
+Only immutable or shared inputs live below `common/`; controller state and
+failure reports live below `batch/`. The non-production workflow is confined
+to `dp2-v3/bpz_test/` and is never included in the official serial batch.
 
 Set the root after loading the environment:
 

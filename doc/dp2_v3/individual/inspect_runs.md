@@ -13,6 +13,12 @@ The launchers append every submission to `submitted-job-ids.tsv`. The commands
 below intentionally select its last record. Set `jobid` manually when
 inspecting an older submission.
 
+These commands cover live inspection and scientific validation. Return to the
+algorithm's stage-specific guide after each job reaches its terminal state;
+the training, pilot, production, driver, and worker benchmark commands appear
+at their chronological execution points. The artifacts and metrics are
+described in the [Slurm profiling guide](../../slurm_profile.md).
+
 ## Stage 1: training
 
 Recover the latest training job ID and inspect its queue and accounting state:
