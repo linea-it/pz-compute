@@ -20,7 +20,28 @@ command -v pz-build-hats >/dev/null
 scripts_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
 PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset}
-PZ_HATS_WORKERS=${PZ_HATS_WORKERS:-82}
+PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-20}
+PZ_HATS_MAX_WORKERS=${PZ_HATS_MAX_WORKERS:-${PZ_HATS_WORKERS:-80}}
+PZ_HATS_SCALE_DOWN_DELAY=${PZ_HATS_SCALE_DOWN_DELAY:-180}
+
+case "$PZ_HATS_MIN_WORKERS" in
+    ''|*[!0-9]*) echo "PZ_HATS_MIN_WORKERS must be a positive integer" >&2; exit 2 ;;
+esac
+case "$PZ_HATS_MAX_WORKERS" in
+    ''|*[!0-9]*) echo "PZ_HATS_MAX_WORKERS must be a positive integer" >&2; exit 2 ;;
+esac
+case "$PZ_HATS_SCALE_DOWN_DELAY" in
+    ''|*[!0-9]*) echo "PZ_HATS_SCALE_DOWN_DELAY must be a positive integer number of seconds" >&2; exit 2 ;;
+esac
+if [ "$PZ_HATS_MIN_WORKERS" -lt 1 ] || [ "$PZ_HATS_MAX_WORKERS" -lt 1 ] || \
+   [ "$PZ_HATS_MIN_WORKERS" -gt "$PZ_HATS_MAX_WORKERS" ]; then
+    echo "Require 1 <= PZ_HATS_MIN_WORKERS <= PZ_HATS_MAX_WORKERS" >&2
+    exit 2
+fi
+if [ "$PZ_HATS_SCALE_DOWN_DELAY" -lt 1 ]; then
+    echo "PZ_HATS_SCALE_DOWN_DELAY must be at least 1 second" >&2
+    exit 2
+fi
 
 input_count=$(find "$PZ_DP2_INPUT_DATASET" -type f -name '*.parquet' | wc -l)
 test "$input_count" -gt 0 || {
@@ -51,16 +72,16 @@ for algorithm in "${algorithms[@]}"; do
       --job-name="dp2-hats-$algorithm" \
       --partition=cpu_photoz \
       --account=hpc-photoz \
-      --exclude='apl[26-28]' \
+      --exclude='apl[27-28]' \
       --cpus-per-task=2 \
       --mem=8G \
       --time=2-00:00:00 \
       --output="$driver_log_dir/slurm-%j.out" \
       --error="$driver_log_dir/slurm-%j.err" \
-      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_DP2_ROOT="$PZ_DP2_ROOT",PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_STAGE3_RUN_TAG="$run_tag",PZ_HATS_WORKERS="$PZ_HATS_WORKERS" \
+      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_DP2_ROOT="$PZ_DP2_ROOT",PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_STAGE3_RUN_TAG="$run_tag",PZ_HATS_MIN_WORKERS="$PZ_HATS_MIN_WORKERS",PZ_HATS_MAX_WORKERS="$PZ_HATS_MAX_WORKERS",PZ_HATS_SCALE_DOWN_DELAY="$PZ_HATS_SCALE_DOWN_DELAY" \
       "$scripts_dir/run-one-hats.sbatch")
     job_id=${job_id%%;*}
     printf '%s\t%s\t%s\t%s\n' \
       "$(date --iso-8601=seconds)" "$algorithm" "$job_id" "$run_tag" >> "$job_log"
-    echo "$algorithm: submitted Stage 3 driver job $job_id ($run_tag)"
+    echo "$algorithm: submitted Stage 3 driver job $job_id ($run_tag, workers $PZ_HATS_MIN_WORKERS-$PZ_HATS_MAX_WORKERS, scale-down ${PZ_HATS_SCALE_DOWN_DELAY}s)"
 done

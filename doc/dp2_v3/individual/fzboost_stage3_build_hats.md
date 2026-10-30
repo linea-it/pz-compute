@@ -10,6 +10,12 @@ cd "$PZ_COMPUTE_DIR"
 doc/dp2_v3/scripts/submit-hats.sh fzboost
 ```
 
+The default Dask cluster keeps 20 workers and scales adaptively up to 80. Each
+worker requests 8 CPUs, 40 GiB, and 12 hours; idle workers become eligible for
+scale-down after approximately 180 seconds. Override `PZ_HATS_MIN_WORKERS`,
+`PZ_HATS_MAX_WORKERS`, or `PZ_HATS_SCALE_DOWN_DELAY` before submission when
+required.
+
 Use the [Stage 3 terminal commands](inspect_runs.md#stage-3-hats-build) with
 `algorithm=fzboost` to follow the driver, inspect Dask worker logs, check its
 exit marker, and validate the final row counts and schemas.

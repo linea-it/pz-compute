@@ -2,7 +2,7 @@
 #SBATCH --job-name=dp2-pz
 #SBATCH --partition=cpu_photoz
 #SBATCH --account=hpc-photoz
-#SBATCH --exclude=apl[26-28]
+#SBATCH --exclude=apl[27-28]
 #SBATCH --output=log/slurm-%A_%a.out
 #SBATCH --error=log/slurm-%A_%a.err
 

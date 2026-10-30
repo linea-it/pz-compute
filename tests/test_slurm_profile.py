@@ -5,7 +5,6 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
-
 FIELDS = [
     "JobIDRaw", "JobID", "JobName", "Partition", "Account", "QOS",
     "State", "ExitCode", "Submit",
@@ -141,7 +140,7 @@ def test_slurm_profile_collects_io_metrics_from_batch_step(tmp_path):
     )
 
     summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
-    assert summary["schema_version"] == 2
+    assert summary["schema_version"] == 3
     assert summary["io"]["jobs_with_accounting"] == 1
     assert summary["io"]["max_disk_read_gib"]["maximum"] == 2
     assert summary["io"]["max_disk_write_gib"]["maximum"] == 1
@@ -152,3 +151,57 @@ def test_slurm_profile_collects_io_metrics_from_batch_step(tmp_path):
     assert float(task["ave_disk_write_gib"]) == 0.25
     assert float(task["max_disk_read_gib"]) == 2
     assert float(task["max_disk_write_gib"]) == 1
+
+
+def test_slurm_profile_reports_scheduler_and_cluster_context(tmp_path):
+    source = Path(__file__).parents[1] / "performance" / "slurm" / "slurm-profile"
+    fields = FIELDS + [
+        "TimelimitRaw", "NNodes", "ReqCPUS", "ReqTRES", "AllocTRES", "User"
+    ]
+    target = tmp_path / "target.tsv"
+    target_row = [
+        "400", "400", "target", "cpu_photoz", "hpc-photoz", "photoz",
+        "COMPLETED", "0:0", "2026-01-01T10:00:00", "2026-01-01T10:01:00",
+        "2026-01-01T10:03:00", "2026-01-01T10:13:00", "600", "2", "1200",
+        "00:10:00", "40Gn", "20971520K", "apl01", "60", "1", "1",
+        "billing=2,cpu=1,mem=40G,node=1", "billing=2,cpu=2,mem=40G,node=1",
+        "app.photoz",
+    ]
+    context = tmp_path / "context.tsv"
+    external_row = [
+        "401", "401", "external", "cpu", "hpc-public", "public",
+        "COMPLETED", "0:0", "2026-01-01T09:00:00", "2026-01-01T09:00:00",
+        "2026-01-01T10:00:00", "2026-01-01T10:10:00", "600", "4", "2400",
+        "00:20:00", "8Gn", "4194304K", "apl02", "120", "1", "4",
+        "billing=4,cpu=4,mem=8G,node=1", "billing=4,cpu=4,mem=8G,node=1",
+        "other.user",
+    ]
+    for path, rows in ((target, [target_row]), (context, [target_row, external_row])):
+        with path.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream, delimiter="\t", lineterminator="\n")
+            writer.writerow(fields)
+            writer.writerows(rows)
+
+    output = tmp_path / "metrics"
+    subprocess.run(
+        [
+            sys.executable, str(source), "--sacct-file", str(target),
+            "--cluster-sacct-file", str(context), "--concurrency-target", "1",
+            "--output-dir", str(output),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+    assert summary["pre_eligible_wait_seconds"]["maximum"] == 60
+    assert summary["eligible_wait_seconds"]["maximum"] == 120
+    assert summary["memory_peak_fraction_percent"]["maximum"] == 50
+    assert abs(summary["timelimit_utilization_percent"]["maximum"] - 100 / 6) < 1e-6
+    assert summary["cpu"]["average_used_per_job"]["maximum"] == 1
+    assert summary["cluster_context"]["logical_jobs_overlapping"] == 1
+    assert summary["cluster_context"]["peak_allocated_cpus"] == 4
+    assert summary["cluster_context"]["accounts"] == {"hpc-public": 1}
+    assert (output / "cluster-context-sacct.tsv").is_file()
+    assert (output / "cluster-context-profile.tsv").is_file()

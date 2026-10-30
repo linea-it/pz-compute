@@ -47,8 +47,10 @@ completed and failed tasks, inspect logs, and validate every HDF5 afterward.
 The defaults are 82 concurrent tasks, 40 GiB, and one hour per task. The
 memory request is 37.5% above the 29.09 GiB peak from the five-largest-shard
 secondary-catalog pilot, and the throttle is 95% of the resulting discrete
-memory capacity on `apl01-25`. The evidence and calculation are recorded in
-[`fzboost_runs.md`](../references/fzboost_runs.md). Override them with
+memory capacity on the former `apl01-25` topology. With `apl26` now included,
+the same throttle uses at most 82 of 92 discrete 40-GiB slots and intentionally
+leaves coexistence headroom. The evidence and original calculation are
+recorded in [`fzboost_runs.md`](../references/fzboost_runs.md). Override them with
 `PZ_FZBOOST_MAX_CONCURRENT`, `PZ_FZBOOST_MEMORY`, and `PZ_FZBOOST_TIME` when a
 different partition or a new pilot requires it.
 

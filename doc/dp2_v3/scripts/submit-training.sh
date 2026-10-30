@@ -29,7 +29,7 @@ for algorithm in "${algorithms[@]}"; do
     case "$algorithm" in
         fzboost)
             basename=model_dp2_v3p1_fzboost_dp2_6band_gold
-            resources=(--nodelist=apl[17-25] --cpus-per-task=98 --mem=231G --time=03:00:00)
+            resources=(--nodelist=apl[17-26] --cpus-per-task=98 --mem=231G --time=03:00:00)
             ;;
         bpz|bpz_test|dnf)
             basename=${PZ_MODEL_BASENAME%.pickle}

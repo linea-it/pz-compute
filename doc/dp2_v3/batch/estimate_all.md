@@ -107,8 +107,9 @@ conservative starting values, not measured production claims. DNF defaults to
 82 concurrent tasks, 40 GiB, and two hours based on pilot job `217097`.
 FlexZBoost defaults to 82 concurrent tasks, 40 GiB, and one hour based on
 pilot job `217085`. These requests retain 40.0% and 37.5% above their observed
-peaks, respectively, and each 82-task throttle targets 95% of
-the resulting discrete cluster capacity. Override resources with the
+peaks, respectively. On the current `apl01-26` topology, each 82-task throttle
+uses at most 89.1% of the 92 discrete 40-GiB slots, leaving capacity for jobs
+already running on the shared nodes. Override resources with the
 corresponding `PZ_<ALGORITHM>_*` variables when newer evidence or a different
 partition requires it.
 

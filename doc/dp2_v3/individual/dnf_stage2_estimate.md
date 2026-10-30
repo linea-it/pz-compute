@@ -47,7 +47,9 @@ Pilot array job `217097` completed all five largest shards. Its maximum RSS was
 was 0.994 logical CPU per running task. The resulting defaults are 82
 concurrent tasks, 40 GiB, and two hours per task. The memory request retains a
 40.0% margin over the observed maximum; the throttle is 95% of the 86 tasks
-that fit by memory across `apl01-25`. See
+that fit by memory across the former `apl01-25` topology. With `apl26` now
+included, the same throttle uses at most 82 of 92 discrete 40-GiB slots and
+intentionally leaves coexistence headroom. See
 [`dnf_runs.md`](../references/dnf_runs.md) for the measurements and capacity
 calculation. Override `PZ_DNF_MAX_CONCURRENT`, `PZ_DNF_MEMORY`, and
 `PZ_DNF_TIME` only when newer pilot evidence or a different partition supports

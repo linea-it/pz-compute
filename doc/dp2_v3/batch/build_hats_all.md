@@ -40,14 +40,21 @@ Each driver starts its own Dask cluster through `dask-jobqueue`; Slurm may run
 or queue the three builds according to cluster capacity. The login shell can be
 closed as soon as all driver job IDs have been returned.
 
-The default request is 82 Dask worker jobs per algorithm, with 8 CPUs and
-40 GiB per worker. Override the worker count for all builds before submission
-when required:
+The default keeps at least 20 Dask worker jobs and scales adaptively up to 80
+jobs per algorithm, with 8 CPUs and 40 GiB per worker. An idle worker becomes
+eligible for scale-down after approximately 180 seconds. Override the range and
+idle delay for all builds before submission when required:
 
 ```bash
-export PZ_HATS_WORKERS=40
+export PZ_HATS_MIN_WORKERS=20
+export PZ_HATS_MAX_WORKERS=60
+export PZ_HATS_SCALE_DOWN_DELAY=120
 doc/dp2_v3/scripts/submit-hats.sh all
 ```
+
+`PZ_HATS_WORKERS` remains a compatibility alias for the maximum only. New
+commands should use the explicit minimum and maximum variables. The scale-down
+delay is expressed in seconds.
 
 The command writes one job ledger per algorithm:
 

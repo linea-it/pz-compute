@@ -28,6 +28,7 @@ SACCT_FIELDS = (
     "JobName",
     "Partition",
     "Account",
+    "User",
     "QOS",
     "State",
     "ExitCode",
@@ -36,10 +37,15 @@ SACCT_FIELDS = (
     "Start",
     "End",
     "ElapsedRaw",
+    "TimelimitRaw",
+    "NNodes",
+    "ReqCPUS",
     "AllocCPUS",
     "CPUTimeRAW",
     "TotalCPU",
     "ReqMem",
+    "ReqTRES",
+    "AllocTRES",
     "MaxRSS",
     "AveDiskRead",
     "AveDiskWrite",
@@ -78,6 +84,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--label", default="slurm-production")
     parser.add_argument(
+        "--cluster-context-nodes",
+        help=(
+            "Optional Slurm hostlist used to reconstruct concurrent allocations "
+            "with a lightweight post-run sacct query (for example apl[01-26])."
+        ),
+    )
+    parser.add_argument(
+        "--cluster-sacct-file",
+        type=Path,
+        help="Read cluster-context sacct records from a retained TSV instead of querying sacct.",
+    )
+    parser.add_argument(
         "--expected-jobs",
         type=int,
         help="Expected total number of logical jobs.",
@@ -99,6 +117,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--concurrency-target must be positive")
     if not args.sacct_file and not args.job_id and not args.job_id_file:
         parser.error("provide --job-id, --job-id-file, or --sacct-file")
+    if args.cluster_sacct_file and args.cluster_context_nodes:
+        parser.error("use either --cluster-context-nodes or --cluster-sacct-file, not both")
     return args
 
 
@@ -147,6 +167,31 @@ def query_sacct(job_ids: list[str]) -> list[dict[str, str]]:
             )
         rows.extend(parse_sacct_lines(result.stdout.splitlines(), has_header=False))
     return rows
+
+
+def query_cluster_sacct(nodes: str, start: datetime, end: datetime) -> list[dict[str, str]]:
+    cmd = [
+        "sacct",
+        "--allusers",
+        f"--starttime={start.isoformat()}",
+        f"--endtime={end.isoformat()}",
+        f"--node={nodes}",
+        "--parsable2",
+        "--noheader",
+        "--units=K",
+        f"--format={','.join(SACCT_FIELDS)}",
+    ]
+    env = os.environ.copy()
+    env["SLURM_BITSTR_LEN"] = "0"
+    result = subprocess.run(cmd, text=True, capture_output=True, env=env)
+    if result.returncode:
+        raise SystemExit(
+            "cluster-context sacct query failed:\n"
+            + " ".join(cmd)
+            + "\n"
+            + (result.stderr.strip() or result.stdout.strip())
+        )
+    return parse_sacct_lines(result.stdout.splitlines(), has_header=False)
 
 
 def parse_sacct_lines(lines: list[str], has_header: bool | None = None) -> list[dict[str, str]]:
@@ -241,6 +286,34 @@ def parse_memory_kib(value: str) -> float | None:
     return number * factor[unit]
 
 
+def parse_tres(value: str) -> dict[str, str]:
+    result = {}
+    for item in value.split(",") if value else []:
+        if "=" in item:
+            key, item_value = item.split("=", 1)
+            result[key] = item_value
+    return result
+
+
+def requested_memory_kib(
+    req_mem: str, alloc_cpus: int | None, node_count: int | None
+) -> float | None:
+    """Normalize Slurm ReqMem, whose trailing c/n means per CPU/node."""
+    match = re.fullmatch(r"(.+?)([cn])?", req_mem.strip(), re.I) if req_mem else None
+    if not match:
+        return None
+    per_unit = parse_memory_kib(match.group(1))
+    if per_unit is None:
+        return None
+    scope = (match.group(2) or "n").lower()
+    multiplier = alloc_cpus if scope == "c" else node_count
+    return per_unit * multiplier if multiplier is not None and multiplier > 0 else None
+
+
+def allocated_memory_kib(alloc_tres: str) -> float | None:
+    return parse_memory_kib(parse_tres(alloc_tres).get("mem", ""))
+
+
 def percentile(values: list[float], fraction: float) -> float | None:
     if not values:
         return None
@@ -268,6 +341,19 @@ def infer_requested_ids(rows: list[dict[str, str]]) -> list[str]:
         if (match := re.fullmatch(r"([0-9]+)_[0-9]+", job_id))
     }
     return [job_id for job_id in root_ids if job_id not in array_parents]
+
+
+def select_all_logical_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    root_rows = [row for row in rows if "." not in row["JobID"]]
+    array_parents = {
+        match.group(1)
+        for row in root_rows
+        if (match := re.fullmatch(r"([0-9]+)_[0-9]+", row["JobID"]))
+    }
+    return sorted(
+        [row for row in root_rows if row["JobID"] not in array_parents],
+        key=lambda row: natural_job_key(row["JobID"]),
+    )
 
 
 def select_logical_rows(
@@ -328,6 +414,7 @@ TASK_FIELDS = [
     "job_name",
     "partition",
     "account",
+    "user",
     "qos",
     "state",
     "exit_code",
@@ -336,11 +423,22 @@ TASK_FIELDS = [
     "start",
     "end",
     "queue_wait_seconds",
+    "pre_eligible_wait_seconds",
     "eligible_wait_seconds",
     "duration_seconds",
+    "timelimit_seconds",
+    "timelimit_utilization_percent",
+    "node_count",
+    "req_cpus",
     "req_mem",
+    "req_tres",
+    "alloc_tres",
+    "requested_memory_gib",
+    "allocated_memory_gib",
+    "memory_peak_fraction_percent",
     "alloc_cpus",
     "total_cpu_seconds",
+    "average_cpu_used",
     "cpu_efficiency_percent",
     "max_rss_kib",
     "max_rss_gib",
@@ -368,9 +466,18 @@ def build_tasks(logical_rows: list[dict[str, str]], all_rows: list[dict[str, str
         if duration is None and start is not None and end is not None:
             duration = max(0, int((end - start).total_seconds()))
         alloc_cpus = parse_int(row["AllocCPUS"])
+        node_count = parse_int(row["NNodes"])
+        if node_count is None and row["NodeList"] and not re.search(r"[\[, ]", row["NodeList"]):
+            node_count = 1
+        req_cpus = parse_int(row["ReqCPUS"])
+        timelimit_minutes = parse_int(row["TimelimitRaw"])
+        timelimit = timelimit_minutes * 60 if timelimit_minutes is not None else None
         resources = resource_values(job_id, all_rows)
         max_rss_kib = resources["max_rss_kib"]
         total_cpu = resources["total_cpu_seconds"]
+        requested_mem_kib = requested_memory_kib(row["ReqMem"], alloc_cpus, node_count)
+        allocated_mem_kib = allocated_memory_kib(row["AllocTRES"])
+        memory_denominator = allocated_mem_kib or requested_mem_kib
         allocated_cpu_seconds = (
             duration * alloc_cpus
             if duration is not None and alloc_cpus is not None and alloc_cpus > 0
@@ -390,6 +497,7 @@ def build_tasks(logical_rows: list[dict[str, str]], all_rows: list[dict[str, str
                 "job_name": row["JobName"],
                 "partition": row["Partition"],
                 "account": row["Account"],
+                "user": row["User"],
                 "qos": row["QOS"],
                 "state": clean_state(row["State"]),
                 "exit_code": row["ExitCode"],
@@ -400,15 +508,42 @@ def build_tasks(logical_rows: list[dict[str, str]], all_rows: list[dict[str, str
                 "queue_wait_seconds": (
                     (start - submit).total_seconds() if start is not None and submit is not None else None
                 ),
+                "pre_eligible_wait_seconds": (
+                    (eligible - submit).total_seconds()
+                    if eligible is not None and submit is not None
+                    else None
+                ),
                 "eligible_wait_seconds": (
                     (start - eligible).total_seconds()
                     if start is not None and eligible is not None
                     else None
                 ),
                 "duration_seconds": duration,
+                "timelimit_seconds": timelimit,
+                "timelimit_utilization_percent": (
+                    100 * duration / timelimit if duration is not None and timelimit else None
+                ),
+                "node_count": node_count,
+                "req_cpus": req_cpus,
                 "req_mem": row["ReqMem"],
+                "req_tres": row["ReqTRES"],
+                "alloc_tres": row["AllocTRES"],
+                "requested_memory_gib": (
+                    requested_mem_kib / 1024**2 if requested_mem_kib is not None else None
+                ),
+                "allocated_memory_gib": (
+                    allocated_mem_kib / 1024**2 if allocated_mem_kib is not None else None
+                ),
+                "memory_peak_fraction_percent": (
+                    100 * max_rss_kib / memory_denominator
+                    if max_rss_kib is not None and memory_denominator
+                    else None
+                ),
                 "alloc_cpus": alloc_cpus,
                 "total_cpu_seconds": total_cpu,
+                "average_cpu_used": (
+                    total_cpu / duration if total_cpu is not None and duration else None
+                ),
                 "cpu_efficiency_percent": cpu_efficiency,
                 "max_rss_kib": max_rss_kib,
                 "max_rss_gib": max_rss_kib / 1024**2 if max_rss_kib is not None else None,
@@ -447,7 +582,12 @@ def build_tasks(logical_rows: list[dict[str, str]], all_rows: list[dict[str, str
 
 def build_profile(tasks: list[dict]) -> tuple[list[dict], int, float | None, datetime | None, datetime | None]:
     intervals = [
-        (task["_start_dt"], task["_end_dt"])
+        (
+            task["_start_dt"],
+            task["_end_dt"],
+            task["alloc_cpus"] or 0,
+            task["allocated_memory_gib"] or task["requested_memory_gib"] or 0.0,
+        )
         for task in tasks
         if task["_start_dt"] is not None
         and task["_end_dt"] is not None
@@ -455,34 +595,50 @@ def build_profile(tasks: list[dict]) -> tuple[list[dict], int, float | None, dat
     ]
     if not intervals:
         return [], 0, None, None, None
-    first = min(start for start, _ in intervals)
-    last = max(end for _, end in intervals)
-    events: dict[datetime, dict[str, int]] = {}
-    for start, end in intervals:
-        events.setdefault(start, {"started": 0, "ended": 0})["started"] += 1
-        events.setdefault(end, {"started": 0, "ended": 0})["ended"] += 1
+    first = min(start for start, _, _, _ in intervals)
+    last = max(end for _, end, _, _ in intervals)
+    events: dict[datetime, dict[str, float]] = {}
+    for start, end, cpus, memory_gib in intervals:
+        start_event = events.setdefault(
+            start, {"started": 0, "ended": 0, "cpus": 0, "memory_gib": 0.0}
+        )
+        end_event = events.setdefault(
+            end, {"started": 0, "ended": 0, "cpus": 0, "memory_gib": 0.0}
+        )
+        start_event["started"] += 1
+        start_event["cpus"] += cpus
+        start_event["memory_gib"] += memory_gib
+        end_event["ended"] += 1
+        end_event["cpus"] -= cpus
+        end_event["memory_gib"] -= memory_gib
     active = 0
+    active_cpus = 0
+    active_memory_gib = 0.0
     finished = 0
     peak = 0
     rows = []
     for timestamp in sorted(events):
         counts = events[timestamp]
-        active -= counts["ended"]
-        finished += counts["ended"]
-        active += counts["started"]
+        active -= int(counts["ended"])
+        finished += int(counts["ended"])
+        active += int(counts["started"])
+        active_cpus += int(counts["cpus"])
+        active_memory_gib += float(counts["memory_gib"])
         peak = max(peak, active)
         rows.append(
             {
                 "timestamp": timestamp.isoformat(sep=" "),
                 "elapsed_seconds": (timestamp - first).total_seconds(),
                 "active_jobs": active,
+                "allocated_cpus": active_cpus,
+                "allocated_memory_gib": active_memory_gib,
                 "finished_jobs": finished,
-                "started_jobs": counts["started"],
-                "ended_jobs": counts["ended"],
+                "started_jobs": int(counts["started"]),
+                "ended_jobs": int(counts["ended"]),
             }
         )
     wall = (last - first).total_seconds()
-    total_job_seconds = sum((end - start).total_seconds() for start, end in intervals)
+    total_job_seconds = sum((end - start).total_seconds() for start, end, _, _ in intervals)
     average_active = total_job_seconds / wall if wall > 0 else float(len(intervals))
     return rows, peak, average_active, first, last
 
@@ -495,6 +651,138 @@ def stats(values: list[float]) -> dict[str, float | None]:
         "p95": percentile(values, 0.95),
         "maximum": max(values) if values else None,
     }
+
+
+def ratio(numerator: float | None, denominator: float | None) -> float | None:
+    return numerator / denominator if numerator is not None and denominator else None
+
+
+def concurrency_timing(profile: list[dict], target: int | None) -> dict[str, float | None]:
+    result = {
+        "time_to_50_percent_target_seconds": None,
+        "time_to_90_percent_target_seconds": None,
+        "time_at_or_above_90_percent_target_seconds": None,
+        "fraction_of_execution_at_or_above_90_percent_target": None,
+    }
+    if not profile or not target:
+        return result
+    first_elapsed = float(profile[0]["elapsed_seconds"])
+    last_elapsed = float(profile[-1]["elapsed_seconds"])
+    for fraction, key in (
+        (0.5, "time_to_50_percent_target_seconds"),
+        (0.9, "time_to_90_percent_target_seconds"),
+    ):
+        match = next(
+            (row for row in profile if int(row["active_jobs"]) >= fraction * target),
+            None,
+        )
+        if match is not None:
+            result[key] = float(match["elapsed_seconds"]) - first_elapsed
+    above_seconds = 0.0
+    for current, following in zip(profile, profile[1:]):
+        if int(current["active_jobs"]) >= 0.9 * target:
+            above_seconds += float(following["elapsed_seconds"]) - float(current["elapsed_seconds"])
+    wall = last_elapsed - first_elapsed
+    result["time_at_or_above_90_percent_target_seconds"] = above_seconds
+    result["fraction_of_execution_at_or_above_90_percent_target"] = (
+        above_seconds / wall if wall > 0 else None
+    )
+    return result
+
+
+CLUSTER_PROFILE_FIELDS = [
+    "timestamp",
+    "elapsed_seconds",
+    "external_running_jobs",
+    "external_allocated_cpus",
+    "external_allocated_memory_gib",
+]
+
+
+def build_cluster_context(
+    rows: list[dict[str, str]],
+    target_job_ids: set[str],
+    window_start: datetime,
+    window_end: datetime,
+) -> tuple[list[dict], dict]:
+    events: dict[datetime, dict[str, float]] = {}
+    external_jobs = []
+    accounts = Counter()
+    users = Counter()
+    for row in select_all_logical_rows(rows):
+        if row["JobID"] in target_job_ids:
+            continue
+        start = parse_datetime(row["Start"])
+        end = parse_datetime(row["End"]) or window_end
+        if start is None or end <= window_start or start >= window_end:
+            continue
+        start = max(start, window_start)
+        end = min(end, window_end)
+        if end <= start:
+            continue
+        cpus = parse_int(row["AllocCPUS"]) or 0
+        node_count = parse_int(row["NNodes"])
+        memory_kib = allocated_memory_kib(row["AllocTRES"])
+        if memory_kib is None:
+            memory_kib = requested_memory_kib(row["ReqMem"], cpus, node_count)
+        memory_gib = memory_kib / 1024**2 if memory_kib is not None else 0.0
+        events.setdefault(start, {"jobs": 0, "cpus": 0, "memory_gib": 0.0})
+        events.setdefault(end, {"jobs": 0, "cpus": 0, "memory_gib": 0.0})
+        events[start]["jobs"] += 1
+        events[start]["cpus"] += cpus
+        events[start]["memory_gib"] += memory_gib
+        events[end]["jobs"] -= 1
+        events[end]["cpus"] -= cpus
+        events[end]["memory_gib"] -= memory_gib
+        elapsed = (end - start).total_seconds()
+        external_jobs.append((elapsed, cpus, memory_gib))
+        if row["Account"]:
+            accounts[row["Account"]] += 1
+        if row["User"]:
+            users[row["User"]] += 1
+
+    active_jobs = 0
+    active_cpus = 0
+    active_memory = 0.0
+    profile = []
+    for timestamp in sorted(events):
+        delta = events[timestamp]
+        active_jobs += int(delta["jobs"])
+        active_cpus += int(delta["cpus"])
+        active_memory += float(delta["memory_gib"])
+        profile.append(
+            {
+                "timestamp": timestamp.isoformat(sep=" "),
+                "elapsed_seconds": (timestamp - window_start).total_seconds(),
+                "external_running_jobs": active_jobs,
+                "external_allocated_cpus": active_cpus,
+                "external_allocated_memory_gib": active_memory,
+            }
+        )
+
+    wall = (window_end - window_start).total_seconds()
+    cpu_seconds = sum(elapsed * cpus for elapsed, cpus, _ in external_jobs)
+    memory_gib_seconds = sum(elapsed * memory for elapsed, _, memory in external_jobs)
+    summary = {
+        "available": True,
+        "logical_jobs_overlapping": len(external_jobs),
+        "accounts": dict(sorted(accounts.items())),
+        "users": dict(sorted(users.items())),
+        "peak_running_jobs": max(
+            (row["external_running_jobs"] for row in profile), default=0
+        ),
+        "peak_allocated_cpus": max(
+            (row["external_allocated_cpus"] for row in profile), default=0
+        ),
+        "mean_allocated_cpus": cpu_seconds / wall if wall > 0 else None,
+        "peak_allocated_memory_gib": max(
+            (row["external_allocated_memory_gib"] for row in profile), default=0.0
+        ),
+        "mean_allocated_memory_gib": memory_gib_seconds / wall if wall > 0 else None,
+        "allocated_cpu_hours": cpu_seconds / 3600,
+        "allocated_memory_gib_hours": memory_gib_seconds / 3600,
+    }
+    return profile, summary
 
 
 def build_summary(
@@ -523,7 +811,27 @@ def build_summary(
         for task in tasks
         if task["eligible_wait_seconds"] is not None
     ]
+    pre_eligible_waits = [
+        float(task["pre_eligible_wait_seconds"])
+        for task in tasks
+        if task["pre_eligible_wait_seconds"] is not None
+    ]
     memories = [float(task["max_rss_gib"]) for task in tasks if task["max_rss_gib"] is not None]
+    memory_efficiencies = [
+        float(task["memory_peak_fraction_percent"])
+        for task in tasks
+        if task["memory_peak_fraction_percent"] is not None
+    ]
+    average_cpus = [
+        float(task["average_cpu_used"])
+        for task in tasks
+        if task["average_cpu_used"] is not None
+    ]
+    timelimit_utilizations = [
+        float(task["timelimit_utilization_percent"])
+        for task in tasks
+        if task["timelimit_utilization_percent"] is not None
+    ]
     io_fields = (
         "ave_disk_read_gib",
         "ave_disk_write_gib",
@@ -537,6 +845,11 @@ def build_summary(
     cpu_used = sum(task["total_cpu_seconds"] or 0 for task in tasks)
     cpu_allocated = sum(
         (task["duration_seconds"] or 0) * (task["alloc_cpus"] or 0) for task in tasks
+    )
+    memory_allocated_gib_seconds = sum(
+        (task["duration_seconds"] or 0)
+        * (task["allocated_memory_gib"] or task["requested_memory_gib"] or 0)
+        for task in tasks
     )
     execution_wall = (
         (last_end - first_start).total_seconds()
@@ -553,8 +866,10 @@ def build_summary(
     partitions = sorted({task["partition"] for task in tasks if task["partition"]})
     accounts = sorted({task["account"] for task in tasks if task["account"]})
     qos_values = sorted({task["qos"] for task in tasks if task["qos"]})
+    duration_stats = stats(durations)
+    concurrency_detail = concurrency_timing(profile, concurrency_target)
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "label": label,
         "requested_job_ids": requested_ids,
@@ -574,6 +889,9 @@ def build_summary(
         "throughput_successful_jobs_per_hour": (
             len(successful) * 3600 / execution_wall if execution_wall and execution_wall > 0 else None
         ),
+        "service_rate_successful_jobs_per_job_hour": (
+            len(successful) * 3600 / sum(durations) if durations and sum(durations) > 0 else None
+        ),
         "concurrency": {
             "peak": peak,
             "mean": average_active,
@@ -582,11 +900,19 @@ def build_summary(
             "mean_fraction_of_target": average_active / concurrency_target
             if concurrency_target and average_active is not None
             else None,
+            **concurrency_detail,
         },
-        "duration_seconds": stats(durations),
+        "duration_seconds": {
+            **duration_stats,
+            "p95_to_p50_ratio": ratio(duration_stats["p95"], duration_stats["p50"]),
+            "maximum_to_p50_ratio": ratio(duration_stats["maximum"], duration_stats["p50"]),
+        },
         "queue_wait_seconds": stats(queue_waits),
+        "pre_eligible_wait_seconds": stats(pre_eligible_waits),
         "eligible_wait_seconds": stats(eligible_waits),
         "max_rss_gib": stats(memories),
+        "memory_peak_fraction_percent": stats(memory_efficiencies),
+        "timelimit_utilization_percent": stats(timelimit_utilizations),
         "io": {
             "jobs_with_accounting": sum(
                 any(task[field] is not None for field in io_fields) for task in tasks
@@ -597,6 +923,19 @@ def build_summary(
             "used_seconds": cpu_used,
             "allocated_seconds": cpu_allocated,
             "efficiency_percent": 100 * cpu_used / cpu_allocated if cpu_allocated else None,
+            "average_used_per_job": stats(average_cpus),
+        },
+        "allocation_profile": {
+            "peak_cpus": max((row["allocated_cpus"] for row in profile), default=0),
+            "mean_cpus": cpu_allocated / execution_wall if execution_wall else None,
+            "peak_memory_gib": max(
+                (row["allocated_memory_gib"] for row in profile), default=0.0
+            ),
+            "mean_memory_gib": (
+                memory_allocated_gib_seconds / execution_wall if execution_wall else None
+            ),
+            "cpu_hours": cpu_allocated / 3600,
+            "memory_gib_hours": memory_allocated_gib_seconds / 3600,
         },
         "nodes": {"unique_count": len(node_counts), "logical_jobs_by_node": dict(sorted(node_counts.items()))},
         "profile_points": len(profile),
@@ -625,9 +964,14 @@ def format_seconds(value: float | None) -> str:
 def write_summary_log(path: Path, summary: dict) -> None:
     duration = summary["duration_seconds"]
     queue = summary["queue_wait_seconds"]
+    pre_eligible = summary["pre_eligible_wait_seconds"]
+    eligible = summary["eligible_wait_seconds"]
     rss = summary["max_rss_gib"]
+    memory_efficiency = summary["memory_peak_fraction_percent"]
+    timelimit = summary["timelimit_utilization_percent"]
     concurrency = summary["concurrency"]
     cpu = summary["cpu"]
+    allocation = summary["allocation_profile"]
     io = summary["io"]
     lines = [
         f"label: {summary['label']}",
@@ -649,14 +993,30 @@ def write_summary_log(path: Path, summary: dict) -> None:
         "first_start_to_last_end: " + format_seconds(summary["first_start_to_last_end_seconds"]),
         "sum_job_elapsed: " + format_seconds(summary["sum_job_elapsed_seconds"]),
         f"throughput_successful_jobs_per_hour: {fmt(summary['throughput_successful_jobs_per_hour'])}",
+        f"service_rate_successful_jobs_per_job_hour: {fmt(summary['service_rate_successful_jobs_per_job_hour'])}",
         f"concurrency_peak: {concurrency['peak']}",
         f"concurrency_mean: {fmt(concurrency['mean'])}",
         f"concurrency_target: {fmt(concurrency['target'])}",
         f"concurrency_peak_fraction_of_target: {fmt(concurrency['peak_fraction_of_target'])}",
         f"concurrency_mean_fraction_of_target: {fmt(concurrency['mean_fraction_of_target'])}",
+        "concurrency_time_to_50_percent_target: "
+        + format_seconds(concurrency["time_to_50_percent_target_seconds"]),
+        "concurrency_time_to_90_percent_target: "
+        + format_seconds(concurrency["time_to_90_percent_target_seconds"]),
+        "concurrency_fraction_of_execution_at_or_above_90_percent_target: "
+        + fmt(concurrency["fraction_of_execution_at_or_above_90_percent_target"]),
         f"duration_seconds_p50_p95_max: {fmt(duration['p50'])}, {fmt(duration['p95'])}, {fmt(duration['maximum'])}",
+        f"duration_p95_to_p50_ratio: {fmt(duration['p95_to_p50_ratio'])}",
         f"queue_wait_seconds_p50_p95_max: {fmt(queue['p50'])}, {fmt(queue['p95'])}, {fmt(queue['maximum'])}",
+        "pre_eligible_wait_seconds_p50_p95_max: "
+        + f"{fmt(pre_eligible['p50'])}, {fmt(pre_eligible['p95'])}, {fmt(pre_eligible['maximum'])}",
+        "eligible_wait_seconds_p50_p95_max: "
+        + f"{fmt(eligible['p50'])}, {fmt(eligible['p95'])}, {fmt(eligible['maximum'])}",
         f"max_rss_gib_p50_p95_max: {fmt(rss['p50'])}, {fmt(rss['p95'])}, {fmt(rss['maximum'])}",
+        "memory_peak_fraction_percent_p50_p95_max: "
+        + f"{fmt(memory_efficiency['p50'])}, {fmt(memory_efficiency['p95'])}, {fmt(memory_efficiency['maximum'])}",
+        "timelimit_utilization_percent_p50_p95_max: "
+        + f"{fmt(timelimit['p50'])}, {fmt(timelimit['p95'])}, {fmt(timelimit['maximum'])}",
         f"io_jobs_with_accounting: {io['jobs_with_accounting']}",
         "io_ave_disk_read_gib_p50_p95_max: "
         + f"{fmt(io['ave_disk_read_gib']['p50'])}, {fmt(io['ave_disk_read_gib']['p95'])}, "
@@ -673,12 +1033,33 @@ def write_summary_log(path: Path, summary: dict) -> None:
         f"cpu_used_seconds: {fmt(cpu['used_seconds'])}",
         f"cpu_allocated_seconds: {fmt(cpu['allocated_seconds'])}",
         f"cpu_efficiency_percent: {fmt(cpu['efficiency_percent'])}",
+        "average_cpu_used_per_job_p50_p95_max: "
+        + f"{fmt(cpu['average_used_per_job']['p50'])}, "
+        + f"{fmt(cpu['average_used_per_job']['p95'])}, "
+        + fmt(cpu["average_used_per_job"]["maximum"]),
+        f"allocation_peak_cpus: {fmt(allocation['peak_cpus'])}",
+        f"allocation_mean_cpus: {fmt(allocation['mean_cpus'])}",
+        f"allocation_peak_memory_gib: {fmt(allocation['peak_memory_gib'])}",
+        f"allocation_mean_memory_gib: {fmt(allocation['mean_memory_gib'])}",
         f"unique_nodes: {summary['nodes']['unique_count']}",
         "logical_jobs_by_node: "
         + ", ".join(
             f"{key}={value}" for key, value in summary["nodes"]["logical_jobs_by_node"].items()
         ),
     ]
+    cluster = summary.get("cluster_context")
+    if cluster:
+        lines.extend(
+            [
+                f"cluster_context_logical_jobs_overlapping: {cluster['logical_jobs_overlapping']}",
+                f"cluster_context_peak_allocated_cpus: {fmt(cluster['peak_allocated_cpus'])}",
+                f"cluster_context_mean_allocated_cpus: {fmt(cluster['mean_allocated_cpus'])}",
+                f"cluster_context_peak_allocated_memory_gib: {fmt(cluster['peak_allocated_memory_gib'])}",
+                f"cluster_context_mean_allocated_memory_gib: {fmt(cluster['mean_allocated_memory_gib'])}",
+                "cluster_context_accounts: "
+                + ", ".join(f"{key}={value}" for key, value in cluster["accounts"].items()),
+            ]
+        )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -788,11 +1169,45 @@ def main() -> int:
         last_end,
     )
 
+    cluster_rows = None
+    if args.cluster_sacct_file:
+        cluster_rows = read_sacct_file(args.cluster_sacct_file)
+    elif args.cluster_context_nodes:
+        if first_start is None or last_end is None:
+            raise SystemExit("cluster context requires completed jobs with Start and End times")
+        cluster_rows = query_cluster_sacct(args.cluster_context_nodes, first_start, last_end)
+    if cluster_rows is not None:
+        if first_start is None or last_end is None:
+            raise SystemExit("cluster context requires completed jobs with Start and End times")
+        cluster_profile, cluster_summary = build_cluster_context(
+            cluster_rows,
+            {task["job_id"] for task in tasks},
+            first_start,
+            last_end,
+        )
+        cluster_summary["nodes"] = args.cluster_context_nodes
+        summary["cluster_context"] = cluster_summary
+        write_tsv(args.output_dir / "cluster-context-sacct.tsv", list(SACCT_FIELDS), cluster_rows)
+        write_tsv(
+            args.output_dir / "cluster-context-profile.tsv",
+            CLUSTER_PROFILE_FIELDS,
+            cluster_profile,
+        )
+
     serializable_tasks = [{key: task.get(key) for key in TASK_FIELDS} for task in tasks]
     write_tsv(args.output_dir / "tasks.tsv", TASK_FIELDS, serializable_tasks)
     write_tsv(
         args.output_dir / "time-profile.tsv",
-        ["timestamp", "elapsed_seconds", "active_jobs", "finished_jobs", "started_jobs", "ended_jobs"],
+        [
+            "timestamp",
+            "elapsed_seconds",
+            "active_jobs",
+            "allocated_cpus",
+            "allocated_memory_gib",
+            "finished_jobs",
+            "started_jobs",
+            "ended_jobs",
+        ],
         profile,
     )
     (args.output_dir / "summary.json").write_text(

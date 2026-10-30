@@ -228,7 +228,7 @@ final disk use, or HATS integrity-validator output.
 
 ## Stage 1 training profile carried into v3
 
-The established Apollo configuration trains on one `apl[17-25]` node with 98
+The current Apollo configuration trains on one `apl[17-26]` node with 98
 logical CPUs, 231 GiB, and a three-hour limit. The allocation was chosen to use
 approximately 95% of the schedulable CPU and memory on the larger Apollo nodes
 while respecting whole-core allocation. BLAS/OpenMP threads are held at one to
@@ -273,11 +273,12 @@ completion record.
 
 ## Stage 3 profile carried into v3
 
-The HATS build uses Slurm-backed Dask workers. The current starting request is
-82 workers, each with 8 CPUs, 40 GiB, and a 12-hour limit. Stage 2 HDF5 files
-are retained by default. A successful run must produce both the scalar HATS
-summary and PDF parquet product, preserve the 601-point grid, match Stage 2 row
-counts, and remove temporary staging.
+The HATS build uses Slurm-backed Dask workers. It keeps 20 workers and scales
+adaptively up to 80, each with 8 CPUs, 40 GiB, and a 12-hour limit. Workers
+remain idle for approximately 180 seconds before adaptive scale-down. Stage 2
+HDF5 files are retained by default. A successful
+run must produce both the scalar HATS summary and PDF parquet product, preserve
+the 601-point grid, match Stage 2 row counts, and remove temporary staging.
 
 ## Record required after the next v3 production run
 

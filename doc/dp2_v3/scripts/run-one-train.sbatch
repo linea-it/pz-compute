@@ -2,7 +2,7 @@
 #SBATCH --job-name=dp2-train
 #SBATCH --partition=cpu_photoz
 #SBATCH --account=hpc-photoz
-#SBATCH --exclude=apl[26-28]
+#SBATCH --exclude=apl[27-28]
 
 set -euo pipefail
 

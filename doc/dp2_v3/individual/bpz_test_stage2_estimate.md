@@ -70,7 +70,10 @@ was 0.993 logical CPU per running task. A subsequent full-catalog attempt with
 24 GiB produced OOM kills, and a retry also killed task 21 with 26 GiB, so both
 requests are rejected. The revised trial defaults are 105 concurrent tasks,
 32 GiB, and two hours per task. This is 55.9% above the pilot maximum; the
-concurrency is 95% of the 111 tasks that fit by memory across `apl01-25`. See
+concurrency was 95% of the 111 tasks that fit by memory across the former
+`apl01-25` topology. The current `apl01-26` topology fits 118 such tasks, so
+the unchanged 105-task test throttle now leaves additional coexistence
+headroom. See
 [`bpz_test_runs.md`](../references/bpz_test_runs.md) for the measurements and
 capacity calculation. Treat 32 GiB as provisional until the failed tasks have
 completed successfully on retry.
