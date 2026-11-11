@@ -19,7 +19,7 @@ PZ_BATCH_POLL_SECONDS=${PZ_BATCH_POLL_SECONDS:-30}
 PZ_BATCH_MIN_FREE_PER_ALGORITHM_GIB=${PZ_BATCH_MIN_FREE_PER_ALGORITHM_GIB:-8192}
 IFS=',' read -r -a batch_algorithms_for_storage <<< "$PZ_BATCH_ALGORITHMS"
 PZ_BATCH_MIN_FREE_GIB=${PZ_BATCH_MIN_FREE_GIB:-$((${#batch_algorithms_for_storage[@]} * 8192))}
-PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-20}
+PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-1}
 PZ_HATS_MAX_WORKERS=${PZ_HATS_MAX_WORKERS:-80}
 PZ_HATS_SCALE_DOWN_DELAY=${PZ_HATS_SCALE_DOWN_DELAY:-180}
 batch_dp2_root=$PZ_DP2_ROOT
@@ -278,6 +278,7 @@ profile_regular_job() {
       --concurrency-target "$target"
       --label "$label"
       --output-dir "$output_dir"
+      --capture-slurm-snapshot
       --fail-on-unsuccessful
     )
     if [ -n "$nodes" ]; then
@@ -296,9 +297,10 @@ profile_array_job() {
       --job-id "$jobid" \
       --expected-jobs "$expected" \
       --concurrency-target "$target" \
-      --cluster-context-nodes 'apl[01-26]' \
+      --cluster-context-nodes 'apl[01-28]' \
       --label "$label" \
       --output-dir "$output_dir" \
+      --capture-slurm-snapshot \
       --fail-on-unsuccessful
 }
 
@@ -380,13 +382,8 @@ run_algorithm() {
 
     current_stage=stage1-benchmark
     record_status STARTED "profiling training job $jobid"
-    if [ "$algorithm" = fzboost ]; then
-        profile_regular_job "$jobid" 1 "$algorithm-stage1-training-$jobid" \
-          "$stage1/benchmark/training-$jobid" 'apl[17-26]'
-    else
-        profile_regular_job "$jobid" 1 "$algorithm-stage1-training-$jobid" \
-          "$stage1/benchmark/training-$jobid" 'apl[01-26]'
-    fi
+    profile_regular_job "$jobid" 1 "$algorithm-stage1-training-$jobid" \
+      "$stage1/benchmark/training-$jobid" 'apl[01-28]'
     record_status COMPLETED "training benchmark written"
     record_artifact benchmark "$stage1/benchmark/training-$jobid"
 
@@ -484,18 +481,17 @@ run_algorithm() {
 
     current_stage=stage3-worker-benchmark
     record_status STARTED "collecting and profiling Dask workers"
-    find "$worker_logs" -type f -name 'slurm-*.out' -printf '%f\n' |
-      sed -n 's/^slurm-\([0-9][0-9]*\)\.out$/\1/p' |
-      sort -n -u > "$benchmark_dir/worker-job-ids.txt"
+    "$scripts_dir/collect-hats-worker-job-ids.sh" "$benchmark_dir" "$worker_logs"
     worker_count=$(wc -l < "$benchmark_dir/worker-job-ids.txt")
     test "$worker_count" -gt 0
     "$profile" \
       --job-id-file "$benchmark_dir/worker-job-ids.txt" \
       --expected-jobs "$worker_count" \
       --concurrency-target "$PZ_HATS_MAX_WORKERS" \
-      --cluster-context-nodes 'apl[01-26]' \
+      --cluster-context-nodes 'apl[01-28]' \
       --label "$algorithm-stage3-workers-$run_tag" \
-      --output-dir "$benchmark_dir/workers"
+      --output-dir "$benchmark_dir/workers" \
+      --capture-slurm-snapshot
     test -f "$driver_logs/driver-resource-usage.log"
     record_status COMPLETED "$worker_count worker jobs profiled"
     record_artifact benchmark "$benchmark_dir/workers"

@@ -26,6 +26,7 @@ Each invocation creates an isolated output directory containing:
 | `time-profile.svg` | concurrency and cumulative-finished-job profile |
 | `cluster-context-sacct.tsv` | optional raw accounting for other allocations overlapping the run |
 | `cluster-context-profile.tsv` | optional external jobs/CPUs/memory time series |
+| `slurm-snapshot/` | optional post-run partition, node, reservation, queue, and configuration snapshot |
 
 The essential aggregate metrics are:
 
@@ -60,12 +61,19 @@ still includes gaps between attempts. These interpretations follow the official
 [`sacct` accounting-field documentation](https://slurm.schedmd.com/sacct.html#SECTION_Job-Accounting-Fields).
 
 The optional cluster context is also reconstructed from `sacct`, so it remains
-lightweight and requires no polling daemon. It measures allocations from other
-jobs whose execution intervals overlap the profiled run; it does not measure
-their instantaneous CPU/RSS consumption or Lustre load. Multi-node jobs that
-extend outside the requested hostlist may have their complete allocation
-counted, so treat this as scheduler-pressure evidence rather than exact node
-telemetry.
+lightweight and requires no polling daemon. Its window begins at the first
+target-job submission and ends at the last target-job completion, covering the
+initial queue wait as well as execution. It measures allocations from other
+jobs whose execution intervals overlap that window; it does not measure their
+instantaneous CPU/RSS consumption or Lustre load. Multi-node jobs that extend
+outside the requested hostlist may have their complete allocation counted, so
+treat this as scheduler-pressure evidence rather than exact node telemetry.
+
+`--capture-slurm-snapshot` additionally records small, post-run text snapshots
+from `scontrol` and `squeue`. This preserves the topology and scheduler
+configuration needed to interpret a future comparison even if nodes or
+partitions change. Snapshot command failures are recorded in `summary.json`
+without discarding the accounting profile.
 
 ## Basic usage
 
@@ -89,7 +97,8 @@ python /path/to/pz-compute/performance/slurm/slurm-profile \
   --job-id "$SLURM_PRODUCTION_JOB_ID" \
   --expected-jobs "$EXPECTED_JOBS" \
   --concurrency-target "$CONCURRENCY_TARGET" \
-  --cluster-context-nodes 'apl[01-26]' \
+  --cluster-context-nodes 'apl[01-28]' \
+  --capture-slurm-snapshot \
   --label production-with-cluster-context \
   --output-dir benchmark/production-with-cluster-context \
   --fail-on-unsuccessful

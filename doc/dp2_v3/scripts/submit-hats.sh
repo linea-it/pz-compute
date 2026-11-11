@@ -20,7 +20,7 @@ command -v pz-build-hats >/dev/null
 scripts_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
 PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset}
-PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-20}
+PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-1}
 PZ_HATS_MAX_WORKERS=${PZ_HATS_MAX_WORKERS:-${PZ_HATS_WORKERS:-80}}
 PZ_HATS_SCALE_DOWN_DELAY=${PZ_HATS_SCALE_DOWN_DELAY:-180}
 
@@ -72,7 +72,6 @@ for algorithm in "${algorithms[@]}"; do
       --job-name="dp2-hats-$algorithm" \
       --partition=cpu_photoz \
       --account=hpc-photoz \
-      --exclude='apl[27-28]' \
       --nodes=1 \
       --ntasks=1 \
       --cpus-per-task=2 \

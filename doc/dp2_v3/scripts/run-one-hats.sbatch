@@ -24,15 +24,18 @@ hats_dir=$stage3_run/output/pz-$PZ_ALGORITHM-gaap1p0-clipped-hats
 benchmark_dir=$stage3_run/benchmark/$PZ_STAGE3_RUN_TAG
 worker_log_dir=$stage3_run/log/dask-$PZ_STAGE3_RUN_TAG
 driver_log_dir=$stage3_run/log/driver-$PZ_STAGE3_RUN_TAG
+worker_job_name=pz3-${PZ_ALGORITHM}-${PZ_STAGE3_RUN_TAG}
 
 mkdir -p "$benchmark_dir" "$worker_log_dir" "$driver_log_dir" "$stage3_run/output"
 
 {
+    printf 'driver_start_time=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%S)"
     date --iso-8601=seconds
     hostname
     "$PZ_PY" --version
     git -C "$PZ_COMPUTE_DIR" rev-parse HEAD
 } > "$benchmark_dir/run-context.log"
+printf '%s\n' "$worker_job_name" > "$benchmark_dir/worker-job-name.txt"
 
 driver_start=$(date --iso-8601=seconds)
 status=0
@@ -50,7 +53,6 @@ set +e
       --dask-cluster=slurm \
       --slurm-queue=cpu_photoz \
       --slurm-account=hpc-photoz \
-      --slurm-exclude='apl[27-28]' \
       --slurm-cores=8 \
       --slurm-processes=1 \
       --slurm-memory=40GiB \
@@ -59,6 +61,7 @@ set +e
       --slurm-maximum-jobs="$PZ_HATS_MAX_WORKERS" \
       --slurm-scale-down-delay="$PZ_HATS_SCALE_DOWN_DELAY" \
       --slurm-log-dir="$worker_log_dir" \
+      --slurm-job-name="$worker_job_name" \
       "$PZ_DP2_INPUT_DATASET" \
       "$stage2_output" \
       "$hats_dir" 2>&1 | tee "$driver_log_dir/driver.log"

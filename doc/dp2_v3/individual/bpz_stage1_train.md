@@ -36,6 +36,11 @@ cd "$PZ_COMPUTE_DIR"
 doc/dp2_v3/scripts/submit-training.sh bpz
 ```
 
+The launcher does not restrict the node list: Slurm may use any node eligible
+for `cpu_photoz`. It requests one logical CPU, 8 GiB, and one hour. The 95%
+old-node-sized profile is reserved for the parallel FlexZBoost training; BPZ
+retains its smaller resource shape.
+
 Monitor the job, follow its logs, and inspect the resulting model with the
 [Stage 1 terminal commands](inspect_runs.md#stage-1-training), using
 `algorithm=bpz`.
@@ -70,9 +75,10 @@ performance/slurm/slurm-profile \
   --job-id "$jobid" \
   --expected-jobs 1 \
   --concurrency-target 1 \
-  --cluster-context-nodes 'apl[01-26]' \
+  --cluster-context-nodes 'apl[01-28]' \
   --label "bpz-stage1-training-$jobid" \
   --output-dir "$stage1/benchmark/training-$jobid" \
+  --capture-slurm-snapshot \
   --fail-on-unsuccessful
 
 cat "$stage1/benchmark/training-$jobid/summary.log"

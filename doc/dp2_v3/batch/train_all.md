@@ -33,10 +33,15 @@ submit-training.sh <algorithm>
 → validate-models.py <algorithm>
 ```
 
-FlexZBoost keeps its one-node, 98-CPU, 231-GiB request on `apl17-26`. DNF and
-BPZ each request one task, one CPU, and 8 GiB on `apl01-26`. The next stage does
-not start merely because the Slurm job ended: the profile must be written and
-the candidate/reference structural validation must also pass.
+FlexZBoost requests 52 logical CPUs and 113,984 MiB. These values stay at or
+below 95% of the 56 logical CPUs and 119,984 schedulable MiB on an older node,
+preserving a 5% operational margin while respecting the two-thread whole-core
+allocation. DNF and BPZ each request one task, one CPU, and 8 GiB. No Stage 1
+submission sets a node list: Slurm may select any node eligible for
+`cpu_photoz`, while every resource shape remains small enough to fit an older
+node. The next stage does not start merely
+because the Slurm job ended: the profile must be written and the
+candidate/reference structural validation must also pass.
 
 The resulting layout is identical to an individual run:
 
@@ -50,8 +55,8 @@ $PZ_DP2_ROOT/<algorithm>/stage1/
 ```
 
 The benchmark contains queue wait, elapsed time, CPU and memory use, node
-placement, allocation profiles, and overlapping cluster context. FlexZBoost
-uses `apl17-26` as its context scope; DNF and BPZ use `apl01-26`.
+placement, allocation profiles, and overlapping cluster context over
+`apl01-28`.
 
 ## Failure boundary
 

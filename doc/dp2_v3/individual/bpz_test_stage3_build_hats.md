@@ -15,11 +15,12 @@ cd "$PZ_COMPUTE_DIR"
 doc/dp2_v3/scripts/submit-hats.sh bpz_test
 ```
 
-The default Dask cluster keeps 20 workers and scales adaptively up to 80. Each
-worker requests 8 CPUs, 40 GiB, and 12 hours; idle workers become eligible for
-scale-down after approximately 180 seconds. Override `PZ_HATS_MIN_WORKERS`,
-`PZ_HATS_MAX_WORKERS`, or `PZ_HATS_SCALE_DOWN_DELAY` before submission when
-required.
+The default Dask cluster starts with one requested worker and scales adaptively
+up to 80. Each worker requests 8 CPUs, 40 GiB, and 12 hours; idle workers become
+eligible for scale-down after approximately 180 seconds. There is no
+`wait_for_workers` barrier, so work can begin with the first worker Slurm can
+start. Override `PZ_HATS_MIN_WORKERS`, `PZ_HATS_MAX_WORKERS`, or
+`PZ_HATS_SCALE_DOWN_DELAY` before submission when required.
 
 Use the [Stage 3 terminal commands](inspect_runs.md#stage-3-hats-build) with
 `algorithm=bpz_test` to follow the driver, inspect Dask worker logs, check its
@@ -71,16 +72,17 @@ performance/slurm/slurm-profile \
   --concurrency-target 1 \
   --label "bpz-test-stage3-driver-$jobid" \
   --output-dir "$benchmark_dir/driver" \
+  --capture-slurm-snapshot \
   --fail-on-unsuccessful
 ```
 
-Then extract the IDs of workers that started and profile their actual
-allocation and concurrency:
+Then recover every submitted worker ID from its run-specific Slurm job name,
+union that accounting result with the started-worker logs, and profile the
+actual allocation and concurrency:
 
 ```bash
-find "$worker_logs" -type f -name 'slurm-*.out' -printf '%f\n' |
-  sed -n 's/^slurm-\([0-9][0-9]*\)\.out$/\1/p' |
-  sort -n -u > "$benchmark_dir/worker-job-ids.txt"
+doc/dp2_v3/scripts/collect-hats-worker-job-ids.sh \
+  "$benchmark_dir" "$worker_logs"
 
 worker_count=$(wc -l < "$benchmark_dir/worker-job-ids.txt")
 worker_target=${PZ_HATS_MAX_WORKERS:-80}
@@ -90,9 +92,10 @@ performance/slurm/slurm-profile \
   --job-id-file "$benchmark_dir/worker-job-ids.txt" \
   --expected-jobs "$worker_count" \
   --concurrency-target "$worker_target" \
-  --cluster-context-nodes 'apl[01-26]' \
+  --cluster-context-nodes 'apl[01-28]' \
   --label "bpz-test-stage3-workers-$run_tag" \
-  --output-dir "$benchmark_dir/workers"
+  --output-dir "$benchmark_dir/workers" \
+  --capture-slurm-snapshot
 
 cat "$benchmark_dir/driver/summary.log"
 cat "$benchmark_dir/workers/summary.log"
@@ -116,10 +119,14 @@ $PZ_DP2_ROOT/bpz_test/stage3/
 │   ├── driver/
 │   ├── workers/
 │   ├── worker-job-ids.txt
+│   ├── worker-job-name.txt
 │   └── run-context.log
 ├── environment-freeze.txt
 └── submitted-job-ids.tsv
 ```
+
+Both profile directories contain a lightweight `slurm-snapshot/` for future
+shared-versus-exclusive cluster comparisons.
 
 Do not rename, copy, or publish this tree as `bpz`. Its scientific limitations
 remain those documented in

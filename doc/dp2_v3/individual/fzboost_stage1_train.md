@@ -52,8 +52,12 @@ The final model receives `catalog_tag=lsst_gaap_1p0` and provenance
 ## 3. Profile the completed training job
 
 After the job reaches `COMPLETED`, recover its ID and create the lightweight
-Slurm benchmark. The cluster-context query is restricted to the large nodes on
-which this training job was eligible to run:
+Slurm benchmark. The submission has no node-list restriction: Slurm may place
+it on any node eligible for `cpu_photoz`. Its resource shape is deliberately
+sized from an older node, which exposes 56 logical CPUs and 119,984 MiB after
+its 4,096-MiB system reservation. The job requests 52 logical CPUs and 113,984
+MiB: the largest whole-core CPU allocation and integer-MiB memory request that
+stay at or below 95% of those resources.
 
 ```bash
 stage1=$PZ_DP2_ROOT/fzboost/stage1
@@ -64,9 +68,10 @@ performance/slurm/slurm-profile \
   --job-id "$jobid" \
   --expected-jobs 1 \
   --concurrency-target 1 \
-  --cluster-context-nodes 'apl[17-26]' \
+  --cluster-context-nodes 'apl[01-28]' \
   --label "fzboost-stage1-training-$jobid" \
   --output-dir "$stage1/benchmark/training-$jobid" \
+  --capture-slurm-snapshot \
   --fail-on-unsuccessful
 
 cat "$stage1/benchmark/training-$jobid/summary.log"

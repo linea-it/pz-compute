@@ -79,11 +79,16 @@ $PZ_DP2_ROOT/batch/production-<UTC timestamp>/
 ```
 
 The default controller allocation is one task with 2 CPUs, 8 GiB, and a
-14-day walltime on one of the smaller `apl01-16` nodes. With an explicit
-one-node request, the node list is an eligibility set rather than a multi-node
-allocation. Keeping the 8-GiB controller off `apl17-26` also preserves the
-six-slot packing of 40-GiB tasks on every large node. Each child retains the
+14-day walltime. It sets neither a node list nor an exclusion list, allowing
+Slurm to place it on any node eligible for `cpu_photoz`. Each child retains the
 resources documented for its individual algorithm and stage.
+
+Stage 1 child jobs do not set a node list, so Slurm may place them on any node
+eligible for `cpu_photoz`, including `apl27` and `apl28`. They also set no
+exclusion list. FlexZBoost requests 52 logical CPUs and 113,984 MiB, staying
+below 95% of an older node's schedulable CPU and memory. DNF and BPZ request
+one logical CPU and 8 GiB each. Thus every Stage 1 resource shape fits an older
+node without excluding newer nodes.
 
 ## 3. Monitor progress
 
@@ -169,7 +174,7 @@ export PZ_BATCH_JOB_TIMEOUT_SECONDS=864000
 export PZ_BATCH_POLL_SECONDS=30
 export PZ_BATCH_MIN_FREE_GIB=24576
 export PZ_BATCH_MIN_FREE_PER_ALGORITHM_GIB=8192
-export PZ_HATS_MIN_WORKERS=20
+export PZ_HATS_MIN_WORKERS=1
 export PZ_HATS_MAX_WORKERS=80
 export PZ_HATS_SCALE_DOWN_DELAY=180
 

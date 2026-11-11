@@ -16,7 +16,7 @@ Optional environment overrides:
   PZ_BATCH_POLL_SECONDS            accounting poll interval (default 30)
   PZ_BATCH_MIN_FREE_GIB            initial free scratch space (default 8192 per selected algorithm)
   PZ_BATCH_MIN_FREE_PER_ALGORITHM_GIB  recheck before each algorithm (default 8192)
-  PZ_HATS_MIN_WORKERS              Stage 3 adaptive minimum (default 20)
+  PZ_HATS_MIN_WORKERS              Stage 3 adaptive minimum (default 1)
   PZ_HATS_MAX_WORKERS              Stage 3 adaptive maximum (default 80)
   PZ_HATS_SCALE_DOWN_DELAY         Stage 3 idle delay in seconds (default 180)
 EOF
@@ -45,7 +45,7 @@ PZ_BATCH_POLL_SECONDS=${PZ_BATCH_POLL_SECONDS:-30}
 PZ_BATCH_MIN_FREE_PER_ALGORITHM_GIB=${PZ_BATCH_MIN_FREE_PER_ALGORITHM_GIB:-8192}
 IFS=',' read -r -a batch_algorithms_for_storage <<< "$PZ_BATCH_ALGORITHMS"
 PZ_BATCH_MIN_FREE_GIB=${PZ_BATCH_MIN_FREE_GIB:-$((${#batch_algorithms_for_storage[@]} * 8192))}
-PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-20}
+PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-1}
 PZ_HATS_MAX_WORKERS=${PZ_HATS_MAX_WORKERS:-80}
 PZ_HATS_SCALE_DOWN_DELAY=${PZ_HATS_SCALE_DOWN_DELAY:-180}
 controller_algorithms=${PZ_BATCH_ALGORITHMS//,/:}
@@ -63,10 +63,8 @@ job_id=$(sbatch --parsable \
   --job-name=dp2-production-batch \
   --partition=cpu_photoz \
   --account=hpc-photoz \
-  --exclude='apl[27-28]' \
   --nodes=1 \
   --ntasks=1 \
-  --nodelist='apl[01-16]' \
   --cpus-per-task=2 \
   --mem=8G \
   --time="$PZ_BATCH_CONTROLLER_TIME" \

@@ -61,9 +61,11 @@ full sorted manifest. Production defaults remain algorithm-specific:
 | BPZ official | 20 | 40 GiB | 24:00:00 |
 
 Because only one production array exists at a time, these ceilings have the
-same meaning and output behavior as the individual route. The controller waits
-for the array parent to reach `COMPLETED / 0:0`, profiles every expected task,
-and writes:
+same meaning and output behavior as the individual route. They cap concurrent
+tasks but do not require that many slots to become available at once: Slurm
+starts every task that fits and leaves the remainder pending. The controller
+waits for the array parent to reach `COMPLETED / 0:0`, profiles every expected
+task, and writes:
 
 ```text
 $PZ_DP2_ROOT/<algorithm>/stage2/benchmark/production-<jobid>/

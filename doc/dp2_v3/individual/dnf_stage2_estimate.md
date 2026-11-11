@@ -50,9 +50,10 @@ performance/slurm/slurm-profile \
   --job-id "$pilot_jobid" \
   --expected-jobs "$pilot_expected" \
   --concurrency-target 5 \
-  --cluster-context-nodes 'apl[01-26]' \
+  --cluster-context-nodes 'apl[01-28]' \
   --label "dnf-stage2-pilot-$pilot_jobid" \
   --output-dir "$stage2/benchmark/pilot-$pilot_jobid" \
+  --capture-slurm-snapshot \
   --fail-on-unsuccessful
 
 cat "$stage2/benchmark/pilot-$pilot_jobid/summary.log"
@@ -101,9 +102,10 @@ performance/slurm/slurm-profile \
   --job-id "$production_jobid" \
   --expected-jobs "$production_expected" \
   --concurrency-target 82 \
-  --cluster-context-nodes 'apl[01-26]' \
+  --cluster-context-nodes 'apl[01-28]' \
   --label "dnf-stage2-production-$production_jobid" \
   --output-dir "$stage2/benchmark/production-$production_jobid" \
+  --capture-slurm-snapshot \
   --fail-on-unsuccessful
 
 cat "$stage2/benchmark/production-$production_jobid/summary.log"

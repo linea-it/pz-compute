@@ -96,6 +96,14 @@ def parse_args() -> argparse.Namespace:
         help="Read cluster-context sacct records from a retained TSV instead of querying sacct.",
     )
     parser.add_argument(
+        "--capture-slurm-snapshot",
+        action="store_true",
+        help=(
+            "Capture a lightweight post-run snapshot of the profiled partitions, "
+            "nodes, reservations, queue, and Slurm configuration."
+        ),
+    )
+    parser.add_argument(
         "--expected-jobs",
         type=int,
         help="Expected total number of logical jobs.",
@@ -192,6 +200,53 @@ def query_cluster_sacct(nodes: str, start: datetime, end: datetime) -> list[dict
             + (result.stderr.strip() or result.stdout.strip())
         )
     return parse_sacct_lines(result.stdout.splitlines(), has_header=False)
+
+
+def snapshot_command(args: list[str]) -> tuple[int, str]:
+    try:
+        result = subprocess.run(args, text=True, capture_output=True)
+    except OSError as err:
+        return 127, str(err)
+    output = result.stdout
+    if result.stderr:
+        output += ("\n" if output and not output.endswith("\n") else "") + result.stderr
+    return result.returncode, output
+
+
+def capture_slurm_snapshot(output_dir: Path, partitions: list[str]) -> dict:
+    snapshot_dir = output_dir / "slurm-snapshot"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    captured_at = datetime.now(timezone.utc).isoformat()
+    (snapshot_dir / "captured-at-utc.txt").write_text(captured_at + "\n", encoding="utf-8")
+
+    commands = {
+        "partitions.txt": ["scontrol", "show", "partition", "-o"],
+        "nodes.txt": ["scontrol", "show", "node", "-o"],
+        "reservations.txt": ["scontrol", "show", "reservation", "-o"],
+        "config.txt": ["scontrol", "show", "config"],
+    }
+    if partitions:
+        commands["queue.txt"] = [
+            "squeue",
+            "--all",
+            f"--partition={','.join(partitions)}",
+            "--format=%.20i %.32j %.24u %.12T %.8D %.10C %.14m %.14M %.40R",
+        ]
+
+    failures = {}
+    for filename, command in commands.items():
+        returncode, output = snapshot_command(command)
+        (snapshot_dir / filename).write_text(output, encoding="utf-8")
+        if returncode:
+            failures[filename] = returncode
+
+    return {
+        "available": not failures,
+        "captured_at_utc": captured_at,
+        "directory": "slurm-snapshot",
+        "partitions": partitions,
+        "command_failures": failures,
+    }
 
 
 def parse_sacct_lines(lines: list[str], has_header: bool | None = None) -> list[dict[str, str]]:
@@ -1051,6 +1106,10 @@ def write_summary_log(path: Path, summary: dict) -> None:
     if cluster:
         lines.extend(
             [
+                f"cluster_context_window_start: {cluster['window_start']}",
+                f"cluster_context_window_end: {cluster['window_end']}",
+                "cluster_context_includes_initial_queue_wait: "
+                + str(cluster["includes_initial_queue_wait"]).lower(),
                 f"cluster_context_logical_jobs_overlapping: {cluster['logical_jobs_overlapping']}",
                 f"cluster_context_peak_allocated_cpus: {fmt(cluster['peak_allocated_cpus'])}",
                 f"cluster_context_mean_allocated_cpus: {fmt(cluster['mean_allocated_cpus'])}",
@@ -1058,6 +1117,15 @@ def write_summary_log(path: Path, summary: dict) -> None:
                 f"cluster_context_mean_allocated_memory_gib: {fmt(cluster['mean_allocated_memory_gib'])}",
                 "cluster_context_accounts: "
                 + ", ".join(f"{key}={value}" for key, value in cluster["accounts"].items()),
+            ]
+        )
+    snapshot = summary.get("slurm_snapshot")
+    if snapshot:
+        lines.extend(
+            [
+                f"slurm_snapshot_available: {str(snapshot['available']).lower()}",
+                f"slurm_snapshot_captured_at_utc: {snapshot['captured_at_utc']}",
+                f"slurm_snapshot_directory: {snapshot['directory']}",
             ]
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1169,29 +1237,41 @@ def main() -> int:
         last_end,
     )
 
+    submit_times = [task["_submit_dt"] for task in tasks if task["_submit_dt"] is not None]
+    context_start = min(submit_times) if submit_times else first_start
+
     cluster_rows = None
     if args.cluster_sacct_file:
         cluster_rows = read_sacct_file(args.cluster_sacct_file)
     elif args.cluster_context_nodes:
-        if first_start is None or last_end is None:
-            raise SystemExit("cluster context requires completed jobs with Start and End times")
-        cluster_rows = query_cluster_sacct(args.cluster_context_nodes, first_start, last_end)
+        if context_start is None or last_end is None:
+            raise SystemExit("cluster context requires jobs with Submit and End times")
+        cluster_rows = query_cluster_sacct(args.cluster_context_nodes, context_start, last_end)
     if cluster_rows is not None:
-        if first_start is None or last_end is None:
-            raise SystemExit("cluster context requires completed jobs with Start and End times")
+        if context_start is None or last_end is None:
+            raise SystemExit("cluster context requires jobs with Submit and End times")
         cluster_profile, cluster_summary = build_cluster_context(
             cluster_rows,
             {task["job_id"] for task in tasks},
-            first_start,
+            context_start,
             last_end,
         )
         cluster_summary["nodes"] = args.cluster_context_nodes
+        cluster_summary["window_start"] = context_start.isoformat()
+        cluster_summary["window_end"] = last_end.isoformat()
+        cluster_summary["includes_initial_queue_wait"] = True
         summary["cluster_context"] = cluster_summary
         write_tsv(args.output_dir / "cluster-context-sacct.tsv", list(SACCT_FIELDS), cluster_rows)
         write_tsv(
             args.output_dir / "cluster-context-profile.tsv",
             CLUSTER_PROFILE_FIELDS,
             cluster_profile,
+        )
+
+    if args.capture_slurm_snapshot:
+        summary["slurm_snapshot"] = capture_slurm_snapshot(
+            args.output_dir,
+            summary["slurm"]["partitions"],
         )
 
     serializable_tasks = [{key: task.get(key) for key in TASK_FIELDS} for task in tasks]

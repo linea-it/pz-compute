@@ -1,5 +1,6 @@
 import csv
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -31,6 +32,14 @@ def test_slurm_profile_builds_array_metrics(tmp_path):
     job_ids = tmp_path / "job-ids.txt"
     job_ids.write_text("100\n", encoding="utf-8")
     output = tmp_path / "metrics"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for command in ("scontrol", "squeue"):
+        executable = fake_bin / command
+        executable.write_text(f"#!/bin/sh\necho '{command} snapshot'\n", encoding="utf-8")
+        executable.chmod(0o755)
+    environment = os.environ.copy()
+    environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
     subprocess.run(
         [
             sys.executable,
@@ -41,11 +50,13 @@ def test_slurm_profile_builds_array_metrics(tmp_path):
             "--concurrency-target", "2",
             "--label", "test-array",
             "--output-dir", str(output),
+            "--capture-slurm-snapshot",
             "--fail-on-unsuccessful",
         ],
         check=True,
         capture_output=True,
         text=True,
+        env=environment,
     )
 
     summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
@@ -66,6 +77,9 @@ def test_slurm_profile_builds_array_metrics(tmp_path):
     assert (output / "tasks.tsv").is_file()
     assert (output / "time-profile.tsv").is_file()
     assert (output / "summary.log").is_file()
+    assert summary["slurm_snapshot"]["available"] is True
+    assert (output / "slurm-snapshot" / "nodes.txt").is_file()
+    assert (output / "slurm-snapshot" / "config.txt").is_file()
     assert "<svg" in (output / "time-profile.svg").read_text(encoding="utf-8")
     ET.parse(output / "time-profile.svg")
 
@@ -171,7 +185,7 @@ def test_slurm_profile_reports_scheduler_and_cluster_context(tmp_path):
     external_row = [
         "401", "401", "external", "cpu", "hpc-public", "public",
         "COMPLETED", "0:0", "2026-01-01T09:00:00", "2026-01-01T09:00:00",
-        "2026-01-01T10:00:00", "2026-01-01T10:10:00", "600", "4", "2400",
+        "2026-01-01T10:00:00", "2026-01-01T10:02:00", "120", "4", "480",
         "00:20:00", "8Gn", "4194304K", "apl02", "120", "1", "4",
         "billing=4,cpu=4,mem=8G,node=1", "billing=4,cpu=4,mem=8G,node=1",
         "other.user",
@@ -203,5 +217,7 @@ def test_slurm_profile_reports_scheduler_and_cluster_context(tmp_path):
     assert summary["cluster_context"]["logical_jobs_overlapping"] == 1
     assert summary["cluster_context"]["peak_allocated_cpus"] == 4
     assert summary["cluster_context"]["accounts"] == {"hpc-public": 1}
+    assert summary["cluster_context"]["window_start"] == "2026-01-01T10:00:00"
+    assert summary["cluster_context"]["includes_initial_queue_wait"] is True
     assert (output / "cluster-context-sacct.tsv").is_file()
     assert (output / "cluster-context-profile.tsv").is_file()

@@ -64,6 +64,8 @@ Options:
     --slurm-scale-down-delay=<seconds>  Approximate adaptive scale-down delay
                                         [default: 180].
     --slurm-log-dir=<dir>  Directory for Slurm Dask worker stdout/stderr logs.
+    --slurm-job-name=<name>  Unique Slurm job name for Dask workers. Useful for
+                             recovering jobs that never reached RUNNING.
     --slurm-exclude=<nodes>  Slurm node list to exclude from Dask worker jobs.
     --overwrite            Replace existing staging and HATS directories.
     --staging-only         Stop after writing summary parquet staging files.
@@ -145,6 +147,7 @@ class Configuration:
     slurm_adapt_interval: float
     slurm_scale_down_delay: float
     slurm_log_dir: Path | None
+    slurm_job_name: str | None
     slurm_exclude: str | None
     overwrite: bool
     staging_only: bool
@@ -287,6 +290,7 @@ def parse_cmdline() -> Configuration:
         slurm_adapt_interval=slurm_adapt_interval,
         slurm_scale_down_delay=slurm_scale_down_delay,
         slurm_log_dir=Path(args["--slurm-log-dir"]) if args.get("--slurm-log-dir") else None,
+        slurm_job_name=args.get("--slurm-job-name"),
         slurm_exclude=args.get("--slurm-exclude"),
         overwrite=args["--overwrite"],
         staging_only=args["--staging-only"],
@@ -969,6 +973,8 @@ def create_hats_import_client(cfg: Configuration):
                 f"--output={cfg.slurm_log_dir}/slurm-%j.out",
                 f"--error={cfg.slurm_log_dir}/slurm-%j.err",
             ])
+        if cfg.slurm_job_name:
+            job_extra_directives.append(f"--job-name={cfg.slurm_job_name}")
         if cfg.slurm_exclude:
             job_extra_directives.append(f"--exclude={cfg.slurm_exclude}")
         if job_extra_directives:
@@ -980,7 +986,7 @@ def create_hats_import_client(cfg: Configuration):
         info(
             "Starting Slurm Dask cluster for pz-build-hats: "
             "initial_jobs=%d max_jobs=%d cores=%s processes=%s memory=%s "
-            "walltime=%s queue=%s account=%s exclude=%s"
+            "walltime=%s queue=%s account=%s job_name=%s exclude=%s"
             % (
                 cfg.slurm_minimum_jobs,
                 cfg.slurm_maximum_jobs,
@@ -990,6 +996,7 @@ def create_hats_import_client(cfg: Configuration):
                 cfg.slurm_walltime,
                 cfg.slurm_queue,
                 cfg.slurm_account,
+                cfg.slurm_job_name,
                 cfg.slurm_exclude,
             )
         )

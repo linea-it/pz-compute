@@ -228,11 +228,24 @@ final disk use, or HATS integrity-validator output.
 
 ## Stage 1 training profile carried into v3
 
-The current Apollo configuration trains on one `apl[17-26]` node with 98
-logical CPUs, 231 GiB, and a three-hour limit. The allocation was chosen to use
-approximately 95% of the schedulable CPU and memory on the larger Apollo nodes
-while respecting whole-core allocation. BLAS/OpenMP threads are held at one to
-avoid nested oversubscription under the multi-output XGBoost fit.
+The current Apollo configuration trains on one node with 52 logical CPUs,
+113,984 MiB, and a three-hour limit. It does not set a node list, allowing
+Slurm to select any node eligible for `cpu_photoz`. The resource ceiling is
+derived from the older `apl01-16` nodes, where Slurm exposes 56 logical CPUs
+and 119,984 schedulable MiB after the 4,096-MiB system reservation. The targets
+before allocation rounding are:
+
+```text
+CPU target: 0.95 * 56 = 53.2 logical CPUs
+CR_CORE_MEMORY allocation uses complete 2-thread cores, so request 52 CPUs
+
+memory target: 0.95 * 119984 MiB = 113984.8 MiB
+request the integer floor: 113984 MiB
+```
+
+Rounding down ensures that neither allocation crosses the 95% ceiling and
+preserves the requested operational margin. BLAS/OpenMP threads are held at
+one to avoid nested oversubscription under the multi-output XGBoost fit.
 
 The retained technical acceptance criteria are:
 
@@ -273,12 +286,13 @@ completion record.
 
 ## Stage 3 profile carried into v3
 
-The HATS build uses Slurm-backed Dask workers. It keeps 20 workers and scales
-adaptively up to 80, each with 8 CPUs, 40 GiB, and a 12-hour limit. Workers
-remain idle for approximately 180 seconds before adaptive scale-down. Stage 2
-HDF5 files are retained through validation. The current v3 contract supersedes
-the historical companion-PDF layout described above: a successful run must
-produce one HATS catalog containing scalar columns and
+The HATS build uses Slurm-backed Dask workers. It starts with one requested
+worker and scales adaptively up to 80, each with 8 CPUs, 40 GiB, and a 12-hour
+limit. It does not wait for a fixed worker count before submitting work.
+Workers remain idle for approximately 180 seconds before adaptive scale-down.
+Stage 2 HDF5 files are retained through validation. The current v3 contract
+supersedes the historical companion-PDF layout described above: a successful
+run must produce one HATS catalog containing scalar columns and
 `fzboost_ens_interp/{xvals,yvals}`, preserve the 601-point grid, match Stage 2
 row counts, and remove temporary staging. It must not leave a duplicate
 `<hats_dir>.pdf/` tree.

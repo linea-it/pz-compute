@@ -46,4 +46,5 @@ def test_dp2_stage3_runner_builds_nested_only_algorithm_column():
     assert "--pdf-layout=nested" in source
     assert '--pdf-column="${PZ_ALGORITHM}_ens_interp"' in source
     assert "--delete-hdf5-outputs" not in source
+    assert '--slurm-job-name="$worker_job_name"' in source
 
