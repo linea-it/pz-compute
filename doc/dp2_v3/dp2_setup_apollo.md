@@ -65,7 +65,14 @@ if [ ! -d "$PZ_CONDA_ENV" ]; then
       --solver=libmamba \
       --override-channels \
       -c conda-forge \
-      python=3.12 pip
+      python=3.14 pip
+else
+    conda install -y \
+      --prefix "$PZ_CONDA_ENV" \
+      --solver=libmamba \
+      --override-channels \
+      -c conda-forge \
+      python=3.14 pip
 fi
 
 conda activate "$PZ_CONDA_ENV"
@@ -118,7 +125,7 @@ if [ ! -d "$PZ_STAGE3_CONDA_ENV" ]; then
       --solver=libmamba \
       --override-channels \
       -c conda-forge \
-      python=3.12 pip numpy pyarrow hdf5 h5py astropy distributed \
+      python=3.14 pip numpy pyarrow hdf5 h5py astropy distributed \
       dask-jobqueue docopt pyyaml pyxdg
 else
     conda install -y \
@@ -126,7 +133,7 @@ else
       --solver=libmamba \
       --override-channels \
       -c conda-forge \
-      numpy pyarrow hdf5 h5py astropy distributed dask-jobqueue docopt \
+      python=3.14 pip numpy pyarrow hdf5 h5py astropy distributed dask-jobqueue docopt \
       pyyaml pyxdg
 fi
 
@@ -210,6 +217,7 @@ cd "$PZ_COMPUTE_DIR"
 
 "$PZ_PY" - <<'PY'
 import importlib
+import sys
 
 import flexcode
 import pyarrow
@@ -230,6 +238,7 @@ algorithm_modules = (
 for module in algorithm_modules:
     importlib.import_module(module)
 
+assert sys.version_info[:2] == (3, 14), sys.version
 print("Stage 1/Stage 2 environment and all seven algorithms are importable")
 PY
 
@@ -250,6 +259,8 @@ source /scripts/$(whoami)/ondemand/env-dp2-stage3-hats.sh
 cd "$PZ_COMPUTE_DIR"
 
 "$PZ_PY" - <<'PY'
+import sys
+
 import dask_jobqueue
 import distributed
 import hats
@@ -260,6 +271,7 @@ import nested_pandas
 import pyarrow
 import qp
 
+assert sys.version_info[:2] == (3, 14), sys.version
 print("Stage 3 environment is importable")
 PY
 
