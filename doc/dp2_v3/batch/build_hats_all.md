@@ -24,9 +24,17 @@ DNF, BPZ, or FlexZBoost workers created by this batch workflow.
 ## 2. Validation before profiling
 
 When the driver reaches `COMPLETED / 0:0`, the controller runs
-`validate-hats.py <algorithm>`. The validator requires matching Stage 2,
-summary-HATS, and PDF row counts; common schemas; the 601-bin redshift grid;
-and no leftover Parquet staging after successful completion.
+`validate-hats.py <algorithm>`. The validator requires matching Stage 2 and
+HATS row counts, the common scalar schema, the algorithm-specific
+`<algorithm>_ens_interp` nested column, 601-element `float32` grids and PDFs,
+successful `qp.Ensemble` reconstruction for a bounded sample, and no leftover
+Parquet staging or duplicate companion PDF tree.
+
+Stage 3 uses `--pdf-layout=nested`. The temporary Parquet staging is deleted
+automatically only after the HATS build succeeds. Stage 2 HDF5 outputs are
+retained through validation and profiling; the batch does not create the old
+`<hats_dir>.pdf/` product, so the validated HATS collection is the only final
+copy of the PDFs.
 
 A completed Slurm driver is not sufficient by itself. Validation failure stops
 the batch and prevents the next algorithm from starting.
@@ -55,7 +63,7 @@ combination is:
 
 - completed driver with zero exit marker;
 - clean driver and worker diagnostics;
-- successful scientific HATS validation;
+- successful lightweight HATS and nested-PDF validation;
 - retained `driver-resource-usage.log`;
 - generated driver and worker resource profiles.
 

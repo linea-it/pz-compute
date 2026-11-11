@@ -232,6 +232,8 @@ cd "$PZ_COMPUTE_DIR"
 doc/dp2_v3/scripts/validate-hats.py "$algorithm"
 ```
 
-The final validator compares total Stage 2, HATS summary, and PDF row counts;
-checks the common schemas and 601-bin redshift grid; and rejects leftover
-Parquet staging directories.
+The final validator compares the Stage 2 and HATS row counts, verifies the
+algorithm-specific `*_ens_interp` nested schema and `float32` 601-bin arrays,
+reconstructs a small `qp.Ensemble`, checks sampled PDF health and summaries,
+and rejects leftover staging or an unexpected duplicate `.pdf/` product. It
+does not perform a full scan of all PDF values.

@@ -99,7 +99,7 @@ else
 fi
 
 "$PZ_STAGE3_CONDA_ENV/bin/python" -m pip install --prefer-binary \
-    lsdb hats-import hats
+    lsdb hats-import hats nested-pandas qp-prob
 ```
 
 ## 4. Create command links and environment loaders
@@ -222,7 +222,9 @@ import hats
 import hats_import
 import h5py
 import lsdb
+import nested_pandas
 import pyarrow
+import qp
 
 print("Stage 3 environment is importable")
 PY

@@ -1,18 +1,27 @@
 # Photo-z final-product QA
 
 `pz_compute_qa.ipynb` is the single QA notebook for final HATS point-estimate
-catalogs and their companion PDF parquet products. Run layout, selections,
-thresholds, and Dask resources live in YAML instead of notebook cells.
+catalogs and either companion-Parquet or HATS-embedded Nested PDFs. Run layout,
+selections, thresholds, and Dask resources live in YAML instead of notebook
+cells.
 
 Available run configurations:
 
 - `config/dp1-v2-fzboost.yaml`
 - `config/dp2-v2-fzboost.yaml`
+- `config/dp2-v3-fzboost.yaml`
+- `config/dp2-v3-bpz.yaml`
+- `config/dp2-v3-dnf.yaml`
 - `config/dp2-v3-bpz-test.yaml`
 
-The first two configurations describe the completed DP1-v2 and DP2-v2
-FZBoost products. DP2-v3 currently has only the standalone `bpz_test`
-engineering product; there is intentionally no DP2-v3 FZBoost configuration.
+The first two configurations retain the companion layout used by DP1-v2 and
+DP2-v2. All DP2-v3 configurations read `<algorithm>_ens_interp` directly from
+the final HATS catalog.
+
+DP2-v3 defaults to `metrics.max_hats_partitions: 4`. Point-estimate and PDF
+metrics are therefore explicitly sample diagnostics, not catalog-wide N(z)
+measurements. Increase the limit deliberately or set it to `0` for a full
+distributed scan.
 
 From the repository root, start Jupyter with the selected configuration:
 
@@ -56,8 +65,9 @@ selections:
         finite: true
 ```
 
-Every filter column must exist in both the HATS summary and PDF parquet
-product. Multiple filters within a selection are combined with logical AND.
+Every filter column must be available with the scalar and PDF fields. For the
+nested DP2-v3 layout they are in the same HATS row. Multiple filters within a
+selection are combined with logical AND.
 `minimum` is inclusive and `maximum` is exclusive.
 
 ## N(z) display range and low-redshift peaks
@@ -83,7 +93,7 @@ plots:
 The notebook reports:
 
 - schema, grid, row-count, coordinate, interval, and PDF validity checks;
-- commutative `objectId` fingerprints between the two final products;
+- commutative `objectId` fingerprints between the scalar and PDF projections;
 - global moments and histogram percentiles for point estimates and stacked PDFs;
 - PDF raw-sum diagnostics before per-object normalization;
 - interval-width and redshift-edge diagnostics;
@@ -98,9 +108,12 @@ distributed shuffle is acceptable (enabled for DP1, disabled for the much
 larger DP2 configurations). The sampled summary reconstruction is an
 integration check, not a truth-redshift metric.
 
-Set `paths.report_dir` to save the compact result tables as CSV/JSON. No object
-catalog or PDF matrix is collected into notebook memory. The only collected
-objects are fixed-size reductions and the configured deterministic sample.
+Set `paths.report_dir` to save the compact result tables as CSV/JSON. No full
+object catalog or PDF matrix is collected into notebook memory. The only
+collected objects are fixed-size reductions and the configured deterministic
+sample; nested DP2-v3 QA also bounds the number of source partitions by
+default.
 
-Required packages are `lsdb`, `dask`, `distributed`, `dask-jobqueue` for
-SLURM, `pandas`, `numpy`, `pyarrow`, `matplotlib`, and `pyyaml`.
+Required packages are `lsdb`, `nested-pandas`, `dask`, `distributed`,
+`dask-jobqueue` for SLURM, `pandas`, `numpy`, `pyarrow`, `matplotlib`, and
+`pyyaml`.

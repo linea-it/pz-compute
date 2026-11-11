@@ -26,6 +26,24 @@ After the driver completes, validate the DNF products:
 doc/dp2_v3/scripts/validate-hats.py dnf
 ```
 
+The final `pz_summary` HATS catalog contains the scalar columns and the
+DP1-inspired nested column `dnf_ens_interp`, whose `xvals` and `yvals` fields
+each contain 601 `float32` values. The validator opens it with LSDB,
+reconstructs a small `qp.Ensemble`, checks PDF health and reconstructed
+summaries, and compares the HATS and Stage 2 row counts without a full PDF
+scan.
+
+Successful construction removes `<hats_dir>.parquet_staging/` automatically
+and does not create a duplicate `<hats_dir>.pdf/` companion. Keep the Stage 2
+HDF5 tree through validation and profiling, especially for the first nested
+production run.
+
+For the optional bounded-partition notebook QA, start Jupyter with:
+
+```bash
+PZ_QA_CONFIG=doc/notebooks/config/dp2-v3-dnf.yaml jupyter lab
+```
+
 ## Profile the driver and Dask workers
 
 After validation passes, recover the driver ID and run tag from the submission
@@ -89,8 +107,7 @@ All DNF-attributable output remains under:
 ```text
 $PZ_DP2_ROOT/dnf/stage3/
 ├── output/
-│   ├── pz-dnf-gaap1p0-clipped-hats/
-│   └── pz-dnf-gaap1p0-clipped-hats.pdf/
+│   └── pz-dnf-gaap1p0-clipped-hats/
 ├── log/
 │   ├── dask-*/
 │   └── driver-*/
@@ -102,8 +119,7 @@ $PZ_DP2_ROOT/dnf/stage3/
     └── run-context.log
 ```
 
-The summary HATS catalog retains the common scalar statistics and
-`i_gaap1p0Mag_sfd` plus `refExtendedness`; the companion PDF product retains
-both columns, the 601-bin vectors, and the redshift grid. DNF-specific Stage 2
-ancillary values remain in the estimator HDF5 files and are not added to the
-common HATS schema by this workflow.
+The HATS catalog retains the common scalar statistics,
+`i_gaap1p0Mag_sfd`, `refExtendedness`, and the nested 601-bin PDFs.
+DNF-specific Stage 2 ancillary values remain in the estimator HDF5 files and
+are not added to the common HATS schema by this workflow.

@@ -6,14 +6,15 @@
 It is intentionally a post-processing step. The current `pz-compute`
 parallelization still writes one `rail-estimate` HDF5 output per input file.
 `pz-build-hats` then reads the matching input/output pairs, derives scalar
-photo-z summary columns from the output PDFs, writes a separate full PDF
-parquet product, stages a tabular parquet summary, and builds a HATS collection
-from that staging. When `--use-hats-import` is enabled, the same Dask client is
-used for both HDF5-to-parquet staging and `hats-import` collection generation.
+photo-z summary columns, stages Parquet, and builds a HATS collection. PDFs can
+be written as a separate companion Parquet dataset, embedded directly in the
+HATS catalog as a DP1-compatible nested `*_ens_interp` column, written in both
+layouts for migration, or omitted. When `--use-hats-import` is enabled, the
+same Dask client is used for staging and `hats-import` collection generation.
 
 ## Products
 
-This implementation creates two products:
+The backward-compatible default is:
 
 ```text
 <hats_dir>/
@@ -21,7 +22,15 @@ This implementation creates two products:
 ```
 
 `<hats_dir>/` is the lightweight HATS summary product. `<hats_dir>.pdf/` is a
-separate parquet product with the full PDF histograms linked by `objectId`.
+separate Parquet product with the full PDF histograms linked by `objectId`.
+Select the storage layout explicitly with:
+
+```text
+--pdf-layout=companion  # separate <hats_dir>.pdf/ (default)
+--pdf-layout=nested     # PDF embedded in HATS; no companion
+--pdf-layout=both       # migration/validation only
+--pdf-layout=none       # scalar HATS only
+```
 
 The HATS summary schema is:
 
@@ -36,7 +45,7 @@ z_p16
 z_p84
 ```
 
-The full PDF product schema is:
+The companion PDF schema is:
 
 ```text
 objectId
@@ -52,30 +61,43 @@ The matching redshift grid is written to:
 <hats_dir>.pdf/xvals.parquet
 ```
 
-By default, PDF values are stored as `float32`. Use `--pdf-dtype=float64` if
-you need to preserve double precision. To disable the full PDF product:
+For `nested` or `both`, the HATS schema gains the column selected by
+`--pdf-column` (default `pz_ens_interp`):
 
-```bash
---no-pdf-product
+```text
+pz_ens_interp: struct
+├── xvals: list<float32>
+└── yvals: list<float32>
 ```
 
-To choose a different destination:
+The layout follows the Rubin DP1 photo-z convention. `xvals` is repeated per
+object so an LSDB partition is self-contained and can be reconstructed as a
+`qp.Ensemble(qp.interp_gen, ...)`. Parquet compression handles the identical
+grids efficiently. Staging and companion Parquet files are written with ZSTD;
+the final HATS writer applies its own current Parquet defaults.
+
+By default, PDF values are stored as `float32`. Use `--pdf-dtype=float64` if
+you need to preserve double precision. `--no-pdf-product` remains as a
+deprecated alias for `--pdf-layout=none`.
+
+To choose a different companion destination:
 
 ```bash
 --pdf-output-dir=<dir>
 ```
 
-The source `rail-estimate` HDF5 files are kept by default. Once the PDF parquet
-product and every other requested product have been written successfully, they
-can be removed automatically with:
+The source `rail-estimate` HDF5 files are kept by default. Once a durable
+companion or completed nested HATS product and every other requested product
+have been written successfully, they can be removed automatically with:
 
 ```bash
 --delete-hdf5-outputs
 ```
 
-This option requires the PDF parquet product and therefore cannot be combined
-with `--no-pdf-product`. All matched paths are validated before deletion starts.
-A failed conversion or HATS build never deletes the HDF5 inputs.
+This option requires a durable PDF representation. Nested-only staging is not
+enough: the final HATS build must finish before deletion. All matched paths are
+validated before deletion starts. A failed conversion or HATS build never
+deletes the HDF5 inputs.
 
 The output columns are normalized to `objectId`, `coord_ra`, and `coord_dec`.
 Input column aliases are detected automatically:
@@ -122,9 +144,9 @@ data/yvals
 
 When `rail-estimate --output-columns` is used, selected values are stored as
 one-dimensional datasets under `ancillary/`. `pz-build-hats` validates their
-row counts and copies them into both the summary staging (and therefore the HATS
-catalog) and the PDF parquet parts. All matched output files must expose a
-compatible ancillary schema.
+row counts and copies them into the HATS staging and, when requested, the
+companion PDF parts. All matched output files must expose a compatible
+ancillary schema.
 
 When the estimate contains row-integrity metadata, `pz-build-hats` recomputes
 the identifier fingerprint from the matched input shard and rejects a changed
@@ -133,8 +155,8 @@ rejected. Use `--require-complete-marker` for production runs to also reject
 older outputs that do not contain a completion marker.
 
 Zero-row input/output pairs are valid and are checked like any other pair. They
-do not add parquet rows, while non-empty shards in the same run build the final
-HATS and PDF products normally.
+do not add Parquet rows, while non-empty shards in the same run build every
+requested product normally.
 
 If input columns live inside an HDF5 group, pass:
 
@@ -159,8 +181,9 @@ pz_pdf_xvals.parquet
 ```
 
 `pz_pdf_xvals.parquet` records the redshift grid used by the `rail-estimate`
-PDF output. The same grid is also written to the full PDF product as
-`xvals.parquet`. After a successful final HATS build, the staging directory is
+PDF output. For companion layouts, the same grid is written as
+`<hats_dir>.pdf/xvals.parquet`; nested layouts carry `xvals` in every nested
+row. After a successful final HATS build, the staging directory is
 removed by default. Pass `--keep-staging` to retain it. `--staging-only` always
 retains staging because it is the requested output of that mode. If conversion
 or HATS construction fails, staging is retained for diagnosis or resumption.
@@ -210,15 +233,16 @@ in-memory writer:
 
 This is the default path for local smoke tests and small fixtures.
 
-Before writing parquet staging files, `pz-build-hats` estimates the summary
-staging size from the `rail-estimate` output row counts. The estimate currently
-uses `96 bytes` per output row. If this estimate is larger than the threshold
-and `--use-hats-import` is not set, the command fails early without writing or
+Before writing Parquet staging files, `pz-build-hats` estimates the staging
+size from the `rail-estimate` output row counts. The scalar estimate uses
+`96 bytes` per row; nested layouts also include the uncompressed `xvals` and
+`yvals` payload. If this estimate is larger than the threshold and
+`--use-hats-import` is not set, the command fails early without writing or
 cleaning staging files.
 
-When the PDF product is enabled, the command also prints an estimated PDF
-payload size before conversion. This estimate is informational and does not
-block execution.
+When the companion PDF product is enabled, the command also prints its
+estimated payload size before conversion. This estimate is informational and
+does not block execution.
 
 If the estimate passes but the real staged parquet size still exceeds the
 threshold, the command stops after writing staging files and prints a message
@@ -232,10 +256,10 @@ For large runs, use one of these paths:
 --fast-path-size-mb=<larger_limit_for_local_testing>
 ```
 
-With `--use-hats-import`, the HDF5-to-parquet staging phase is also distributed
-with Dask. Each Dask task converts one matching input/output HDF5 pair into
-summary parquet and, unless disabled, full PDF parquet. The same Dask client is
-then reused by `hats-import`.
+With `--use-hats-import`, the HDF5-to-Parquet staging phase is also distributed
+with Dask. Each task converts one matching input/output pair into HATS staging,
+including the nested PDF column when selected, and optionally writes a
+companion PDF part. The same Dask client is then reused by `hats-import`.
 
 ## Dask Staging and hats-import With Local Dask
 

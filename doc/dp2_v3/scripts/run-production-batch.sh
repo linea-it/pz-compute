@@ -468,7 +468,7 @@ run_algorithm() {
     wait_for_job "$jobid"
 
     current_stage=stage3-validation
-    record_status STARTED "validating HATS and PDF products"
+    record_status STARTED "validating HATS with nested PDFs"
     "$scripts_dir/validate-hats.py" "$algorithm"
     record_status COMPLETED "Stage 3 validation passed"
 
@@ -499,8 +499,7 @@ run_algorithm() {
     test -f "$driver_logs/driver-resource-usage.log"
     record_status COMPLETED "$worker_count worker jobs profiled"
     record_artifact benchmark "$benchmark_dir/workers"
-    record_artifact hats-summary "$stage3/output/pz-$algorithm-gaap1p0-clipped-hats"
-    record_artifact hats-pdf "$stage3/output/pz-$algorithm-gaap1p0-clipped-hats.pdf"
+    record_artifact hats-with-pdfs "$stage3/output/pz-$algorithm-gaap1p0-clipped-hats"
 
     current_stage=algorithm-complete
     current_jobid=

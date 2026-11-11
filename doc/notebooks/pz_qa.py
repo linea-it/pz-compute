@@ -373,6 +373,26 @@ def _pdf_partition(frame, selections, grid, batch_rows, sample_probability, edge
     return result
 
 
+def _nested_pdf_partition(
+    frame, pdf_column, selections, grid, batch_rows, sample_probability, edge_bins
+):
+    """Adapt one LSDB NestedFrame partition to the common PDF QA reducer."""
+    nested = frame[pdf_column]
+    flat = pd.DataFrame(
+        {
+            "objectId": frame["objectId"].to_numpy(),
+            **{
+                column: frame[column].to_numpy()
+                for column in _selection_columns(selections)
+            },
+            "pdf": [nested.iloc[index]["yvals"] for index in range(len(frame))],
+        }
+    )
+    return _pdf_partition(
+        flat, selections, grid, batch_rows, sample_probability, edge_bins
+    )
+
+
 def _reduce_pdfs(parts, selections, n_bins):
     result = {
         "id": {"count": 0, "missing": 0, "sum": 0, "xor": 0, "sumsq": 0},
@@ -452,29 +472,58 @@ def _crosscheck(summary: pd.DataFrame, pdf: pd.DataFrame, tolerance: float) -> p
 
 
 def run_qa(config: dict) -> QAResult:
-    """Run one distributed pass over HATS and one over PDF parquet shards."""
+    """Run scalable companion QA or bounded-partition nested-HATS QA."""
     paths = config["paths"]
     summary_path = Path(paths["summary_hats"])
-    pdf_dir = Path(paths["pdf_dir"])
-    xvals_path = pdf_dir / paths.get("xvals_file", "xvals.parquet")
-    for path in (summary_path, pdf_dir, xvals_path):
-        if not path.exists():
-            raise FileNotFoundError(path)
+    if not summary_path.exists():
+        raise FileNotFoundError(summary_path)
+    catalog = lsdb.read_hats(summary_path)
+    pdf_settings = config.get("pdf", {})
+    pdf_layout = pdf_settings.get("layout", "companion")
+    pdf_column = pdf_settings.get("column")
+    pdf_dir = None
+    pdf_files = []
+    grid_index_detail = "nested xvals"
+    nested_grid_dtype_valid = True
 
-    grid_table = pq.read_table(xvals_path)
-    if "z" not in grid_table.column_names:
-        raise KeyError(f"Missing z column in {xvals_path}")
-    grid = grid_table.column("z").to_numpy().astype(float)
+    if pdf_layout == "companion":
+        pdf_dir = Path(paths["pdf_dir"])
+        xvals_path = pdf_dir / paths.get("xvals_file", "xvals.parquet")
+        for path in (pdf_dir, xvals_path):
+            if not path.exists():
+                raise FileNotFoundError(path)
+        grid_table = pq.read_table(xvals_path)
+        if "z" not in grid_table.column_names:
+            raise KeyError(f"Missing z column in {xvals_path}")
+        grid = grid_table.column("z").to_numpy().astype(float)
+        grid_index_valid = (
+            "bin_index" in grid_table.column_names
+            and np.array_equal(
+                grid_table.column("bin_index").to_numpy(),
+                np.arange(
+                    len(grid), dtype=grid_table.column("bin_index").to_numpy().dtype
+                ),
+            )
+        )
+        grid_index_detail = str(grid_table.column_names)
+    elif pdf_layout == "nested":
+        if not pdf_column:
+            raise ValueError("pdf.column is required when pdf.layout is nested")
+        if pdf_column not in catalog.nested_columns:
+            raise KeyError(f"Missing nested PDF column: {pdf_column}")
+        first = catalog[[pdf_column]].head(1)
+        if first.empty:
+            raise ValueError("The HATS catalog is empty")
+        raw_grid = np.asarray(first[pdf_column].iloc[0]["xvals"])
+        nested_grid_dtype_valid = raw_grid.dtype == np.float32
+        grid = raw_grid.astype(float)
+        grid_index_valid = True
+    else:
+        raise ValueError(f"Unsupported pdf.layout: {pdf_layout!r}")
+
     if len(grid) < 2 or not np.isfinite(grid).all() or not (np.diff(grid) > 0).all():
         raise ValueError("The redshift grid must contain at least two finite, increasing values")
     differences = np.diff(grid)
-    grid_index_valid = (
-        "bin_index" in grid_table.column_names
-        and np.array_equal(
-            grid_table.column("bin_index").to_numpy(),
-            np.arange(len(grid), dtype=grid_table.column("bin_index").to_numpy().dtype),
-        )
-    )
     expected = config.get("expected", {})
     expected_bins = expected.get("pdf_bins")
     expected_z_min = expected.get("z_min")
@@ -489,30 +538,50 @@ def run_qa(config: dict) -> QAResult:
     selection_columns = _selection_columns(selections)
     summary_columns = list(dict.fromkeys([*SUMMARY_COLUMNS, *selection_columns]))
     pdf_columns = list(dict.fromkeys(["objectId", "pdf", *selection_columns]))
-    catalog = lsdb.read_hats(summary_path)
     missing_summary = sorted(set(summary_columns) - set(catalog.columns))
     if missing_summary:
         raise KeyError(f"Missing HATS columns: {missing_summary}")
-    summary_ddf = catalog.to_dask_dataframe()[summary_columns]
-
-    pdf_files = sorted(pdf_dir.glob(paths.get("pdf_glob", "*-pdf-part*.parquet")))
-    if not pdf_files:
-        raise FileNotFoundError(f"No PDF shards found under {pdf_dir}")
-    first_schema = pq.ParquetFile(pdf_files[0]).schema_arrow
-    required_pdf_columns = {"objectId", "coord_ra", "coord_dec", "pdf", *selection_columns}
-    missing_pdf = sorted(required_pdf_columns - set(first_schema.names))
-    if missing_pdf:
-        raise KeyError(f"Missing PDF columns: {missing_pdf}")
-    pdf_type = first_schema.field("pdf").type
-    first_pdf_list_size = getattr(pdf_type, "list_size", None)
-    pdf_ddf = dd.read_parquet([str(path) for path in pdf_files], columns=pdf_columns, split_row_groups=True)
 
     expected_rows = _read_hats_nrows(summary_path)
     metric_settings = config.get("metrics", {})
+    base_ddf = catalog.to_dask_dataframe()
+    max_hats_partitions = int(metric_settings.get("max_hats_partitions", 0))
+    if max_hats_partitions < 0:
+        raise ValueError("metrics.max_hats_partitions must be non-negative")
+    if pdf_layout == "nested" and max_hats_partitions:
+        partitions_used = min(max_hats_partitions, catalog.npartitions)
+        base_ddf = base_ddf.partitions[:partitions_used]
+    else:
+        partitions_used = catalog.npartitions
+    full_catalog_scan = partitions_used == catalog.npartitions
+    summary_ddf = base_ddf[summary_columns]
+
+    if pdf_layout == "companion":
+        pdf_files = sorted(pdf_dir.glob(paths.get("pdf_glob", "*-pdf-part*.parquet")))
+        if not pdf_files:
+            raise FileNotFoundError(f"No PDF shards found under {pdf_dir}")
+        first_schema = pq.ParquetFile(pdf_files[0]).schema_arrow
+        required_pdf_columns = {"objectId", "coord_ra", "coord_dec", "pdf", *selection_columns}
+        missing_pdf = sorted(required_pdf_columns - set(first_schema.names))
+        if missing_pdf:
+            raise KeyError(f"Missing PDF columns: {missing_pdf}")
+        pdf_type = first_schema.field("pdf").type
+        first_pdf_list_size = getattr(pdf_type, "list_size", None)
+        pdf_ddf = dd.read_parquet(
+            [str(path) for path in pdf_files],
+            columns=pdf_columns,
+            split_row_groups=True,
+        )
+    else:
+        first_pdf_list_size = len(grid)
+        nested_columns = list(dict.fromkeys(["objectId", *selection_columns, pdf_column]))
+        pdf_ddf = base_ddf[nested_columns]
+
     target_sample = int(metric_settings.get("crosscheck_sample_size", 10_000))
     if target_sample <= 0:
         raise ValueError("metrics.crosscheck_sample_size must be positive")
-    sample_probability = min(1.0, target_sample / max(1, expected_rows))
+    estimated_qa_rows = expected_rows * partitions_used / max(1, catalog.npartitions)
+    sample_probability = min(1.0, target_sample / max(1, estimated_qa_rows))
     batch_rows = int(metric_settings.get("pdf_batch_rows", 10_000))
     edge_bins = int(metric_settings.get("pdf_edge_bins", 1))
     low_z_threshold = float(metric_settings.get("low_z_threshold", 0.1))
@@ -527,10 +596,26 @@ def run_qa(config: dict) -> QAResult:
         delayed(_summary_partition)(part, selections, edges, grid, sample_probability)
         for part in summary_ddf.to_delayed()
     ]
-    pdf_tasks = [
-        delayed(_pdf_partition)(part, selections, grid, batch_rows, sample_probability, edge_bins)
-        for part in pdf_ddf.to_delayed()
-    ]
+    if pdf_layout == "companion":
+        pdf_tasks = [
+            delayed(_pdf_partition)(
+                part, selections, grid, batch_rows, sample_probability, edge_bins
+            )
+            for part in pdf_ddf.to_delayed()
+        ]
+    else:
+        pdf_tasks = [
+            delayed(_nested_pdf_partition)(
+                part,
+                pdf_column,
+                selections,
+                grid,
+                batch_rows,
+                sample_probability,
+                edge_bins,
+            )
+            for part in pdf_ddf.to_delayed()
+        ]
     summary_task = _tree_reduce(summary_tasks, _reduce_summary, selections, len(grid))
     pdf_task = _tree_reduce(pdf_tasks, _reduce_pdfs, selections, len(grid))
     exact_uniqueness = bool(metric_settings.get("exact_id_uniqueness", False))
@@ -637,12 +722,13 @@ def run_qa(config: dict) -> QAResult:
     max_outside = float(thresholds.get("max_point_outside_fraction", 0.0))
     checks = [
         ("xvals are finite and strictly increasing", bool(np.isfinite(grid).all() and (differences > 0).all()), f"{len(grid)} bins"),
-        ("xvals bin_index is consecutive", grid_index_valid, str(grid_table.column_names)),
+        ("xvals metadata is valid", grid_index_valid, grid_index_detail),
+        ("nested xvals use float32", pdf_layout != "nested" or nested_grid_dtype_valid, str(nested_grid_dtype_valid)),
         ("expected PDF bin count", expected_bins is None or len(grid) == expected_bins, f"{len(grid)} / {expected_bins}"),
-        ("PDF schema uses the expected fixed list size", first_pdf_list_size == len(grid), f"{first_pdf_list_size} / {len(grid)}"),
+        ("PDF schema uses the expected list size", first_pdf_list_size == len(grid), f"{first_pdf_list_size} / {len(grid)}"),
         ("expected redshift minimum", expected_z_min is None or np.isclose(grid[0], expected_z_min), f"{grid[0]} / {expected_z_min}"),
         ("expected redshift maximum", expected_z_max is None or np.isclose(grid[-1], expected_z_max), f"{grid[-1]} / {expected_z_max}"),
-        ("HATS row count matches metadata", summary["id"]["count"] == expected_rows, f"{summary['id']['count']:,} / {expected_rows:,}"),
+        ("HATS rows match metadata when fully scanned", not full_catalog_scan or summary["id"]["count"] == expected_rows, f"sampled={summary['id']['count']:,}; metadata={expected_rows:,}; full={full_catalog_scan}"),
         ("HATS and PDF row counts match", summary["id"]["count"] == pdf["id"]["count"], f"{summary['id']['count']:,} / {pdf['id']['count']:,}"),
         ("HATS and PDF objectId fingerprints match", _id_equal(summary["id"], pdf["id"]), "count + 3 commutative uint64 digests"),
         ("no missing objectId", summary["id"]["missing"] == 0 and pdf["id"]["missing"] == 0, f"HATS={summary['id']['missing']:,}; PDF={pdf['id']['missing']:,}"),
@@ -686,9 +772,11 @@ def run_qa(config: dict) -> QAResult:
     paths_report = pd.Series({
         "configuration": config["_config_path"],
         "HATS summary": str(summary_path),
-        "PDF directory": str(pdf_dir),
-        "PDF shards": len(pdf_files),
+        "PDF layout": pdf_layout,
+        "PDF source": str(pdf_dir) if pdf_dir is not None else pdf_column,
+        "PDF shards/partitions": len(pdf_files) if pdf_layout == "companion" else partitions_used,
         "HATS partitions": catalog.npartitions,
+        "HATS partitions inspected": partitions_used,
         "exact objectId uniqueness": exact_uniqueness,
     }, name="value")
     grid_report = pd.Series({
@@ -750,8 +838,15 @@ def _set_robust_y_range(axis, curves, grid, quantile, headroom):
 
 def plot_nz(result: QAResult):
     """Plot counts and normalized N(z) for each configured selection."""
-    grid_path = Path(result.config["paths"]["pdf_dir"]) / result.config["paths"].get("xvals_file", "xvals.parquet")
-    grid = pq.read_table(grid_path, columns=["z"]).column("z").to_numpy()
+    pdf_settings = result.config.get("pdf", {})
+    if pdf_settings.get("layout", "companion") == "nested":
+        catalog = lsdb.read_hats(Path(result.config["paths"]["summary_hats"]))
+        pdf_column = pdf_settings["column"]
+        first = catalog[[pdf_column]].head(1)
+        grid = np.asarray(first[pdf_column].iloc[0]["xvals"])
+    else:
+        grid_path = Path(result.config["paths"]["pdf_dir"]) / result.config["paths"].get("xvals_file", "xvals.parquet")
+        grid = pq.read_table(grid_path, columns=["z"]).column("z").to_numpy()
     selections = result.config["selections"]
     plot_settings = result.config.get("plots", {})
     ymax_quantile = float(plot_settings.get("nz_ymax_quantile", 0.995))
@@ -767,7 +862,11 @@ def plot_nz(result: QAResult):
         count_curves = []
         normalized_curves = []
         for estimator, values in result.nz[name].items():
-            curve_label = "Parquet stacked PDF" if estimator == "stacked_pdf" else f"HATS {estimator}"
+            if estimator == "stacked_pdf":
+                layout = result.config.get("pdf", {}).get("layout", "companion")
+                curve_label = "Nested HATS stacked PDF" if layout == "nested" else "Parquet stacked PDF"
+            else:
+                curve_label = f"HATS {estimator}"
             if estimator != "stacked_pdf":
                 axes[row, 0].step(grid, values, where="mid", label=curve_label, color=colors[estimator], linewidth=1.5)
                 count_curves.append((curve_label, values))

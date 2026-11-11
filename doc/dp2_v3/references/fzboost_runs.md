@@ -276,9 +276,12 @@ completion record.
 The HATS build uses Slurm-backed Dask workers. It keeps 20 workers and scales
 adaptively up to 80, each with 8 CPUs, 40 GiB, and a 12-hour limit. Workers
 remain idle for approximately 180 seconds before adaptive scale-down. Stage 2
-HDF5 files are retained by default. A successful
-run must produce both the scalar HATS summary and PDF parquet product, preserve
-the 601-point grid, match Stage 2 row counts, and remove temporary staging.
+HDF5 files are retained through validation. The current v3 contract supersedes
+the historical companion-PDF layout described above: a successful run must
+produce one HATS catalog containing scalar columns and
+`fzboost_ens_interp/{xvals,yvals}`, preserve the 601-point grid, match Stage 2
+row counts, and remove temporary staging. It must not leave a duplicate
+`<hats_dir>.pdf/` tree.
 
 ## Record required after the next v3 production run
 
@@ -287,6 +290,6 @@ Do not mark a v3 run validated without recording:
 - repository commit and environment freeze;
 - training, estimation-array, retry, and HATS-driver job IDs;
 - `sacct` state, exit code, elapsed time, and peak memory;
-- input, HDF5, HATS-summary, and PDF row/file counts;
+- input, HDF5, HATS row/partition counts, and sampled nested-PDF validation;
 - output from `validate-models.py fzboost` and `validate-hats.py fzboost`;
 - any deviation from the default resource requests and the evidence supporting it.

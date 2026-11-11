@@ -31,6 +31,23 @@ After the driver and Dask workers complete, validate only the test product:
 doc/dp2_v3/scripts/validate-hats.py bpz_test
 ```
 
+The engineering `pz_summary` catalog embeds the PDFs in
+`bpz_test_ens_interp`, using 601-element `float32` `xvals` and `yvals` lists.
+The lightweight validator opens the catalog with LSDB, reconstructs a bounded
+sample through `qp`, checks PDF health and summaries, and compares the HATS
+and Stage 2 row counts.
+
+Successful construction removes `<hats_dir>.parquet_staging/` automatically
+and does not retain a duplicate `<hats_dir>.pdf/` tree. Keep the Stage 2 HDF5
+tree through validation because this test workflow may still require
+investigation of BPZ warnings.
+
+For the optional bounded-partition notebook QA, start Jupyter with:
+
+```bash
+PZ_QA_CONFIG=doc/notebooks/config/dp2-v3-bpz-test.yaml jupyter lab
+```
+
 ## Profile the test driver and Dask workers
 
 After validation passes, recover the test driver ID and run tag from its
@@ -93,8 +110,7 @@ All artifacts remain visibly separated:
 ```text
 $PZ_DP2_ROOT/bpz_test/stage3/
 ├── output/
-│   ├── pz-bpz_test-gaap1p0-clipped-hats/
-│   └── pz-bpz_test-gaap1p0-clipped-hats.pdf/
+│   └── pz-bpz_test-gaap1p0-clipped-hats/
 ├── log/{dask-*,driver-*}/
 ├── benchmark/<run-tag>/
 │   ├── driver/

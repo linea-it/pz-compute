@@ -178,6 +178,39 @@ columns: `i_gaap1p0Mag_sfd` and `refExtendedness`. The latter is the DP2
 reference-band point-like (`0`) versus extended (`1`) classification; null
 values remain unclassified.
 
+Stage 3 publishes one HATS collection per algorithm. Its `pz_summary` catalog
+contains the scalar columns, retained ancillary columns, and a DP1-inspired
+nested PDF column named `<algorithm>_ens_interp`. That struct contains
+`xvals: list<float32>` and `yvals: list<float32>`, both with 601 entries per
+object, and can be reconstructed as `qp.interp_gen`. DP2 v3 does not retain the
+older sibling `<hats_dir>.pdf/` dataset. Temporary Parquet staging is removed
+after a successful build; Stage 2 HDF5 remains available for the external
+validation step and first-run investigation.
+
+For example, inspect and reconstruct a few FlexZBoost PDFs without joining a
+second dataset:
+
+```python
+import lsdb
+import numpy as np
+import os
+import qp
+
+root = os.environ["PZ_DP2_ROOT"]
+catalog = lsdb.read_hats(
+    f"{root}/fzboost/stage3/output/"
+    "pz-fzboost-gaap1p0-clipped-hats/pz_summary"
+)
+frame = catalog[["objectId", "fzboost_ens_interp"]].head(5)
+nested = frame["fzboost_ens_interp"]
+xvals = np.asarray(nested.iloc[0]["xvals"])
+yvals = np.asarray([nested.iloc[index]["yvals"] for index in range(len(frame))])
+ensemble = qp.Ensemble(qp.interp_gen, data={"xvals": xvals, "yvals": yvals})
+```
+
+Use `bpz_ens_interp`, `dnf_ens_interp`, or `bpz_test_ens_interp` for the other
+documented workflows.
+
 ## Pinned upstream configuration
 
 The parameters are transcribed from the immutable DP2 project files:

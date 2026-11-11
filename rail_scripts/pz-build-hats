@@ -21,9 +21,13 @@ Options:
                            written [default: ].
     --pdf-output-dir=<dir> Directory where the full PDF parquet product is
                            written [default: ].
+    --pdf-layout=<layout>  PDF storage layout. Choices: companion, nested,
+                           both, none [default: companion].
+    --pdf-column=<name>    Nested PDF column name when layout is nested or
+                           both [default: pz_ens_interp].
     --pdf-dtype=<dtype>    Numeric dtype for stored PDF values. Choices:
                            float32, float64 [default: float32].
-    --no-pdf-product       Do not write the separate full PDF parquet product.
+    --no-pdf-product       Deprecated alias for --pdf-layout=none.
     --batch-size=<rows>    Number of rows converted per batch [default: 50000].
     --fast-path-size-mb=<mb>  Max staged parquet size to build with LSDB
                               in memory before using hats-import [default: 100].
@@ -101,6 +105,7 @@ RA_CANDIDATES = ("coord_ra", "ra")
 DEC_CANDIDATES = ("coord_dec", "dec")
 SUMMARY_STAGING_BYTES_PER_ROW_ESTIMATE = 96
 INPUT_FILE_EXTENSIONS = (".hdf5", ".h5", ".parquet", ".parq", ".pq")
+PARQUET_COMPRESSION = "zstd"
 
 
 @dataclass
@@ -114,8 +119,11 @@ class Configuration:
     dec_column: str | None
     staging_dir: Path
     pdf_output_dir: Path
+    pdf_layout: str
+    pdf_column: str
     pdf_dtype: str
-    write_pdf_product: bool
+    write_companion_pdf: bool
+    embed_pdf: bool
     batch_size: int
     fast_path_size_mb: float
     catalog_name: str
@@ -192,6 +200,21 @@ def parse_cmdline() -> Configuration:
     if pdf_dtype not in ("float32", "float64"):
         raise SystemExit("Error: --pdf-dtype must be either 'float32' or 'float64'.")
 
+    pdf_layout = "none" if args["--no-pdf-product"] else args["--pdf-layout"]
+    if pdf_layout not in ("companion", "nested", "both", "none"):
+        raise SystemExit(
+            "Error: --pdf-layout must be 'companion', 'nested', 'both', or 'none'."
+        )
+    pdf_column = args["--pdf-column"]
+    if not pdf_column or "." in pdf_column:
+        raise SystemExit("Error: --pdf-column must be a non-empty top-level column name.")
+    reserved_pdf_columns = {
+        "objectId", "coord_ra", "coord_dec", "zmode", "zmean", "zmedian",
+        "z_p16", "z_p84", "pdf",
+    }
+    if pdf_column in reserved_pdf_columns:
+        raise SystemExit(f"Error: --pdf-column is reserved: {pdf_column}")
+
     dask_cluster = args["--dask-cluster"]
     if dask_cluster not in ("local", "slurm"):
         raise SystemExit("Error: --dask-cluster must be either 'local' or 'slurm'.")
@@ -199,9 +222,14 @@ def parse_cmdline() -> Configuration:
     if args.get("--dask-scheduler") and args["--dask-cluster"] != "local":
         raise SystemExit("Error: --dask-scheduler is mutually exclusive with --dask-cluster.")
 
-    if args["--delete-hdf5-outputs"] and args["--no-pdf-product"]:
+    write_companion_pdf = pdf_layout in ("companion", "both")
+    embed_pdf = pdf_layout in ("nested", "both")
+    if args["--delete-hdf5-outputs"] and not (
+        write_companion_pdf or (embed_pdf and not args["--staging-only"])
+    ):
         raise SystemExit(
-            "Error: --delete-hdf5-outputs requires the PDF parquet product."
+            "Error: --delete-hdf5-outputs requires a durable companion or nested "
+            "PDF product."
         )
 
     local_n_workers = parse_positive_int(args["--local-n-workers"], "--local-n-workers")
@@ -233,8 +261,11 @@ def parse_cmdline() -> Configuration:
         dec_column=args["--dec-column"],
         staging_dir=staging_dir,
         pdf_output_dir=pdf_output_dir,
+        pdf_layout=pdf_layout,
+        pdf_column=pdf_column,
         pdf_dtype=pdf_dtype,
-        write_pdf_product=not args["--no-pdf-product"],
+        write_companion_pdf=write_companion_pdf,
+        embed_pdf=embed_pdf,
         batch_size=batch_size,
         fast_path_size_mb=fast_path_size_mb,
         catalog_name=args["--catalog-name"],
@@ -434,9 +465,17 @@ def build_file_pairs(cfg: Configuration, files: list[str]) -> list[FilePair]:
     return pairs
 
 
-def estimate_summary_staging_size_mb(pairs: list[FilePair]) -> tuple[int, float]:
+def estimate_summary_staging_size_mb(
+    cfg: Configuration, pairs: list[FilePair]
+) -> tuple[int, float]:
     num_rows = sum(pair.num_rows for pair in pairs)
-    size_mb = num_rows * SUMMARY_STAGING_BYTES_PER_ROW_ESTIMATE / 1024**2
+    value_bytes = num_rows * SUMMARY_STAGING_BYTES_PER_ROW_ESTIMATE
+    if cfg.embed_pdf:
+        dtype_size = np.dtype(cfg.pdf_dtype).itemsize
+        value_bytes += sum(
+            pair.num_rows * pair.num_bins * dtype_size * 2 for pair in pairs
+        )
+    size_mb = value_bytes / 1024**2
     return num_rows, size_mb
 
 
@@ -448,16 +487,21 @@ def estimate_pdf_product_size_mb(cfg: Configuration, pairs: list[FilePair]) -> f
 
 
 def validate_expected_staging_size(cfg: Configuration, pairs: list[FilePair]) -> None:
-    num_rows, estimated_size_mb = estimate_summary_staging_size_mb(pairs)
+    num_rows, estimated_size_mb = estimate_summary_staging_size_mb(cfg, pairs)
     info(
         "Estimated summary staging size: %.1f MB for %d rows"
         % (estimated_size_mb, num_rows)
     )
 
-    if cfg.write_pdf_product:
+    if cfg.write_companion_pdf:
         info(
-            "Estimated full PDF parquet payload: %.1f MB using %s"
+            "Estimated companion PDF parquet payload: %.1f MB using %s"
             % (estimate_pdf_product_size_mb(cfg, pairs), cfg.pdf_dtype)
+        )
+    if cfg.embed_pdf:
+        info(
+            "Nested PDF column %s will be included in HATS staging using %s"
+            % (cfg.pdf_column, cfg.pdf_dtype)
         )
 
     if cfg.staging_only or cfg.use_hats_import:
@@ -537,6 +581,36 @@ def pdf_array(yvals: np.ndarray, dtype: str) -> pa.FixedSizeListArray:
     values = np.asarray(yvals, dtype=np.dtype(dtype), order="C")
     flat_values = pa.array(values.ravel())
     return pa.FixedSizeListArray.from_arrays(flat_values, values.shape[1])
+
+
+def _list_array(values: np.ndarray) -> pa.ListArray:
+    """Create a DP1-compatible Arrow list column from a dense 2-D array."""
+    values = np.asarray(values, order="C")
+    num_values = values.shape[0] * values.shape[1]
+    if num_values > np.iinfo(np.int32).max:
+        raise RuntimeError(
+            "nested PDF batch exceeds Arrow list offset capacity; reduce --batch-size"
+        )
+    offsets = pa.array(
+        np.arange(values.shape[0] + 1, dtype=np.int32) * values.shape[1],
+        type=pa.int32(),
+    )
+    return pa.ListArray.from_arrays(offsets, pa.array(values.ravel()))
+
+
+def nested_pdf_array(
+    xvals: np.ndarray, yvals: np.ndarray, dtype: str
+) -> pa.StructArray:
+    """Build the ``*_ens_interp`` struct-of-lists used by the DP1 product."""
+    value_dtype = np.dtype(dtype)
+    y_values = np.asarray(yvals, dtype=value_dtype, order="C")
+    x_values = np.broadcast_to(
+        np.asarray(xvals, dtype=value_dtype), y_values.shape
+    ).copy(order="C")
+    return pa.StructArray.from_arrays(
+        [_list_array(x_values), _list_array(y_values)],
+        names=["xvals", "yvals"],
+    )
 
 
 def read_hdf5_identity_columns(
@@ -661,6 +735,8 @@ def write_summary_parts(
         if ancillary_group is not None:
             reserved = {"objectId", "coord_ra", "coord_dec", "zmode", "zmean",
                         "zmedian", "z_p16", "z_p84", "pdf"}
+            if cfg.embed_pdf:
+                reserved.add(cfg.pdf_column)
             collisions = sorted(reserved.intersection(ancillary_group.keys()))
             if collisions:
                 raise RuntimeError(
@@ -706,10 +782,15 @@ def write_summary_parts(
                 **propagated,
             }
             table = pa.Table.from_pydict(data)
+            if cfg.embed_pdf:
+                table = table.append_column(
+                    cfg.pdf_column,
+                    nested_pdf_array(xvals, batch_yvals, cfg.pdf_dtype),
+                )
             part_path = cfg.staging_dir / parquet_part_name(pair.relative_path, batch_index)
-            pq.write_table(table, part_path)
+            pq.write_table(table, part_path, compression=PARQUET_COMPRESSION)
 
-            if cfg.write_pdf_product:
+            if cfg.write_companion_pdf:
                 pdf_table = pa.Table.from_pydict(
                     {
                         "objectId": batch_object_ids,
@@ -719,7 +800,9 @@ def write_summary_parts(
                     }
                 ).append_column("pdf", pdf_array(batch_yvals, cfg.pdf_dtype))
                 pdf_path = cfg.pdf_output_dir / pdf_part_name(pair.relative_path, batch_index)
-                pq.write_table(pdf_table, pdf_path)
+                pq.write_table(
+                    pdf_table, pdf_path, compression=PARQUET_COMPRESSION
+                )
 
     return ConvertResult(pair.relative_path, num_rows, xvals)
 
@@ -800,7 +883,7 @@ def write_xvals_metadata(directory: Path, xvals: np.ndarray, file_name: str) -> 
             "z": xvals.astype(np.float64),
         }
     )
-    pq.write_table(table, directory / file_name)
+    pq.write_table(table, directory / file_name, compression=PARQUET_COMPRESSION)
 
 
 def create_hats_import_client(cfg: Configuration):
@@ -942,9 +1025,12 @@ def build_hats_collection(cfg: Configuration, client=None) -> None:
         try:
             import lsdb
             import pandas as pd
+            if cfg.embed_pdf:
+                import nested_pandas as npd
         except Exception as err:
             raise RuntimeError(
-                "lsdb and pandas are required to build small HATS collections. "
+                "lsdb, pandas, and nested-pandas (for nested PDFs) are required "
+                "to build small HATS collections. "
                 "The parquet staging files were written successfully."
             ) from err
 
@@ -958,7 +1044,8 @@ def build_hats_collection(cfg: Configuration, client=None) -> None:
             "Building HATS collection with LSDB fast path: %s (%.1f MB)"
             % (collection_path, total_size_mb)
         )
-        df = pd.concat((pd.read_parquet(path) for path in input_files), ignore_index=True)
+        reader = npd.read_parquet if cfg.embed_pdf else pd.read_parquet
+        df = pd.concat((reader(path) for path in input_files), ignore_index=True)
         catalog = lsdb.from_dataframe(
             df,
             catalog_name=cfg.catalog_name,
@@ -1027,7 +1114,7 @@ def setup_output_dirs(cfg: Configuration) -> None:
         "staging": cfg.staging_dir.resolve(),
         "HATS": cfg.hats_dir.resolve(),
     }
-    if cfg.write_pdf_product:
+    if cfg.write_companion_pdf:
         product_dirs["PDF parquet"] = cfg.pdf_output_dir.resolve()
 
     def overlap(first: Path, second: Path) -> bool:
@@ -1060,13 +1147,13 @@ def setup_output_dirs(cfg: Configuration) -> None:
     if cfg.hats_dir.exists() and not (cfg.overwrite or cfg.staging_only):
         raise RuntimeError(f"HATS directory already exists: {cfg.hats_dir}")
 
-    if cfg.write_pdf_product and cfg.pdf_output_dir.exists():
+    if cfg.write_companion_pdf and cfg.pdf_output_dir.exists():
         if not cfg.overwrite:
             raise RuntimeError(f"PDF output directory already exists: {cfg.pdf_output_dir}")
         rmtree(cfg.pdf_output_dir)
 
     makedirs(cfg.staging_dir, exist_ok=True)
-    if cfg.write_pdf_product:
+    if cfg.write_companion_pdf:
         makedirs(cfg.pdf_output_dir, exist_ok=True)
     if not cfg.staging_only:
         makedirs(cfg.hats_dir.parent or Path("."), exist_ok=True)
@@ -1124,8 +1211,8 @@ def run(cfg: Configuration) -> None:
         xvals_reference = validate_xvals(results)
 
         write_xvals_metadata(cfg.staging_dir, xvals_reference, "pz_pdf_xvals.parquet")
-        info("Wrote summary parquet staging files: %s" % cfg.staging_dir)
-        if cfg.write_pdf_product:
+        info("Wrote HATS parquet staging files: %s" % cfg.staging_dir)
+        if cfg.write_companion_pdf:
             write_xvals_metadata(cfg.pdf_output_dir, xvals_reference, "xvals.parquet")
             info("Wrote full PDF parquet product: %s" % cfg.pdf_output_dir)
 
@@ -1140,7 +1227,7 @@ def run(cfg: Configuration) -> None:
 
     if not cfg.staging_only and not cfg.keep_staging:
         rmtree(cfg.staging_dir)
-        info("Deleted summary parquet staging: %s" % cfg.staging_dir)
+        info("Deleted HATS parquet staging: %s" % cfg.staging_dir)
 
     if cfg.delete_hdf5_outputs:
         delete_hdf5_outputs(cfg, pairs)

@@ -7,7 +7,8 @@ from pathlib import Path
 
 import h5py
 import lsdb
-import pyarrow.parquet as pq
+import numpy as np
+import qp
 
 
 OFFICIAL_ALGORITHMS = ("fzboost", "bpz", "dnf")
@@ -24,14 +25,7 @@ SUMMARY_COLUMNS = [
     "i_gaap1p0Mag_sfd",
     "refExtendedness",
 ]
-PDF_COLUMNS = [
-    "objectId",
-    "coord_ra",
-    "coord_dec",
-    "i_gaap1p0Mag_sfd",
-    "refExtendedness",
-    "pdf",
-]
+SAMPLE_ROWS = 8
 
 
 def stage2_rows(input_root: Path, output_root: Path) -> int:
@@ -44,6 +38,60 @@ def stage2_rows(input_root: Path, output_root: Path) -> int:
         with h5py.File(output_path, "r") as handle:
             total += handle["data/yvals"].shape[0]
     return total
+
+
+def weighted_quantile(xvals: np.ndarray, yvals: np.ndarray, q: float) -> np.ndarray:
+    totals = yvals.sum(axis=1)
+    cdf = np.cumsum(yvals, axis=1)
+    return np.asarray(
+        [xvals[min(np.searchsorted(row, q * total), len(xvals) - 1)]
+         for row, total in zip(cdf, totals)]
+    )
+
+
+def validate_nested_sample(catalog, algorithm: str) -> int:
+    pdf_column = f"{algorithm}_ens_interp"
+    expected_columns = [*SUMMARY_COLUMNS, pdf_column]
+    assert list(catalog.columns) == expected_columns, algorithm
+    assert pdf_column in catalog.nested_columns, (algorithm, catalog.nested_columns)
+
+    columns = ["objectId", "zmode", "zmean", "zmedian", "z_p16", "z_p84", pdf_column]
+    sample = catalog[columns].head(SAMPLE_ROWS)
+    assert len(sample) > 0, f"{algorithm}: empty HATS sample"
+    nested = sample[pdf_column]
+    xvals = [np.asarray(nested.iloc[index]["xvals"]) for index in range(len(sample))]
+    yvals = [np.asarray(nested.iloc[index]["yvals"]) for index in range(len(sample))]
+    assert all(values.shape == (601,) for values in xvals), algorithm
+    assert all(values.shape == (601,) for values in yvals), algorithm
+    assert all(values.dtype == np.float32 for values in xvals), algorithm
+    assert all(values.dtype == np.float32 for values in yvals), algorithm
+    assert all(np.array_equal(xvals[0], values) for values in xvals[1:]), algorithm
+
+    grid = xvals[0].astype(np.float64)
+    matrix = np.stack(yvals).astype(np.float64)
+    assert np.isfinite(grid).all() and np.all(np.diff(grid) > 0), algorithm
+    assert np.isfinite(matrix).all(), algorithm
+    assert np.all(matrix >= 0), algorithm
+    totals = matrix.sum(axis=1)
+    assert np.all(totals > 0), algorithm
+
+    ensemble = qp.Ensemble(
+        qp.interp_gen,
+        data={"xvals": grid, "yvals": matrix},
+    )
+    assert ensemble.shape == matrix.shape, algorithm
+
+    reconstructed = {
+        "zmode": grid[np.argmax(matrix, axis=1)],
+        "zmean": (matrix * grid).sum(axis=1) / totals,
+        "zmedian": weighted_quantile(grid, matrix, 0.50),
+        "z_p16": weighted_quantile(grid, matrix, 0.16),
+        "z_p84": weighted_quantile(grid, matrix, 0.84),
+    }
+    for name, values in reconstructed.items():
+        stored = sample[name].to_numpy(dtype=float)
+        assert np.allclose(stored, values, rtol=0, atol=1e-5), (algorithm, name)
+    return len(sample)
 
 
 def validate(root: Path, input_root: Path, algorithm: str) -> None:
@@ -59,31 +107,20 @@ def validate(root: Path, input_root: Path, algorithm: str) -> None:
     staging = Path(f"{hats_dir}.parquet_staging")
 
     catalog = lsdb.read_hats(hats_dir / "pz_summary")
-    assert list(catalog.columns) == SUMMARY_COLUMNS, algorithm
     summary_rows = len(catalog)
-
-    parts = sorted(pdf_dir.glob("*pdf-part*.parquet"))
-    if not parts:
-        raise FileNotFoundError(f"{algorithm}: no PDF parquet parts under {pdf_dir}")
-    first = pq.read_table(parts[0])
-    xvals = pq.read_table(pdf_dir / "xvals.parquet")
-    assert first.column_names == PDF_COLUMNS, algorithm
-    assert len(first.column("pdf")[0].as_py()) == 601, algorithm
-    assert xvals.column_names == ["bin_index", "z"], algorithm
-    assert xvals.num_rows == 601, algorithm
+    sample_rows = validate_nested_sample(catalog, algorithm)
 
     hdf5_rows = stage2_rows(input_root, stage2_output)
-    pdf_rows = sum(pq.read_metadata(path).num_rows for path in parts)
-    assert hdf5_rows == summary_rows == pdf_rows, (
+    assert hdf5_rows == summary_rows, (
         algorithm,
         hdf5_rows,
         summary_rows,
-        pdf_rows,
     )
     assert not staging.exists(), f"temporary staging still exists: {staging}"
+    assert not pdf_dir.exists(), f"unexpected companion PDF product: {pdf_dir}"
     print(
-        f"{algorithm}: compatible "
-        f"(stage2={hdf5_rows}, summary={summary_rows}, pdf={pdf_rows})"
+        f"{algorithm}: compatible nested HATS "
+        f"(stage2={hdf5_rows}, hats={summary_rows}, sampled_pdfs={sample_rows})"
     )
 
 

@@ -26,6 +26,25 @@ After the driver completes, validate this product with:
 doc/dp2_v3/scripts/validate-hats.py fzboost
 ```
 
+The final catalog is `pz_summary` inside the HATS collection. In addition to
+the scalar columns, it contains the DP1-inspired nested column
+`fzboost_ens_interp`, with `xvals` and `yvals` lists of 601 `float32` values.
+The validator opens the catalog through LSDB, reconstructs a small
+`qp.Ensemble`, checks a bounded sample of PDFs and their scalar summaries, and
+compares the HATS row count with Stage 2. It intentionally does not scan every
+601-bin PDF.
+
+Successful construction deletes `<hats_dir>.parquet_staging/` automatically,
+and this DP2 v3 route does not create a duplicate `<hats_dir>.pdf/` companion.
+Stage 2 HDF5 files remain until this external validation and the resource
+profiles below are complete; retain them for the first nested production run.
+
+For the optional bounded-partition notebook QA, start Jupyter with:
+
+```bash
+PZ_QA_CONFIG=doc/notebooks/config/dp2-v3-fzboost.yaml jupyter lab
+```
+
 ## Profile the driver and Dask workers
 
 After validation passes, recover the driver ID and run tag from the submission
@@ -92,8 +111,7 @@ All FlexZBoost-attributable output remains under:
 ```text
 $PZ_DP2_ROOT/fzboost/stage3/
 ├── output/
-│   ├── pz-fzboost-gaap1p0-clipped-hats/
-│   └── pz-fzboost-gaap1p0-clipped-hats.pdf/
+│   └── pz-fzboost-gaap1p0-clipped-hats/
 ├── log/
 │   ├── dask-*/
 │   └── driver-*/

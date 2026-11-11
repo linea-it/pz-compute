@@ -42,6 +42,8 @@ set +e
     time pz-build-hats \
       --overwrite \
       --require-complete-marker \
+      --pdf-layout=nested \
+      --pdf-column="${PZ_ALGORITHM}_ens_interp" \
       --pdf-dtype=float32 \
       --fast-path-size-mb=0 \
       --use-hats-import \

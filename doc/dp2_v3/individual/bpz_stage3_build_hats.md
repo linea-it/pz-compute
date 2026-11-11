@@ -26,6 +26,23 @@ After the driver completes, validate this product with:
 doc/dp2_v3/scripts/validate-hats.py bpz
 ```
 
+The final `pz_summary` HATS catalog contains the scalar columns and the
+DP1-inspired nested column `bpz_ens_interp`, whose `xvals` and `yvals` fields
+each contain 601 `float32` values. The validator uses LSDB and `qp` on a small,
+bounded sample, checks PDF health and reconstructed summaries, and compares
+the catalog row count with Stage 2 without scanning every PDF.
+
+Successful construction removes `<hats_dir>.parquet_staging/` automatically
+and does not create a duplicate `<hats_dir>.pdf/` companion. Keep the Stage 2
+HDF5 tree through validation and profiling, especially for the first nested
+production run.
+
+For the optional bounded-partition notebook QA, start Jupyter with:
+
+```bash
+PZ_QA_CONFIG=doc/notebooks/config/dp2-v3-bpz.yaml jupyter lab
+```
+
 ## Profile the driver and Dask workers
 
 After validation passes, recover the driver ID and run tag from the submission
@@ -89,8 +106,7 @@ All BPZ-attributable output remains under:
 ```text
 $PZ_DP2_ROOT/bpz/stage3/
 ├── output/
-│   ├── pz-bpz-gaap1p0-clipped-hats/
-│   └── pz-bpz-gaap1p0-clipped-hats.pdf/
+│   └── pz-bpz-gaap1p0-clipped-hats/
 ├── log/
 │   ├── dask-*/
 │   └── driver-*/
