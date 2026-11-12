@@ -14,15 +14,21 @@ same Dask client is used for staging and `hats-import` collection generation.
 
 ## Products
 
-The backward-compatible default is:
+The default products are:
 
 ```text
 <hats_dir>/
+├── pz_summary/
+└── pz_summary_5arcs/
 <hats_dir>.pdf/
 ```
 
-`<hats_dir>/` is the lightweight HATS summary product. `<hats_dir>.pdf/` is a
-separate Parquet product with the full PDF histograms linked by `objectId`.
+`<hats_dir>/` is the HATS collection: `pz_summary` is its main catalog and
+`pz_summary_5arcs` is the default margin catalog used by LSDB for spatial
+operations such as crossmatching across partition boundaries. The default
+margin width is 5 arcseconds; configure it with
+`--margin-threshold=<arcsec>`. `<hats_dir>.pdf/` is a separate Parquet product
+with the full PDF histograms linked by `objectId`.
 Select the storage layout explicitly with:
 
 ```text
@@ -217,10 +223,15 @@ Inspect the generated HATS catalog:
 python - <<'PY'
 import lsdb
 
-catalog = lsdb.read_hats("pz-summary-hats/pz_summary")
+catalog = lsdb.open_catalog("pz-summary-hats")
 print(catalog.head(5))
+print(catalog.margin.hc_structure.catalog_info.margin_threshold)
 PY
 ```
+
+Opening the collection root attaches its configured default margin as
+`catalog.margin`. Reading only `pz-summary-hats/pz_summary` bypasses collection
+metadata and does not attach the margin automatically.
 
 ## Fast Path
 

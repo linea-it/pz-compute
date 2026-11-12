@@ -26,6 +26,7 @@ SUMMARY_COLUMNS = [
     "refExtendedness",
 ]
 SAMPLE_ROWS = 8
+DEFAULT_MARGIN_ARCSEC = 5.0
 
 
 def stage2_rows(input_root: Path, output_root: Path) -> int:
@@ -106,7 +107,17 @@ def validate(root: Path, input_root: Path, algorithm: str) -> None:
     pdf_dir = Path(f"{hats_dir}.pdf")
     staging = Path(f"{hats_dir}.parquet_staging")
 
-    catalog = lsdb.read_hats(hats_dir / "pz_summary")
+    catalog = lsdb.open_catalog(hats_dir)
+    expected_margin = float(
+        os.environ.get("PZ_HATS_MARGIN_ARCSEC", DEFAULT_MARGIN_ARCSEC)
+    )
+    assert catalog.margin is not None, f"{algorithm}: missing default margin catalog"
+    actual_margin = catalog.margin.hc_structure.catalog_info.margin_threshold
+    assert np.isclose(actual_margin, expected_margin), (
+        algorithm,
+        actual_margin,
+        expected_margin,
+    )
     summary_rows = len(catalog)
     sample_rows = validate_nested_sample(catalog, algorithm)
 
@@ -120,7 +131,8 @@ def validate(root: Path, input_root: Path, algorithm: str) -> None:
     assert not pdf_dir.exists(), f"unexpected companion PDF product: {pdf_dir}"
     print(
         f"{algorithm}: compatible nested HATS "
-        f"(stage2={hdf5_rows}, hats={summary_rows}, sampled_pdfs={sample_rows})"
+        f"(stage2={hdf5_rows}, hats={summary_rows}, sampled_pdfs={sample_rows}, "
+        f"default_margin_arcsec={actual_margin:g})"
     )
 
 

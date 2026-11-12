@@ -16,7 +16,20 @@ Available run configurations:
 
 The first two configurations retain the companion layout used by DP1-v2 and
 DP2-v2. All DP2-v3 configurations read `<algorithm>_ens_interp` directly from
-the final HATS catalog.
+the final HATS catalog. Their `paths.summary_hats` points to the HATS collection
+root, and the QA code opens it with `lsdb.open_catalog()`. LSDB selects the main
+`pz_summary` catalog and attaches the collection's default margin without
+including margin rows in the main catalog scan.
+
+Do not recursively read Parquet from a DP2-v3 collection root: that would mix
+the main catalog with its margin catalog and duplicate boundary objects. Code
+that intentionally bypasses LSDB and performs a recursive Parquet read must
+start at `<hats_collection>/pz_summary/dataset`, for example:
+
+```text
+/scratch/users/app.photoz/pz-compute-runs/dp2-v3/fzboost/stage3/output/
+  pz-fzboost-gaap1p0-clipped-hats/pz_summary/dataset
+```
 
 DP2-v3 defaults to `metrics.max_hats_partitions: 0`, which performs a full
 distributed catalog scan. Consequently, its point-estimate metrics, stacked

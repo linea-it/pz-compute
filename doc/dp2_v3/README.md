@@ -187,6 +187,13 @@ older sibling `<hats_dir>.pdf/` dataset. Temporary Parquet staging is removed
 after a successful build; Stage 2 HDF5 remains available for the external
 validation step and first-run investigation.
 
+Each collection also contains a default margin catalog with a 5 arcsecond
+boundary. LSDB attaches it as `catalog.margin` when the collection root is
+opened, enabling complete partition-local crossmatches up to that radius.
+Set `PZ_HATS_MARGIN_ARCSEC` before Stage 3 submission to use a different
+positive distance; the builder forwards it to
+`--margin-threshold=<arcsec>` and records that catalog as `default_margin`.
+
 For example, inspect and reconstruct a few FlexZBoost PDFs without joining a
 second dataset:
 
@@ -197,9 +204,9 @@ import os
 import qp
 
 root = os.environ["PZ_DP2_ROOT"]
-catalog = lsdb.read_hats(
+catalog = lsdb.open_catalog(
     f"{root}/fzboost/stage3/output/"
-    "pz-fzboost-gaap1p0-clipped-hats/pz_summary"
+    "pz-fzboost-gaap1p0-clipped-hats"
 )
 frame = catalog[["objectId", "fzboost_ens_interp"]].head(5)
 nested = frame["fzboost_ens_interp"]

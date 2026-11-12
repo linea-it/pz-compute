@@ -5,7 +5,7 @@ run:
   algorithm: fzboost
 
 paths:
-  summary_hats: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/fzboost/stage3/output/pz-fzboost-gaap1p0-clipped-hats/pz_summary
+  summary_hats: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/fzboost/stage3/output/pz-fzboost-gaap1p0-clipped-hats
   report_dir: null
 
 pdf:

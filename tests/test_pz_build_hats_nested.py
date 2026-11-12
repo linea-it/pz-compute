@@ -47,4 +47,13 @@ def test_dp2_stage3_runner_builds_nested_only_algorithm_column():
     assert '--pdf-column="${PZ_ALGORITHM}_ens_interp"' in source
     assert "--delete-hdf5-outputs" not in source
     assert '--slurm-job-name="$worker_job_name"' in source
+    assert '--margin-threshold="$PZ_HATS_MARGIN_ARCSEC"' in source
+
+
+def test_builder_configures_default_margin_for_both_hats_paths():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "--margin-threshold=<arcsec>" in source
+    assert "margin_threshold=cfg.margin_threshold" in source
+    assert ").add_margin(" in source
+    assert "is_default=True" in source
 

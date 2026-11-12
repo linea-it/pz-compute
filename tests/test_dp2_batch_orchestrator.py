@@ -96,6 +96,9 @@ def test_stage2_and_stage3_are_contention_tolerant_and_unrestricted():
     assert "--nodelist" not in combined
     assert "--exclude" not in combined
     assert "PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-1}" in hats_submit_source
+    assert "PZ_HATS_MARGIN_ARCSEC=${PZ_HATS_MARGIN_ARCSEC:-5}" in hats_submit_source
+    assert 'PZ_HATS_MARGIN_ARCSEC="$PZ_HATS_MARGIN_ARCSEC"' in hats_submit_source
+    assert 'margin_threshold_arcsec=%s' in hats_runner_source
     assert '--slurm-minimum-jobs="$PZ_HATS_MIN_WORKERS"' in hats_runner_source
     assert "--slurm-cores=2" in hats_runner_source
     assert "--slurm-processes=1" in hats_runner_source

@@ -121,14 +121,12 @@ def start_cluster(config: dict):
     return client, cluster
 
 
-def _read_hats_nrows(path: Path) -> int:
-    properties = path / "hats.properties"
-    values = {}
-    for line in properties.read_text().splitlines():
-        if line.strip() and not line.lstrip().startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            values[key.strip()] = value.strip()
-    return int(values["hats_nrows"])
+def _read_hats_nrows(catalog) -> int:
+    """Return the main catalog row count, never the collection plus margins."""
+    total_rows = catalog.hc_structure.catalog_info.total_rows
+    if total_rows is None:
+        raise ValueError("The HATS main catalog metadata does not define total_rows")
+    return int(total_rows)
 
 
 def _selection_columns(selections: list[dict]) -> list[str]:
@@ -600,7 +598,10 @@ def run_qa(config: dict) -> QAResult:
     summary_path = Path(paths["summary_hats"])
     if not summary_path.exists():
         raise FileNotFoundError(summary_path)
-    catalog = lsdb.read_hats(summary_path)
+    # A collection root may contain the main catalog, margins, and indexes.
+    # LSDB resolves the main catalog and attaches its default margin without
+    # mixing margin rows into the main Dask dataframe.
+    catalog = lsdb.open_catalog(summary_path)
     pdf_settings = config.get("pdf", {})
     pdf_layout = pdf_settings.get("layout", "companion")
     pdf_column = pdf_settings.get("column")
@@ -665,7 +666,7 @@ def run_qa(config: dict) -> QAResult:
     if missing_summary:
         raise KeyError(f"Missing HATS columns: {missing_summary}")
 
-    expected_rows = _read_hats_nrows(summary_path)
+    expected_rows = _read_hats_nrows(catalog)
     metric_settings = config.get("metrics", {})
     base_ddf = catalog.to_dask_dataframe()
     max_hats_partitions = int(metric_settings.get("max_hats_partitions", 0))

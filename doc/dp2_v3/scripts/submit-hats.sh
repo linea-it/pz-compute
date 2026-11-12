@@ -23,6 +23,7 @@ PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/secondary/catalog
 PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-1}
 PZ_HATS_MAX_WORKERS=${PZ_HATS_MAX_WORKERS:-${PZ_HATS_WORKERS:-80}}
 PZ_HATS_SCALE_DOWN_DELAY=${PZ_HATS_SCALE_DOWN_DELAY:-180}
+PZ_HATS_MARGIN_ARCSEC=${PZ_HATS_MARGIN_ARCSEC:-5}
 
 case "$PZ_HATS_MIN_WORKERS" in
     ''|*[!0-9]*) echo "PZ_HATS_MIN_WORKERS must be a positive integer" >&2; exit 2 ;;
@@ -40,6 +41,11 @@ if [ "$PZ_HATS_MIN_WORKERS" -lt 1 ] || [ "$PZ_HATS_MAX_WORKERS" -lt 1 ] || \
 fi
 if [ "$PZ_HATS_SCALE_DOWN_DELAY" -lt 1 ]; then
     echo "PZ_HATS_SCALE_DOWN_DELAY must be at least 1 second" >&2
+    exit 2
+fi
+if ! awk -v value="$PZ_HATS_MARGIN_ARCSEC" \
+    'BEGIN { exit !(value ~ /^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$/ && value > 0) }'; then
+    echo "PZ_HATS_MARGIN_ARCSEC must be a positive number" >&2
     exit 2
 fi
 
@@ -79,10 +85,10 @@ for algorithm in "${algorithms[@]}"; do
       --time=2-00:00:00 \
       --output="$driver_log_dir/slurm-%j.out" \
       --error="$driver_log_dir/slurm-%j.err" \
-      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_DP2_ROOT="$PZ_DP2_ROOT",PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_STAGE3_RUN_TAG="$run_tag",PZ_HATS_MIN_WORKERS="$PZ_HATS_MIN_WORKERS",PZ_HATS_MAX_WORKERS="$PZ_HATS_MAX_WORKERS",PZ_HATS_SCALE_DOWN_DELAY="$PZ_HATS_SCALE_DOWN_DELAY" \
+      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_DP2_ROOT="$PZ_DP2_ROOT",PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_STAGE3_RUN_TAG="$run_tag",PZ_HATS_MIN_WORKERS="$PZ_HATS_MIN_WORKERS",PZ_HATS_MAX_WORKERS="$PZ_HATS_MAX_WORKERS",PZ_HATS_SCALE_DOWN_DELAY="$PZ_HATS_SCALE_DOWN_DELAY",PZ_HATS_MARGIN_ARCSEC="$PZ_HATS_MARGIN_ARCSEC" \
       "$scripts_dir/run-one-hats.sbatch")
     job_id=${job_id%%;*}
     printf '%s\t%s\t%s\t%s\n' \
       "$(date --iso-8601=seconds)" "$algorithm" "$job_id" "$run_tag" >> "$job_log"
-    echo "$algorithm: submitted Stage 3 driver job $job_id ($run_tag, workers $PZ_HATS_MIN_WORKERS-$PZ_HATS_MAX_WORKERS, scale-down ${PZ_HATS_SCALE_DOWN_DELAY}s)"
+    echo "$algorithm: submitted Stage 3 driver job $job_id ($run_tag, workers $PZ_HATS_MIN_WORKERS-$PZ_HATS_MAX_WORKERS, scale-down ${PZ_HATS_SCALE_DOWN_DELAY}s, margin ${PZ_HATS_MARGIN_ARCSEC} arcsec)"
 done

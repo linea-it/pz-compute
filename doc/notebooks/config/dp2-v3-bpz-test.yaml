@@ -6,7 +6,7 @@ run:
 
 # These are the products expected after bpz_test Stage 3 finishes.
 paths:
-  summary_hats: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/bpz_test/stage3/output/pz-bpz_test-gaap1p0-clipped-hats/pz_summary
+  summary_hats: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/bpz_test/stage3/output/pz-bpz_test-gaap1p0-clipped-hats
   report_dir: null
 
 pdf:

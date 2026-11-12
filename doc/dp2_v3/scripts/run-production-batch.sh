@@ -22,11 +22,13 @@ PZ_BATCH_MIN_FREE_GIB=${PZ_BATCH_MIN_FREE_GIB:-$((${#batch_algorithms_for_storag
 PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-1}
 PZ_HATS_MAX_WORKERS=${PZ_HATS_MAX_WORKERS:-80}
 PZ_HATS_SCALE_DOWN_DELAY=${PZ_HATS_SCALE_DOWN_DELAY:-180}
+PZ_HATS_MARGIN_ARCSEC=${PZ_HATS_MARGIN_ARCSEC:-5}
 batch_dp2_root=$PZ_DP2_ROOT
 batch_input_dataset=$PZ_DP2_INPUT_DATASET
 batch_hats_min_workers=$PZ_HATS_MIN_WORKERS
 batch_hats_max_workers=$PZ_HATS_MAX_WORKERS
 batch_hats_scale_down_delay=$PZ_HATS_SCALE_DOWN_DELAY
+batch_hats_margin_arcsec=$PZ_HATS_MARGIN_ARCSEC
 
 status_file=$PZ_BATCH_RUN_DIR/status.tsv
 jobs_file=$PZ_BATCH_RUN_DIR/jobs.tsv
@@ -160,6 +162,16 @@ validate_positive_integer() {
     esac
 }
 
+validate_positive_number() {
+    local name=${1:?name is required}
+    local value=${2:-}
+    awk -v value="$value" \
+      'BEGIN { exit !(value ~ /^([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$/ && value > 0) }' || {
+        echo "$name must be a positive number: $value" >&2
+        return 2
+    }
+}
+
 load_gaap_environment() {
     # shellcheck source=/dev/null
     source "$gaap_env"
@@ -168,8 +180,9 @@ load_gaap_environment() {
     PZ_HATS_MIN_WORKERS=$batch_hats_min_workers
     PZ_HATS_MAX_WORKERS=$batch_hats_max_workers
     PZ_HATS_SCALE_DOWN_DELAY=$batch_hats_scale_down_delay
+    PZ_HATS_MARGIN_ARCSEC=$batch_hats_margin_arcsec
     export PZ_DP2_ROOT PZ_DP2_INPUT_DATASET
-    export PZ_HATS_MIN_WORKERS PZ_HATS_MAX_WORKERS PZ_HATS_SCALE_DOWN_DELAY
+    export PZ_HATS_MIN_WORKERS PZ_HATS_MAX_WORKERS PZ_HATS_SCALE_DOWN_DELAY PZ_HATS_MARGIN_ARCSEC
     cd "$repo_dir"
 }
 
@@ -181,8 +194,9 @@ load_hats_environment() {
     PZ_HATS_MIN_WORKERS=$batch_hats_min_workers
     PZ_HATS_MAX_WORKERS=$batch_hats_max_workers
     PZ_HATS_SCALE_DOWN_DELAY=$batch_hats_scale_down_delay
+    PZ_HATS_MARGIN_ARCSEC=$batch_hats_margin_arcsec
     export PZ_DP2_ROOT PZ_DP2_INPUT_DATASET
-    export PZ_HATS_MIN_WORKERS PZ_HATS_MAX_WORKERS PZ_HATS_SCALE_DOWN_DELAY
+    export PZ_HATS_MIN_WORKERS PZ_HATS_MAX_WORKERS PZ_HATS_SCALE_DOWN_DELAY PZ_HATS_MARGIN_ARCSEC
     cd "$repo_dir"
 }
 
@@ -512,6 +526,7 @@ validate_positive_integer PZ_BATCH_MIN_FREE_PER_ALGORITHM_GIB "$PZ_BATCH_MIN_FRE
 validate_positive_integer PZ_HATS_MIN_WORKERS "$PZ_HATS_MIN_WORKERS"
 validate_positive_integer PZ_HATS_MAX_WORKERS "$PZ_HATS_MAX_WORKERS"
 validate_positive_integer PZ_HATS_SCALE_DOWN_DELAY "$PZ_HATS_SCALE_DOWN_DELAY"
+validate_positive_number PZ_HATS_MARGIN_ARCSEC "$PZ_HATS_MARGIN_ARCSEC"
 test "$PZ_HATS_MIN_WORKERS" -le "$PZ_HATS_MAX_WORKERS"
 test -r "$gaap_env"
 test -r "$hats_env"
@@ -575,6 +590,7 @@ require_free_gib "$PZ_BATCH_MIN_FREE_GIB"
     printf 'hats_min_workers=%s\n' "$PZ_HATS_MIN_WORKERS"
     printf 'hats_max_workers=%s\n' "$PZ_HATS_MAX_WORKERS"
     printf 'hats_scale_down_delay=%s\n' "$PZ_HATS_SCALE_DOWN_DELAY"
+    printf 'hats_margin_arcsec=%s\n' "$PZ_HATS_MARGIN_ARCSEC"
     df -h "$PZ_DP2_ROOT"
     df -ih "$PZ_DP2_ROOT"
 } > "$context_file"

@@ -16,6 +16,7 @@ configuration is:
 | Dask workers | adaptive 1–80 jobs |
 | Each worker | 2 CPUs, 40 GiB, 12 hours |
 | Worker scale-down delay | 180 seconds |
+| Default margin catalog | 5 arcseconds |
 
 Only one adaptive cluster exists at a time. It starts with one requested job
 and can scale to 80 as capacity becomes available, without competing with DNF,
@@ -33,8 +34,9 @@ When the driver reaches `COMPLETED / 0:0`, the controller runs
 `validate-hats.py <algorithm>`. The validator requires matching Stage 2 and
 HATS row counts, the common scalar schema, the algorithm-specific
 `<algorithm>_ens_interp` nested column, 601-element `float32` grids and PDFs,
-successful `qp.Ensemble` reconstruction for a bounded sample, and no leftover
-Parquet staging or duplicate companion PDF tree.
+successful `qp.Ensemble` reconstruction for a bounded sample, the configured
+default margin catalog, and no leftover Parquet staging or duplicate companion
+PDF tree.
 
 Stage 3 uses `--pdf-layout=nested`. The temporary Parquet staging is deleted
 automatically only after the HATS build succeeds. Stage 2 HDF5 outputs are

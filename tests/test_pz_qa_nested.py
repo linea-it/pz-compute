@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -9,6 +10,32 @@ ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "doc" / "notebooks"))
 
 import pz_qa  # noqa: E402
+
+
+def test_main_catalog_row_count_comes_from_loaded_catalog_metadata():
+    catalog = SimpleNamespace(
+        hc_structure=SimpleNamespace(
+            catalog_info=SimpleNamespace(total_rows=123)
+        )
+    )
+
+    assert pz_qa._read_hats_nrows(catalog) == 123
+
+
+def test_dp2_v3_configs_open_collection_roots_without_pz_summary_suffix():
+    config_dir = ROOT / "doc" / "notebooks" / "config"
+    for name in (
+        "dp2-v3-fzboost.yaml",
+        "dp2-v3-bpz.yaml",
+        "dp2-v3-dnf.yaml",
+        "dp2-v3-bpz-test.yaml",
+    ):
+        config = pz_qa.load_config(config_dir / name)
+        assert Path(config["paths"]["summary_hats"]).name != "pz_summary"
+
+    source = (ROOT / "doc" / "notebooks" / "pz_qa.py").read_text()
+    assert "lsdb.open_catalog(summary_path)" in source
+    assert "lsdb.read_hats(summary_path)" not in source
 
 
 def test_nested_pdf_partition_uses_yvals_and_parent_selection_columns():

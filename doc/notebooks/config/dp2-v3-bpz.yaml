@@ -5,7 +5,7 @@ run:
   algorithm: bpz
 
 paths:
-  summary_hats: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/bpz/stage3/output/pz-bpz-gaap1p0-clipped-hats/pz_summary
+  summary_hats: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/bpz/stage3/output/pz-bpz-gaap1p0-clipped-hats
   report_dir: null
 
 pdf:

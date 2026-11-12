@@ -177,6 +177,7 @@ export PZ_BATCH_MIN_FREE_PER_ALGORITHM_GIB=8192
 export PZ_HATS_MIN_WORKERS=1
 export PZ_HATS_MAX_WORKERS=80
 export PZ_HATS_SCALE_DOWN_DELAY=180
+export PZ_HATS_MARGIN_ARCSEC=5
 
 doc/dp2_v3/scripts/submit-production-batch.sh
 ```

@@ -9,6 +9,7 @@ set -o pipefail
 : "${PZ_HATS_MIN_WORKERS:?missing PZ_HATS_MIN_WORKERS}"
 : "${PZ_HATS_MAX_WORKERS:?missing PZ_HATS_MAX_WORKERS}"
 : "${PZ_HATS_SCALE_DOWN_DELAY:?missing PZ_HATS_SCALE_DOWN_DELAY}"
+: "${PZ_HATS_MARGIN_ARCSEC:?missing PZ_HATS_MARGIN_ARCSEC}"
 : "${PZ_COMPUTE_DIR:?missing PZ_COMPUTE_DIR}"
 : "${PZ_PY:?missing PZ_PY}"
 command -v pz-build-hats >/dev/null
@@ -34,6 +35,7 @@ mkdir -p "$benchmark_dir" "$worker_log_dir" "$driver_log_dir" "$stage3_run/outpu
     hostname
     "$PZ_PY" --version
     git -C "$PZ_COMPUTE_DIR" rev-parse HEAD
+    printf 'margin_threshold_arcsec=%s\n' "$PZ_HATS_MARGIN_ARCSEC"
 } > "$benchmark_dir/run-context.log"
 printf '%s\n' "$worker_job_name" > "$benchmark_dir/worker-job-name.txt"
 
@@ -48,6 +50,7 @@ set +e
       --pdf-layout=nested \
       --pdf-column="${PZ_ALGORITHM}_ens_interp" \
       --pdf-dtype=float32 \
+      --margin-threshold="$PZ_HATS_MARGIN_ARCSEC" \
       --fast-path-size-mb=0 \
       --use-hats-import \
       --dask-cluster=slurm \

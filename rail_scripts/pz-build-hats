@@ -32,6 +32,8 @@ Options:
     --fast-path-size-mb=<mb>  Max staged parquet size to build with LSDB
                               in memory before using hats-import [default: 100].
     --catalog-name=<name>  HATS catalog artifact name [default: pz_summary].
+    --margin-threshold=<arcsec>  Width of the default margin catalog in
+                                 arcseconds [default: 5].
     --use-hats-import      Use Dask for HDF5-to-parquet staging and hats-import
                            for HATS collection generation.
     --dask-scheduler=<address>  Connect pz-build-hats to an existing Dask
@@ -81,7 +83,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from glob import glob
-from math import ceil
+from math import ceil, isfinite
 from os import makedirs
 from os.path import isfile, join, relpath, splitext
 from pathlib import Path
@@ -129,6 +131,7 @@ class Configuration:
     batch_size: int
     fast_path_size_mb: float
     catalog_name: str
+    margin_threshold: float
     use_hats_import: bool
     dask_scheduler: str | None
     dask_cluster: str
@@ -198,6 +201,10 @@ def parse_cmdline() -> Configuration:
         fast_path_size_mb = float(args["--fast-path-size-mb"])
     except ValueError:
         raise SystemExit("Error: --fast-path-size-mb must be a number.")
+
+    margin_threshold = parse_positive_float(
+        args["--margin-threshold"], "--margin-threshold"
+    )
 
     pdf_dtype = args["--pdf-dtype"]
     if pdf_dtype not in ("float32", "float64"):
@@ -272,6 +279,7 @@ def parse_cmdline() -> Configuration:
         batch_size=batch_size,
         fast_path_size_mb=fast_path_size_mb,
         catalog_name=args["--catalog-name"],
+        margin_threshold=margin_threshold,
         use_hats_import=args["--use-hats-import"],
         dask_scheduler=args.get("--dask-scheduler"),
         dask_cluster=dask_cluster,
@@ -333,7 +341,7 @@ def parse_positive_float(value: str, option: str) -> float:
         parsed = float(value)
     except (TypeError, ValueError):
         raise SystemExit(f"Error: {option} must be a number.")
-    if parsed <= 0:
+    if not isfinite(parsed) or parsed <= 0:
         raise SystemExit(f"Error: {option} must be positive.")
     return parsed
 
@@ -1058,6 +1066,7 @@ def build_hats_collection(cfg: Configuration, client=None) -> None:
             catalog_name=cfg.catalog_name,
             ra_column="coord_ra",
             dec_column="coord_dec",
+            margin_threshold=cfg.margin_threshold,
             use_pyarrow_types=True,
         )
         catalog.write_catalog(str(collection_path), as_collection=True, overwrite=True)
@@ -1103,12 +1112,19 @@ def build_hats_collection(cfg: Configuration, client=None) -> None:
         output_artifact_name=cfg.catalog_name,
         ra_column="coord_ra",
         dec_column="coord_dec",
+    ).add_margin(
+        margin_threshold=cfg.margin_threshold,
+        is_default=True,
     )
 
     if client is None:
         raise RuntimeError("internal error: hats-import requires a Dask client")
 
     info("Building HATS collection: %s" % collection_path)
+    info(
+        "Building default margin catalog with threshold %.6g arcsec"
+        % cfg.margin_threshold
+    )
     run_collection_import(args, client)
 
 
