@@ -287,9 +287,11 @@ completion record.
 ## Stage 3 profile carried into v3
 
 The HATS build uses Slurm-backed Dask workers. It starts with one requested
-worker and scales adaptively up to 80, each with 8 CPUs, 40 GiB, and a 12-hour
+worker and scales adaptively up to 80, each with 2 CPUs, 40 GiB, and a 12-hour
 limit. It does not wait for a fixed worker count before submitting work.
 Workers remain idle for approximately 180 seconds before adaptive scale-down.
+The two threads share the worker's 40 GiB allocation, reducing concurrent
+memory pressure during hats-import reduction.
 Stage 2 HDF5 files are retained through validation. The current v3 contract
 supersedes the historical companion-PDF layout described above: a successful
 run must produce one HATS catalog containing scalar columns and

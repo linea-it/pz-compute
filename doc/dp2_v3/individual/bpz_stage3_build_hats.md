@@ -11,11 +11,15 @@ doc/dp2_v3/scripts/submit-hats.sh bpz
 ```
 
 The default Dask cluster starts with one requested worker and scales adaptively
-up to 80. Each worker requests 8 CPUs, 40 GiB, and 12 hours; idle workers become
+up to 80. Each worker requests 2 CPUs, 40 GiB, and 12 hours; idle workers become
 eligible for scale-down after approximately 180 seconds. There is no
 `wait_for_workers` barrier, so work can begin with the first worker Slurm can
 start. Override `PZ_HATS_MIN_WORKERS`, `PZ_HATS_MAX_WORKERS`, or
 `PZ_HATS_SCALE_DOWN_DELAY` before submission when required.
+
+The single worker process therefore runs at most two concurrent tasks sharing
+the 40 GiB allocation. This limit protects the memory-intensive hats-import
+reduction from the OOM failures observed with eight concurrent threads.
 
 Use the [Stage 3 terminal commands](inspect_runs.md#stage-3-hats-build) with
 `algorithm=bpz` to follow the driver, inspect Dask worker logs, check its exit

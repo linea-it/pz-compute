@@ -53,7 +53,7 @@ set +e
       --dask-cluster=slurm \
       --slurm-queue=cpu_photoz \
       --slurm-account=hpc-photoz \
-      --slurm-cores=8 \
+      --slurm-cores=2 \
       --slurm-processes=1 \
       --slurm-memory=40GiB \
       --slurm-walltime=12:00:00 \

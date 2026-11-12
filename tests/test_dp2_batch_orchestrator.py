@@ -97,6 +97,9 @@ def test_stage2_and_stage3_are_contention_tolerant_and_unrestricted():
     assert "--exclude" not in combined
     assert "PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-1}" in hats_submit_source
     assert '--slurm-minimum-jobs="$PZ_HATS_MIN_WORKERS"' in hats_runner_source
+    assert "--slurm-cores=2" in hats_runner_source
+    assert "--slurm-processes=1" in hats_runner_source
+    assert "--slurm-memory=40GiB" in hats_runner_source
     assert '--slurm-job-name="$worker_job_name"' in hats_runner_source
     assert "wait_for_workers" not in hats_runner_source
     assert runner_source.count("--cluster-context-nodes 'apl[01-28]'") == 2

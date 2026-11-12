@@ -14,7 +14,7 @@ configuration is:
 |---|---|
 | Driver | 1 node, 1 task, 2 CPUs, 8 GiB, 2 days |
 | Dask workers | adaptive 1–80 jobs |
-| Each worker | 8 CPUs, 40 GiB, 12 hours |
+| Each worker | 2 CPUs, 40 GiB, 12 hours |
 | Worker scale-down delay | 180 seconds |
 
 Only one adaptive cluster exists at a time. It starts with one requested job
@@ -22,6 +22,10 @@ and can scale to 80 as capacity becomes available, without competing with DNF,
 BPZ, or FlexZBoost workers created by this batch workflow. There is no
 `wait_for_workers` barrier: hats-import can begin with the first worker that
 Slurm starts, while further worker jobs remain independently pending.
+Each job contains one worker process with two threads, limiting it to two
+concurrent tasks within the shared 40 GiB allocation. This protects the
+memory-intensive hats-import reduction from the OOM failures observed with
+eight concurrent threads.
 
 ## 2. Validation before profiling
 
