@@ -1,7 +1,8 @@
 """Scalable, configuration-driven QA helpers for final photo-z products.
 
 The public entry points are intentionally small so the companion notebook stays
-readable: load_config, start_cluster, run_qa, plot_nz, and write_report.
+readable: load_config, start_cluster, run_qa, plot_nz,
+plot_zmean_selections, and write_report.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ class QAResult:
     config: dict
     paths: pd.Series
     grid: pd.Series
+    grid_values: np.ndarray
     checks: pd.DataFrame
     global_metrics: pd.DataFrame
     pdf_health: pd.DataFrame
@@ -148,6 +150,14 @@ def _selection_mask(frame: pd.DataFrame, selection: dict) -> np.ndarray:
     return mask
 
 
+def _selection_masks(frame: pd.DataFrame, selections: list[dict]) -> dict[str, np.ndarray]:
+    """Evaluate every configured sample once for a partition."""
+    return {
+        item["name"]: _selection_mask(frame, item)
+        for item in selections
+    }
+
+
 def _id_digest(values: pd.Series) -> dict:
     missing = int(values.isna().sum())
     hashed = pd.util.hash_pandas_object(values.dropna(), index=False).to_numpy(dtype=np.uint64)
@@ -194,7 +204,11 @@ def _empty_point_stats(n_bins: int) -> dict:
     }
 
 
-def _summary_partition(frame, selections, edges, grid, sample_probability):
+def _summary_partition(
+    frame, selections, edges, grid, sample_probability, selection_masks=None
+):
+    if selection_masks is None:
+        selection_masks = _selection_masks(frame, selections)
     result = {
         "id": _id_digest(frame["objectId"]),
         "selections": {},
@@ -204,7 +218,7 @@ def _summary_partition(frame, selections, edges, grid, sample_probability):
         ].copy(),
     }
     for selection in selections:
-        selected = frame.loc[_selection_mask(frame, selection)]
+        selected = frame.loc[selection_masks[selection["name"]]]
         stats = _empty_point_stats(len(grid))
         stats["id"] = _id_digest(selected["objectId"])
         stats["rows"] = len(selected)
@@ -288,6 +302,7 @@ def _empty_pdf_stats(n_bins: int) -> dict:
         "id": {"count": 0, "missing": 0, "sum": 0, "xor": 0, "sumsq": 0},
         "rows": 0, "valid": 0, "invalid": 0, "wrong_length": 0,
         "nonfinite": 0, "negative": 0, "nonpositive_sum": 0,
+        "invalid_xvals": 0, "invalid_yvals_dtype": 0,
         "sum_count": 0, "sum_total": 0.0, "sum_sumsq": 0.0,
         "sum_min": np.inf, "sum_max": -np.inf, "sum_samples": [],
         "edge_mass_total": 0.0,
@@ -309,18 +324,33 @@ def _pdf_summaries(matrix: np.ndarray, grid: np.ndarray) -> dict[str, np.ndarray
     }
 
 
-def _pdf_partition(frame, selections, grid, batch_rows, sample_probability, edge_bins):
+def _pdf_partition(
+    frame,
+    selections,
+    grid,
+    batch_rows,
+    sample_probability,
+    edge_bins,
+    selection_masks=None,
+):
     result = {
         "id": _id_digest(frame["objectId"]),
         "selections": {item["name"]: _empty_pdf_stats(len(grid)) for item in selections},
         "sample": [],
     }
-    selection_masks = {item["name"]: _selection_mask(frame, item) for item in selections}
+    if selection_masks is None:
+        selection_masks = _selection_masks(frame, selections)
     for selection in selections:
         mask = selection_masks[selection["name"]]
         result["selections"][selection["name"]]["id"] = _id_digest(frame.loc[mask, "objectId"])
     ids = frame["objectId"].reset_index(drop=True)
     sample_rows = _sample_mask(ids, sample_probability)
+    xvals_valid = frame.get(
+        "_nested_xvals_valid", pd.Series(True, index=frame.index)
+    ).to_numpy(dtype=bool)
+    yvals_dtype_valid = frame.get(
+        "_nested_yvals_dtype_valid", pd.Series(True, index=frame.index)
+    ).to_numpy(dtype=bool)
 
     for start in range(0, len(frame), batch_rows):
         stop = min(start + batch_rows, len(frame))
@@ -331,11 +361,25 @@ def _pdf_partition(frame, selections, grid, batch_rows, sample_probability, edge
         )
         matrix = np.zeros((len(raw), len(grid)), dtype=np.float64)
         if right_length.any():
-            matrix[right_length] = np.stack(raw[right_length]).astype(np.float64, copy=False)
+            try:
+                matrix[right_length] = np.stack(raw[right_length]).astype(
+                    np.float64, copy=False
+                )
+            except (TypeError, ValueError):
+                # Preserve a diagnostic result even if an individual vector is
+                # malformed instead of aborting the complete distributed QA.
+                for index in np.flatnonzero(right_length):
+                    try:
+                        matrix[index] = np.asarray(raw[index], dtype=np.float64)
+                    except (TypeError, ValueError):
+                        right_length[index] = False
         finite = right_length & np.isfinite(matrix).all(axis=1)
         nonnegative = finite & (matrix >= 0).all(axis=1)
         sums = matrix.sum(axis=1)
-        positive = nonnegative & (sums > 0)
+        valid_structure = (
+            xvals_valid[start:stop] & yvals_dtype_valid[start:stop]
+        )
+        positive = nonnegative & (sums > 0) & valid_structure
 
         for selection in selections:
             stats = result["selections"][selection["name"]]
@@ -348,6 +392,12 @@ def _pdf_partition(frame, selections, grid, batch_rows, sample_probability, edge
             stats["nonfinite"] += int((selected & right_length & ~finite).sum())
             stats["negative"] += int((selected & finite & ~(matrix >= 0).all(axis=1)).sum())
             stats["nonpositive_sum"] += int((selected & nonnegative & ~(sums > 0)).sum())
+            stats["invalid_xvals"] += int(
+                (selected & ~xvals_valid[start:stop]).sum()
+            )
+            stats["invalid_yvals_dtype"] += int(
+                (selected & ~yvals_dtype_valid[start:stop]).sum()
+            )
             if valid.any():
                 normalized = matrix[valid] / sums[valid, None]
                 stats["stack"] += normalized.sum(axis=0)
@@ -374,10 +424,40 @@ def _pdf_partition(frame, selections, grid, batch_rows, sample_probability, edge
 
 
 def _nested_pdf_partition(
-    frame, pdf_column, selections, grid, batch_rows, sample_probability, edge_bins
+    frame,
+    pdf_column,
+    selections,
+    grid,
+    batch_rows,
+    sample_probability,
+    edge_bins,
+    selection_masks=None,
 ):
     """Adapt one LSDB NestedFrame partition to the common PDF QA reducer."""
     nested = frame[pdf_column]
+    xvals, yvals = [], []
+    for index in range(len(frame)):
+        value = nested.iloc[index]
+        try:
+            xvals.append(value["xvals"])
+            yvals.append(value["yvals"])
+        except (KeyError, TypeError):
+            xvals.append(None)
+            yvals.append(None)
+
+    xvals_valid = []
+    yvals_dtype_valid = []
+    reference_grid = np.asarray(grid, dtype=np.float32)
+    for row_xvals, row_yvals in zip(xvals, yvals):
+        row_grid = np.asarray(row_xvals) if row_xvals is not None else np.asarray([])
+        row_pdf = np.asarray(row_yvals) if row_yvals is not None else np.asarray([])
+        xvals_valid.append(
+            row_grid.shape == grid.shape
+            and row_grid.dtype == np.float32
+            and np.array_equal(row_grid, reference_grid)
+        )
+        yvals_dtype_valid.append(row_pdf.dtype == np.float32)
+
     flat = pd.DataFrame(
         {
             "objectId": frame["objectId"].to_numpy(),
@@ -385,11 +465,53 @@ def _nested_pdf_partition(
                 column: frame[column].to_numpy()
                 for column in _selection_columns(selections)
             },
-            "pdf": [nested.iloc[index]["yvals"] for index in range(len(frame))],
+            "pdf": yvals,
+            "_nested_xvals_valid": xvals_valid,
+            "_nested_yvals_dtype_valid": yvals_dtype_valid,
         }
     )
     return _pdf_partition(
-        flat, selections, grid, batch_rows, sample_probability, edge_bins
+        flat,
+        selections,
+        grid,
+        batch_rows,
+        sample_probability,
+        edge_bins,
+        selection_masks,
+    )
+
+
+def _nested_partition_bundle(
+    frame,
+    pdf_column,
+    selections,
+    edges,
+    grid,
+    batch_rows,
+    sample_probability,
+    edge_bins,
+):
+    """Reduce scalar and Nested-PDF QA from one physical partition read."""
+    selection_masks = _selection_masks(frame, selections)
+    return (
+        _summary_partition(
+            frame,
+            selections,
+            edges,
+            grid,
+            sample_probability,
+            selection_masks,
+        ),
+        _nested_pdf_partition(
+            frame,
+            pdf_column,
+            selections,
+            grid,
+            batch_rows,
+            sample_probability,
+            edge_bins,
+            selection_masks,
+        ),
     )
 
 
@@ -409,7 +531,8 @@ def _reduce_pdfs(parts, selections, n_bins):
             _add_digest(dst["id"], src["id"])
             for key in (
                 "rows", "valid", "invalid", "wrong_length", "nonfinite", "negative",
-                "nonpositive_sum", "sum_count",
+                "nonpositive_sum", "invalid_xvals", "invalid_yvals_dtype",
+                "sum_count",
             ):
                 dst[key] += src[key]
             for key in ("sum_total", "sum_sumsq", "edge_mass_total"):
@@ -472,7 +595,7 @@ def _crosscheck(summary: pd.DataFrame, pdf: pd.DataFrame, tolerance: float) -> p
 
 
 def run_qa(config: dict) -> QAResult:
-    """Run scalable companion QA or bounded-partition nested-HATS QA."""
+    """Run scalable companion-Parquet or nested-HATS QA."""
     paths = config["paths"]
     summary_path = Path(paths["summary_hats"])
     if not summary_path.exists():
@@ -573,9 +696,11 @@ def run_qa(config: dict) -> QAResult:
             split_row_groups=True,
         )
     else:
-        first_pdf_list_size = len(grid)
+        first_pdf_list_size = None
         nested_columns = list(dict.fromkeys(["objectId", *selection_columns, pdf_column]))
-        pdf_ddf = base_ddf[nested_columns]
+        combined_columns = list(dict.fromkeys([*summary_columns, *nested_columns]))
+        combined_ddf = base_ddf[combined_columns]
+        pdf_ddf = combined_ddf[nested_columns]
 
     target_sample = int(metric_settings.get("crosscheck_sample_size", 10_000))
     if target_sample <= 0:
@@ -592,11 +717,13 @@ def run_qa(config: dict) -> QAResult:
     if not grid[0] <= low_z_threshold <= grid[-1]:
         raise ValueError("metrics.low_z_threshold must lie inside the redshift grid")
 
-    summary_tasks = [
-        delayed(_summary_partition)(part, selections, edges, grid, sample_probability)
-        for part in summary_ddf.to_delayed()
-    ]
     if pdf_layout == "companion":
+        summary_tasks = [
+            delayed(_summary_partition)(
+                part, selections, edges, grid, sample_probability
+            )
+            for part in summary_ddf.to_delayed()
+        ]
         pdf_tasks = [
             delayed(_pdf_partition)(
                 part, selections, grid, batch_rows, sample_probability, edge_bins
@@ -604,18 +731,23 @@ def run_qa(config: dict) -> QAResult:
             for part in pdf_ddf.to_delayed()
         ]
     else:
-        pdf_tasks = [
-            delayed(_nested_pdf_partition)(
+        # One delayed bundle per HATS partition guarantees that scalar and PDF
+        # diagnostics reuse the same projected partition and the same masks.
+        bundles = [
+            delayed(_nested_partition_bundle)(
                 part,
                 pdf_column,
                 selections,
+                edges,
                 grid,
                 batch_rows,
                 sample_probability,
                 edge_bins,
             )
-            for part in pdf_ddf.to_delayed()
+            for part in combined_ddf.to_delayed()
         ]
+        summary_tasks = [bundle[0] for bundle in bundles]
+        pdf_tasks = [bundle[1] for bundle in bundles]
     summary_task = _tree_reduce(summary_tasks, _reduce_summary, selections, len(grid))
     pdf_task = _tree_reduce(pdf_tasks, _reduce_pdfs, selections, len(grid))
     exact_uniqueness = bool(metric_settings.get("exact_id_uniqueness", False))
@@ -696,6 +828,8 @@ def run_qa(config: dict) -> QAResult:
             "non-finite": pdf_stats["nonfinite"],
             "negative": pdf_stats["negative"],
             "non-positive sum": pdf_stats["nonpositive_sum"],
+            "invalid nested xvals": pdf_stats["invalid_xvals"],
+            "non-float32 nested yvals": pdf_stats["invalid_yvals_dtype"],
             "PDF sum mean": sum_mean,
             "PDF sum std": sum_std,
             "PDF sum min": pdf_stats["sum_min"] if pdf_stats["sum_count"] else np.nan,
@@ -723,12 +857,10 @@ def run_qa(config: dict) -> QAResult:
     checks = [
         ("xvals are finite and strictly increasing", bool(np.isfinite(grid).all() and (differences > 0).all()), f"{len(grid)} bins"),
         ("xvals metadata is valid", grid_index_valid, grid_index_detail),
-        ("nested xvals use float32", pdf_layout != "nested" or nested_grid_dtype_valid, str(nested_grid_dtype_valid)),
         ("expected PDF bin count", expected_bins is None or len(grid) == expected_bins, f"{len(grid)} / {expected_bins}"),
-        ("PDF schema uses the expected list size", first_pdf_list_size == len(grid), f"{first_pdf_list_size} / {len(grid)}"),
         ("expected redshift minimum", expected_z_min is None or np.isclose(grid[0], expected_z_min), f"{grid[0]} / {expected_z_min}"),
         ("expected redshift maximum", expected_z_max is None or np.isclose(grid[-1], expected_z_max), f"{grid[-1]} / {expected_z_max}"),
-        ("HATS rows match metadata when fully scanned", not full_catalog_scan or summary["id"]["count"] == expected_rows, f"sampled={summary['id']['count']:,}; metadata={expected_rows:,}; full={full_catalog_scan}"),
+        ("HATS rows match metadata when fully scanned", not full_catalog_scan or summary["id"]["count"] == expected_rows, f"observed={summary['id']['count']:,}; metadata={expected_rows:,}; full={full_catalog_scan}"),
         ("HATS and PDF row counts match", summary["id"]["count"] == pdf["id"]["count"], f"{summary['id']['count']:,} / {pdf['id']['count']:,}"),
         ("HATS and PDF objectId fingerprints match", _id_equal(summary["id"], pdf["id"]), "count + 3 commutative uint64 digests"),
         ("no missing objectId", summary["id"]["missing"] == 0 and pdf["id"]["missing"] == 0, f"HATS={summary['id']['missing']:,}; PDF={pdf['id']['missing']:,}"),
@@ -736,6 +868,18 @@ def run_qa(config: dict) -> QAResult:
         ("credible intervals are finite and ordered", all_summary["interval_invalid"] + all_summary["interval_nonfinite"] == 0, f"{all_summary['interval_invalid']:,} unordered; {all_summary['interval_nonfinite']:,} non-finite"),
         ("credible intervals lie inside the redshift grid", all_summary["interval_outside"] == 0, f"{all_summary['interval_outside']:,} outside"),
     ]
+    if pdf_layout == "nested":
+        checks.append((
+            "nested reference xvals use float32",
+            nested_grid_dtype_valid,
+            str(nested_grid_dtype_valid),
+        ))
+    else:
+        checks.append((
+            "companion PDF schema uses the expected list size",
+            first_pdf_list_size == len(grid),
+            f"{first_pdf_list_size} / {len(grid)}",
+        ))
     if exact_uniqueness:
         checks.extend([
             ("HATS objectId values are unique", summary_unique == summary["id"]["count"], f"{summary_unique:,} unique / {summary['id']['count']:,} non-null"),
@@ -754,6 +898,24 @@ def run_qa(config: dict) -> QAResult:
             (f"[{label}] objectId fingerprints match", _id_equal(selected_summary["id"], selected_pdf["id"]), "count + 3 commutative uint64 digests"),
             (f"[{label}] PDF invalid fraction within limit", invalid_fraction <= max_bad_pdf, f"{invalid_fraction:.3g} <= {max_bad_pdf:.3g}"),
         ])
+        if pdf_layout == "nested":
+            checks.extend([
+                (
+                    f"[{label}] nested xvals match the reference float32 grid",
+                    selected_pdf["invalid_xvals"] == 0,
+                    f"{selected_pdf['invalid_xvals']:,} invalid",
+                ),
+                (
+                    f"[{label}] nested yvals use float32",
+                    selected_pdf["invalid_yvals_dtype"] == 0,
+                    f"{selected_pdf['invalid_yvals_dtype']:,} invalid",
+                ),
+                (
+                    f"[{label}] nested yvals use the expected list size",
+                    selected_pdf["wrong_length"] == 0,
+                    f"{selected_pdf['wrong_length']:,} invalid",
+                ),
+            ])
         for column in POINT_COLUMNS:
             values = selected_summary["points"][column]
             outside_fraction = values["outside"] / max(1, values["finite"])
@@ -796,6 +958,7 @@ def run_qa(config: dict) -> QAResult:
         config=config,
         paths=paths_report,
         grid=grid_report,
+        grid_values=grid.copy(),
         checks=pd.DataFrame(checks, columns=["check", "passed", "detail"]).set_index("check"),
         global_metrics=pd.DataFrame(metric_rows).set_index(["selection", "estimator"]),
         pdf_health=pd.DataFrame(health_rows).set_index("selection"),
@@ -836,17 +999,13 @@ def _set_robust_y_range(axis, curves, grid, quantile, headroom):
     )
 
 
+def _plot_grid(result: QAResult) -> np.ndarray:
+    return np.asarray(result.grid_values)
+
+
 def plot_nz(result: QAResult):
     """Plot counts and normalized N(z) for each configured selection."""
-    pdf_settings = result.config.get("pdf", {})
-    if pdf_settings.get("layout", "companion") == "nested":
-        catalog = lsdb.read_hats(Path(result.config["paths"]["summary_hats"]))
-        pdf_column = pdf_settings["column"]
-        first = catalog[[pdf_column]].head(1)
-        grid = np.asarray(first[pdf_column].iloc[0]["xvals"])
-    else:
-        grid_path = Path(result.config["paths"]["pdf_dir"]) / result.config["paths"].get("xvals_file", "xvals.parquet")
-        grid = pq.read_table(grid_path, columns=["z"]).column("z").to_numpy()
+    grid = _plot_grid(result)
     selections = result.config["selections"]
     plot_settings = result.config.get("plots", {})
     ymax_quantile = float(plot_settings.get("nz_ymax_quantile", 0.995))
@@ -877,9 +1036,70 @@ def plot_nz(result: QAResult):
         _set_robust_y_range(axes[row, 0], count_curves, grid, ymax_quantile, ymax_headroom)
         _set_robust_y_range(axes[row, 1], normalized_curves, grid, ymax_quantile, ymax_headroom)
         axes[row, 0].set(title=f"{label}: HATS point-estimate N(z)", xlabel="Photometric redshift", ylabel="Objects per bin")
-        axes[row, 1].set(title=f"{label}: HATS estimates vs parquet PDF stack", xlabel="Photometric redshift", ylabel="Fraction per bin")
+        axes[row, 1].set(title=f"{label}: HATS estimates vs PDF stack", xlabel="Photometric redshift", ylabel="Fraction per bin")
         axes[row, 0].legend()
         axes[row, 1].legend()
+    return fig
+
+
+def plot_zmean_selections(result: QAResult):
+    """Plot one HATS zmean count distribution per configured science sample."""
+    selections = result.config.get("selections", [])
+    if not selections:
+        raise ValueError("At least one configured selection is required")
+
+    grid = _plot_grid(result)
+    plot_settings = result.config.get("plots", {})
+    ymax_quantile = float(plot_settings.get("nz_ymax_quantile", 0.995))
+    ymax_headroom = float(plot_settings.get("nz_ymax_headroom", 1.10))
+    if not 0 < ymax_quantile <= 1:
+        raise ValueError("plots.nz_ymax_quantile must be in (0, 1]")
+    if ymax_headroom <= 1:
+        raise ValueError("plots.nz_ymax_headroom must be greater than 1")
+
+    ncols = 2
+    nrows = int(np.ceil(len(selections) / ncols))
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(15, 4.5 * nrows),
+        sharex=True,
+        squeeze=False,
+        constrained_layout=True,
+    )
+    full_scan = result.paths["HATS partitions inspected"] == result.paths["HATS partitions"]
+    scope = "global" if full_scan else "bounded-partition"
+    for axis, selection in zip(axes.flat, selections):
+        name = selection["name"]
+        if name not in result.nz:
+            raise ValueError(f"Selection {name!r} is absent from QA results")
+        label = selection.get("label", name)
+        values = np.asarray(result.nz[name]["zmean"], dtype=float)
+        curve_label = "HATS zmean"
+        axis.step(
+            grid,
+            values,
+            where="mid",
+            color="#D55E00",
+            linewidth=1.8,
+            label=curve_label,
+        )
+        _set_robust_y_range(
+            axis,
+            [(curve_label, values)],
+            grid,
+            ymax_quantile,
+            ymax_headroom,
+        )
+        axis.set(
+            title=label,
+            xlabel="Mean photometric redshift (zmean)",
+            ylabel="Objects per bin",
+        )
+        axis.legend(title=f"N in plotted range = {int(values.sum()):,}")
+    for axis in axes.flat[len(selections):]:
+        axis.set_visible(False)
+    fig.suptitle(f"{scope.capitalize()} zmean distributions by science sample")
     return fig
 
 

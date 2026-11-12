@@ -18,10 +18,14 @@ The first two configurations retain the companion layout used by DP1-v2 and
 DP2-v2. All DP2-v3 configurations read `<algorithm>_ens_interp` directly from
 the final HATS catalog.
 
-DP2-v3 defaults to `metrics.max_hats_partitions: 4`. Point-estimate and PDF
-metrics are therefore explicitly sample diagnostics, not catalog-wide N(z)
-measurements. Increase the limit deliberately or set it to `0` for a full
-distributed scan.
+DP2-v3 defaults to `metrics.max_hats_partitions: 0`, which performs a full
+distributed catalog scan. Consequently, its point-estimate metrics, stacked
+PDFs, and N(z) curves are global. A positive value remains available only for
+explicit development runs where bounded, non-global diagnostics are desired.
+The DP2-v3 SLURM profiles start with one adaptive worker and allow the scan to
+begin under cluster contention. Each worker uses one process, two threads, and
+40 GiB so at most two memory-intensive Nested-PDF partition tasks share that
+allocation.
 
 From the repository root, start Jupyter with the selected configuration:
 
@@ -70,6 +74,38 @@ nested DP2-v3 layout they are in the same HATS row. Multiple filters within a
 selection are combined with logical AND.
 `minimum` is inclusive and `maximum` is exclusive.
 
+All DP2-v3 configurations also select `refExtendedness == 1` as an extended-
+source galaxy proxy and define its intersection with the magnitude cut.
+Point-like objects (`0`) and null, unclassified values are excluded. The
+notebook presents all four samples in a dedicated 2-by-2 `zmean` figure as well
+as in the standard multi-estimator panels:
+
+```yaml
+  - name: galaxies
+    label: "Extended sources (galaxy proxy)"
+    filters:
+      - column: refExtendedness
+        minimum: 1.0
+        maximum: 2.0
+        finite: true
+  - name: galaxies_i_lt_26
+    label: "Extended sources with i_gaap1p0Mag_sfd < 26"
+    filters:
+      - column: refExtendedness
+        minimum: 1.0
+        maximum: 2.0
+        finite: true
+      - column: i_gaap1p0Mag_sfd
+        maximum: 26.0
+        finite: true
+```
+
+This is a morphology-based proxy, not a truth-level star/galaxy label. It is
+computed with the other selections in the same distributed catalog pass. In
+Nested mode, scalar and PDF diagnostics are bundled into one task per HATS
+partition, so the four samples do not trigger four reads and the scalar/PDF
+branches do not trigger separate partition reads.
+
 ## N(z) display range and low-redshift peaks
 
 The standard configurations report `low_z_fraction` for `z <= 0.1` and the
@@ -93,8 +129,12 @@ plots:
 The notebook reports:
 
 - schema, grid, row-count, coordinate, interval, and PDF validity checks;
+- full-row Nested checks for a common float32 `xvals` grid, float32 `yvals`,
+  expected vector length, finite non-negative values, and positive PDF sums;
 - commutative `objectId` fingerprints between the scalar and PDF projections;
 - global moments and histogram percentiles for point estimates and stacked PDFs;
+- a four-panel `zmean` comparison for the uncut, magnitude-limited,
+  extended-source, and combined DP2-v3 samples;
 - PDF raw-sum diagnostics before per-object normalization;
 - interval-width and redshift-edge diagnostics;
 - total-variation and Wasserstein distances between global N(z) curves;
@@ -111,8 +151,7 @@ integration check, not a truth-redshift metric.
 Set `paths.report_dir` to save the compact result tables as CSV/JSON. No full
 object catalog or PDF matrix is collected into notebook memory. The only
 collected objects are fixed-size reductions and the configured deterministic
-sample; nested DP2-v3 QA also bounds the number of source partitions by
-default.
+cross-check sample. DP2-v3 scans every HATS partition by default.
 
 Required packages are `lsdb`, `nested-pandas`, `dask`, `distributed`,
 `dask-jobqueue` for SLURM, `pandas`, `numpy`, `pyarrow`, `matplotlib`, and

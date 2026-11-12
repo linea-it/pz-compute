@@ -43,7 +43,7 @@ and does not create a duplicate `<hats_dir>.pdf/` companion. Keep the Stage 2
 HDF5 tree through validation and profiling, especially for the first nested
 production run.
 
-For the optional bounded-partition notebook QA, start Jupyter with:
+For the optional full-catalog notebook QA, start Jupyter with:
 
 ```bash
 PZ_QA_CONFIG=doc/notebooks/config/dp2-v3-dnf.yaml jupyter lab

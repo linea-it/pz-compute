@@ -47,7 +47,7 @@ and does not retain a duplicate `<hats_dir>.pdf/` tree. Keep the Stage 2 HDF5
 tree through validation because this test workflow may still require
 investigation of BPZ warnings.
 
-For the optional bounded-partition notebook QA, start Jupyter with:
+For the optional full-catalog notebook QA, start Jupyter with:
 
 ```bash
 PZ_QA_CONFIG=doc/notebooks/config/dp2-v3-bpz-test.yaml jupyter lab
