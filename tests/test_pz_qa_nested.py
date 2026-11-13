@@ -121,6 +121,7 @@ def test_nested_bundle_reduces_scalars_and_pdfs_from_the_same_partition():
         selections,
         edges,
         grid64,
+        low_z_threshold=0.1,
         batch_rows=2,
         sample_probability=1.0,
         edge_bins=1,
@@ -128,6 +129,8 @@ def test_nested_bundle_reduces_scalars_and_pdfs_from_the_same_partition():
 
     assert summary["selections"]["all"]["rows"] == 2
     assert pdf["selections"]["all"]["rows"] == 2
+    assert summary["selections"]["all"]["points"]["zmode"]["low_z"] == 1
+    assert summary["selections"]["all"]["points"]["zmean"]["low_z"] == 0
     assert summary["selections"]["galaxies_i_lt_26"]["rows"] == 1
     assert pdf["selections"]["galaxies_i_lt_26"]["rows"] == 1
 
@@ -216,7 +219,7 @@ def test_dp2_v3_qa_configs_use_full_nested_layout():
             ROOT / "doc" / "notebooks" / "config" / f"dp2-v3-{algorithm}.yaml"
         )
         assert config["pdf"]["layout"] == "nested"
-        assert config["metrics"]["max_hats_partitions"] == 0
+        assert config["metrics"]["max_pdf_partitions"] == 4
         assert "pdf_dir" not in config["paths"]
         assert config["cluster"]["minimum_jobs"] == 1
         assert config["cluster"]["cores"] == 2

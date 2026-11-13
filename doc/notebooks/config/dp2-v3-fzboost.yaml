@@ -45,8 +45,9 @@ selections:
         finite: true
 
 metrics:
-  # Zero means a full catalog scan. Global QA metrics must remain global.
-  max_hats_partitions: 0
+  # Scalar science metrics scan the complete catalog. Nested-PDF integrity QA
+  # uses the first partitions only: reproducible, but not representative science.
+  max_pdf_partitions: 4
   pdf_batch_rows: 10000
   pdf_edge_bins: 1
   low_z_threshold: 0.1

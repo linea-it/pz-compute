@@ -31,10 +31,14 @@ start at `<hats_collection>/pz_summary/dataset`, for example:
   pz-fzboost-gaap1p0-clipped-hats/pz_summary/dataset
 ```
 
-DP2-v3 defaults to `metrics.max_hats_partitions: 0`, which performs a full
-distributed catalog scan. Consequently, its point-estimate metrics, stacked
-PDFs, and N(z) curves are global. A positive value remains available only for
-explicit development runs where bounded, non-global diagnostics are desired.
+DP2-v3 always performs a full distributed scan of the scalar HATS columns used
+by the scientific redshift distributions and selections. Nested-PDF integrity
+checks default to `metrics.max_pdf_partitions: 4`, because reading the repeated
+601-value `xvals` and `yvals` arrays for every object is far more expensive.
+PDF-derived results are explicitly technical subset diagnostics, never global
+scientific N(z) measurements. The Nested subset consists of the first
+configured HATS partitions for reproducibility; because HATS partitions are
+spatial, it is not claimed to be statistically representative.
 The DP2-v3 SLURM profiles start with one adaptive worker and allow the scan to
 begin under cluster contention. Each worker uses one process, two threads, and
 40 GiB so at most two memory-intensive Nested-PDF partition tasks share that
@@ -115,16 +119,20 @@ as in the standard multi-estimator panels:
 
 This is a morphology-based proxy, not a truth-level star/galaxy label. It is
 computed with the other selections in the same distributed catalog pass. In
-Nested mode, scalar and PDF diagnostics are bundled into one task per HATS
-partition, so the four samples do not trigger four reads and the scalar/PDF
-branches do not trigger separate partition reads.
+Nested mode, the four masks share one global scalar pass rather than triggering
+four reads. Inside the bounded PDF-QA subset, scalar and PDF diagnostics are
+bundled into one task per HATS partition so their comparisons use identical
+rows without duplicating the heavy Nested read.
 
 ## N(z) display range and low-redshift peaks
 
 The standard configurations report `low_z_fraction` for `z <= 0.1` and the
-fractions in the first and last redshift-grid bins. These metrics help
-distinguish a concentration of point-estimate modes at `z = 0` from integrated
-posterior probability in the stacked PDFs.
+fractions in the first and last redshift-grid bins. The scalar fraction is
+counted directly from every finite point estimate in the complete HATS catalog;
+the PDF value is posterior mass on grid points at or below the threshold within
+the explicitly reported PDF-QA coverage. These metrics help distinguish a
+concentration of point-estimate modes at `z = 0` from posterior probability in
+the stacked PDFs without presenting the bounded DP2-v3 PDF subset as global.
 
 N(z) panels use a robust y-axis display range so isolated boundary spikes do
 not flatten the scientifically useful part of the curves. Off-scale maxima are
@@ -142,16 +150,22 @@ plots:
 The notebook reports:
 
 - schema, grid, row-count, coordinate, interval, and PDF validity checks;
-- full-row Nested checks for a common float32 `xvals` grid, float32 `yvals`,
-  expected vector length, finite non-negative values, and positive PDF sums;
+- within the configured PDF-QA partitions, full-row Nested checks for a common
+  float32 `xvals` grid, float32 `yvals`, expected vector length, finite
+  non-negative values, and positive PDF sums;
 - commutative `objectId` fingerprints between the scalar and PDF projections;
-- global moments and histogram percentiles for point estimates and stacked PDFs;
+- global moments and histogram percentiles for scalar point estimates;
 - a four-panel `zmean` comparison for the uncut, magnitude-limited,
   extended-source, and combined DP2-v3 samples;
 - PDF raw-sum diagnostics before per-object normalization;
-- interval-width and redshift-edge diagnostics;
-- total-variation and Wasserstein distances between global N(z) curves;
-- a deterministic sampled reconstruction of all five HATS summaries from PDFs.
+- complete-catalog interval-validity and redshift-edge diagnostics, with the
+  interval-width median explicitly identified as a deterministic sample;
+- total-variation and Wasserstein distances between point estimates and PDFs
+  on identical PDF-QA rows, emitted only when the selected identifier
+  fingerprints match and all PDFs and scalar values are valid on the common
+  grid;
+- a deterministic sampled reconstruction of all five HATS summaries from valid
+  PDFs and their matching HATS rows.
 
 The fingerprints make cross-product comparison scalable without a catalog-wide
 shuffle. They test equality of the identifier multisets with three independent
@@ -164,7 +178,8 @@ integration check, not a truth-redshift metric.
 Set `paths.report_dir` to save the compact result tables as CSV/JSON. No full
 object catalog or PDF matrix is collected into notebook memory. The only
 collected objects are fixed-size reductions and the configured deterministic
-cross-check sample. DP2-v3 scans every HATS partition by default.
+cross-check sample. DP2-v3 scans every HATS partition for scalar science
+metrics and only the configured subset for heavy Nested-PDF diagnostics.
 
 Required packages are `lsdb`, `nested-pandas`, `dask`, `distributed`,
 `dask-jobqueue` for SLURM, `pandas`, `numpy`, `pyarrow`, `matplotlib`, and

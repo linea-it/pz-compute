@@ -45,7 +45,7 @@ and this DP2 v3 route does not create a duplicate `<hats_dir>.pdf/` companion.
 Stage 2 HDF5 files remain until this external validation and the resource
 profiles below are complete; retain them for the first nested production run.
 
-For the optional full-catalog notebook QA, start Jupyter with:
+For the optional full-catalog science notebook QA, start Jupyter with:
 
 ```bash
 PZ_QA_CONFIG=doc/notebooks/config/dp2-v3-fzboost.yaml jupyter lab

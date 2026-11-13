@@ -40,6 +40,7 @@ class QAResult:
     grid_values: np.ndarray
     checks: pd.DataFrame
     global_metrics: pd.DataFrame
+    pdf_metrics: pd.DataFrame
     pdf_health: pd.DataFrame
     distribution_distances: pd.DataFrame
     crosscheck: pd.DataFrame
@@ -194,7 +195,7 @@ def _empty_point_stats(n_bins: int) -> dict:
         "points": {
             name: {
                 "finite": 0, "inside": 0, "outside": 0, "lower_edge": 0,
-                "upper_edge": 0, "sum": 0.0, "sumsq": 0.0,
+                "upper_edge": 0, "low_z": 0, "sum": 0.0, "sumsq": 0.0,
                 "hist": np.zeros(n_bins, dtype=np.int64),
             }
             for name in POINT_COLUMNS
@@ -203,7 +204,13 @@ def _empty_point_stats(n_bins: int) -> dict:
 
 
 def _summary_partition(
-    frame, selections, edges, grid, sample_probability, selection_masks=None
+    frame,
+    selections,
+    edges,
+    grid,
+    low_z_threshold,
+    sample_probability,
+    selection_masks=None,
 ):
     if selection_masks is None:
         selection_masks = _selection_masks(frame, selections)
@@ -253,6 +260,7 @@ def _summary_partition(
                 outside=int((~in_grid).sum()),
                 lower_edge=int(hist[0]),
                 upper_edge=int(hist[-1]),
+                low_z=int((finite_values <= low_z_threshold).sum()),
                 sum=float(finite_values.sum()),
                 sumsq=float(np.square(finite_values).sum()),
                 hist=hist,
@@ -286,7 +294,10 @@ def _reduce_summary(parts, selections, n_bins):
                 dst[key] += src[key]
             dst["width_values"].extend(src["width_values"])
             for column in POINT_COLUMNS:
-                for key in ("finite", "inside", "outside", "lower_edge", "upper_edge"):
+                for key in (
+                    "finite", "inside", "outside", "lower_edge", "upper_edge",
+                    "low_z",
+                ):
                     dst["points"][column][key] += src["points"][column][key]
                 for key in ("sum", "sumsq"):
                     dst["points"][column][key] += src["points"][column][key]
@@ -485,6 +496,7 @@ def _nested_partition_bundle(
     selections,
     edges,
     grid,
+    low_z_threshold,
     batch_rows,
     sample_probability,
     edge_bins,
@@ -497,6 +509,7 @@ def _nested_partition_bundle(
             selections,
             edges,
             grid,
+            low_z_threshold,
             sample_probability,
             selection_masks,
         ),
@@ -668,17 +681,9 @@ def run_qa(config: dict) -> QAResult:
 
     expected_rows = _read_hats_nrows(catalog)
     metric_settings = config.get("metrics", {})
-    base_ddf = catalog.to_dask_dataframe()
-    max_hats_partitions = int(metric_settings.get("max_hats_partitions", 0))
-    if max_hats_partitions < 0:
-        raise ValueError("metrics.max_hats_partitions must be non-negative")
-    if pdf_layout == "nested" and max_hats_partitions:
-        partitions_used = min(max_hats_partitions, catalog.npartitions)
-        base_ddf = base_ddf.partitions[:partitions_used]
-    else:
-        partitions_used = catalog.npartitions
-    full_catalog_scan = partitions_used == catalog.npartitions
-    summary_ddf = base_ddf[summary_columns]
+    # Project at the LSDB layer so the global scan never reads the large Nested
+    # PDF column and Parquet can skip those pages entirely.
+    summary_ddf = catalog[summary_columns].to_dask_dataframe()
 
     if pdf_layout == "companion":
         pdf_files = sorted(pdf_dir.glob(paths.get("pdf_glob", "*-pdf-part*.parquet")))
@@ -696,18 +701,35 @@ def run_qa(config: dict) -> QAResult:
             columns=pdf_columns,
             split_row_groups=True,
         )
+        pdf_partitions_used = pdf_ddf.npartitions
     else:
         first_pdf_list_size = None
+        max_pdf_partitions = int(metric_settings.get("max_pdf_partitions", 4))
+        if max_pdf_partitions <= 0:
+            raise ValueError("metrics.max_pdf_partitions must be positive")
+        pdf_partitions_used = min(max_pdf_partitions, catalog.npartitions)
         nested_columns = list(dict.fromkeys(["objectId", *selection_columns, pdf_column]))
         combined_columns = list(dict.fromkeys([*summary_columns, *nested_columns]))
-        combined_ddf = base_ddf[combined_columns]
+        combined_ddf = (
+            catalog[combined_columns]
+            .to_dask_dataframe()
+            .partitions[:pdf_partitions_used]
+        )
         pdf_ddf = combined_ddf[nested_columns]
 
     target_sample = int(metric_settings.get("crosscheck_sample_size", 10_000))
     if target_sample <= 0:
         raise ValueError("metrics.crosscheck_sample_size must be positive")
-    estimated_qa_rows = expected_rows * partitions_used / max(1, catalog.npartitions)
-    sample_probability = min(1.0, target_sample / max(1, estimated_qa_rows))
+    global_sample_probability = min(1.0, target_sample / max(1, expected_rows))
+    if pdf_layout == "nested":
+        estimated_pdf_rows = (
+            expected_rows * pdf_partitions_used / max(1, catalog.npartitions)
+        )
+        pdf_sample_probability = min(
+            1.0, target_sample / max(1, estimated_pdf_rows)
+        )
+    else:
+        pdf_sample_probability = global_sample_probability
     batch_rows = int(metric_settings.get("pdf_batch_rows", 10_000))
     edge_bins = int(metric_settings.get("pdf_edge_bins", 1))
     low_z_threshold = float(metric_settings.get("low_z_threshold", 0.1))
@@ -718,16 +740,30 @@ def run_qa(config: dict) -> QAResult:
     if not grid[0] <= low_z_threshold <= grid[-1]:
         raise ValueError("metrics.low_z_threshold must lie inside the redshift grid")
 
+    summary_tasks = [
+        delayed(_summary_partition)(
+            part,
+            selections,
+            edges,
+            grid,
+            low_z_threshold,
+            global_sample_probability,
+        )
+        for part in summary_ddf.to_delayed()
+    ]
+    summary_task = _tree_reduce(
+        summary_tasks, _reduce_summary, selections, len(grid)
+    )
+
     if pdf_layout == "companion":
-        summary_tasks = [
-            delayed(_summary_partition)(
-                part, selections, edges, grid, sample_probability
-            )
-            for part in summary_ddf.to_delayed()
-        ]
         pdf_tasks = [
             delayed(_pdf_partition)(
-                part, selections, grid, batch_rows, sample_probability, edge_bins
+                part,
+                selections,
+                grid,
+                batch_rows,
+                pdf_sample_probability,
+                edge_bins,
             )
             for part in pdf_ddf.to_delayed()
         ]
@@ -741,35 +777,56 @@ def run_qa(config: dict) -> QAResult:
                 selections,
                 edges,
                 grid,
+                low_z_threshold,
                 batch_rows,
-                sample_probability,
+                pdf_sample_probability,
                 edge_bins,
             )
             for part in combined_ddf.to_delayed()
         ]
-        summary_tasks = [bundle[0] for bundle in bundles]
+        pdf_summary_tasks = [bundle[0] for bundle in bundles]
         pdf_tasks = [bundle[1] for bundle in bundles]
-    summary_task = _tree_reduce(summary_tasks, _reduce_summary, selections, len(grid))
+        pdf_summary_task = _tree_reduce(
+            pdf_summary_tasks, _reduce_summary, selections, len(grid)
+        )
     pdf_task = _tree_reduce(pdf_tasks, _reduce_pdfs, selections, len(grid))
     exact_uniqueness = bool(metric_settings.get("exact_id_uniqueness", False))
-    if exact_uniqueness:
-        summary, pdf, summary_unique, pdf_unique = dask.compute(
-            summary_task,
-            pdf_task,
-            summary_ddf["objectId"].nunique().to_delayed(),
-            pdf_ddf["objectId"].nunique().to_delayed(),
-        )
-        summary_unique, pdf_unique = int(summary_unique), int(pdf_unique)
+    if pdf_layout == "companion":
+        if exact_uniqueness:
+            summary, pdf, summary_unique, pdf_unique = dask.compute(
+                summary_task,
+                pdf_task,
+                summary_ddf["objectId"].nunique().to_delayed(),
+                pdf_ddf["objectId"].nunique().to_delayed(),
+            )
+            summary_unique, pdf_unique = int(summary_unique), int(pdf_unique)
+        else:
+            summary, pdf = dask.compute(summary_task, pdf_task)
+            summary_unique = pdf_unique = None
+        pdf_summary = summary
     else:
-        summary, pdf = dask.compute(summary_task, pdf_task)
-        summary_unique = pdf_unique = None
+        if exact_uniqueness:
+            summary, pdf_summary, pdf, summary_unique, pdf_unique = dask.compute(
+                summary_task,
+                pdf_summary_task,
+                pdf_task,
+                summary_ddf["objectId"].nunique().to_delayed(),
+                pdf_ddf["objectId"].nunique().to_delayed(),
+            )
+            summary_unique, pdf_unique = int(summary_unique), int(pdf_unique)
+        else:
+            summary, pdf_summary, pdf = dask.compute(
+                summary_task, pdf_summary_task, pdf_task
+            )
+            summary_unique = pdf_unique = None
 
-    metric_rows, health_rows, distance_rows = [], [], []
+    metric_rows, pdf_metric_rows, health_rows, distance_rows = [], [], [], []
     nz = {}
     for selection in selections:
         name = selection["name"]
         label = selection.get("label", name)
         point_stats = summary["selections"][name]
+        pdf_point_stats = pdf_summary["selections"][name]
         pdf_stats = pdf["selections"][name]
         nz[name] = {}
         for column in POINT_COLUMNS:
@@ -782,19 +839,18 @@ def run_qa(config: dict) -> QAResult:
                 "median": _hist_quantile(values["hist"], grid, 0.50),
                 "p84": _hist_quantile(values["hist"], grid, 0.84),
                 "outside_grid_fraction": values["outside"] / max(1, values["finite"]),
-                "low_z_fraction": float(values["hist"][grid <= low_z_threshold].sum()) / max(1, values["finite"]),
+                "low_z_fraction": values["low_z"] / max(1, values["finite"]),
                 "lower_edge_fraction": values["lower_edge"] / max(1, values["finite"]),
                 "upper_edge_fraction": values["upper_edge"] / max(1, values["finite"]),
                 "edge_fraction": (values["lower_edge"] + values["upper_edge"]) / max(1, values["finite"]),
             })
             nz[name][column] = values["hist"].astype(float)
         stack = pdf_stats["stack"]
-        nz[name]["stacked_pdf"] = stack
         if stack.sum():
             normalized_pdf = stack / stack.sum()
             pdf_mean = float((normalized_pdf * grid).sum())
             pdf_std = float(np.sqrt((normalized_pdf * np.square(grid - pdf_mean)).sum()))
-            metric_rows.append({
+            pdf_metric_rows.append({
                 "selection": label, "estimator": "stacked_pdf", "count": pdf_stats["valid"],
                 "mean": pdf_mean, "std": pdf_std,
                 "p16": _hist_quantile(stack, grid, 0.16),
@@ -806,9 +862,26 @@ def run_qa(config: dict) -> QAResult:
                 "upper_edge_fraction": float(normalized_pdf[-1]),
                 "edge_fraction": pdf_stats["edge_mass_total"] / max(1, pdf_stats["valid"]),
             })
+            # Shape distances are meaningful only when both curves represent
+            # exactly the same selected objects. Invalid PDFs, non-finite point
+            # estimates, or point estimates outside the common grid are
+            # reported by integrity checks instead of silently changing the
+            # effective populations being compared here.
+            populations_match = _id_equal(pdf_point_stats["id"], pdf_stats["id"])
+            all_pdfs_valid = pdf_stats["valid"] == pdf_stats["rows"]
             for column in POINT_COLUMNS:
-                point = nz[name][column]
-                if point.sum():
+                point_stats_for_pdf_rows = pdf_point_stats["points"][column]
+                point = point_stats_for_pdf_rows["hist"]
+                all_points_valid = (
+                    point_stats_for_pdf_rows["finite"] == pdf_point_stats["rows"]
+                    and point_stats_for_pdf_rows["outside"] == 0
+                )
+                if (
+                    populations_match
+                    and all_pdfs_valid
+                    and all_points_valid
+                    and point.sum()
+                ):
                     normalized_point = point / point.sum()
                     dz = np.diff(edges)
                     distance_rows.append({
@@ -823,6 +896,7 @@ def run_qa(config: dict) -> QAResult:
         health_rows.append({
             "selection": label,
             "HATS rows": point_stats["rows"],
+            "PDF QA HATS rows": pdf_point_stats["rows"],
             "PDF rows": pdf_stats["rows"],
             "valid PDF fraction": pdf_stats["valid"] / max(1, pdf_stats["rows"]),
             "wrong length": pdf_stats["wrong_length"],
@@ -846,7 +920,7 @@ def run_qa(config: dict) -> QAResult:
         })
 
     tolerance = float(config.get("thresholds", {}).get("summary_pdf_abs_tolerance", 1e-5))
-    crosscheck = _crosscheck(summary["sample"], pdf["sample"], tolerance)
+    crosscheck = _crosscheck(pdf_summary["sample"], pdf["sample"], tolerance)
     unfiltered = [item["name"] for item in selections if not item.get("filters")]
     if not unfiltered:
         raise ValueError("One enabled selection without filters is required for product-level checks")
@@ -861,10 +935,10 @@ def run_qa(config: dict) -> QAResult:
         ("expected PDF bin count", expected_bins is None or len(grid) == expected_bins, f"{len(grid)} / {expected_bins}"),
         ("expected redshift minimum", expected_z_min is None or np.isclose(grid[0], expected_z_min), f"{grid[0]} / {expected_z_min}"),
         ("expected redshift maximum", expected_z_max is None or np.isclose(grid[-1], expected_z_max), f"{grid[-1]} / {expected_z_max}"),
-        ("HATS rows match metadata when fully scanned", not full_catalog_scan or summary["id"]["count"] == expected_rows, f"observed={summary['id']['count']:,}; metadata={expected_rows:,}; full={full_catalog_scan}"),
-        ("HATS and PDF row counts match", summary["id"]["count"] == pdf["id"]["count"], f"{summary['id']['count']:,} / {pdf['id']['count']:,}"),
-        ("HATS and PDF objectId fingerprints match", _id_equal(summary["id"], pdf["id"]), "count + 3 commutative uint64 digests"),
-        ("no missing objectId", summary["id"]["missing"] == 0 and pdf["id"]["missing"] == 0, f"HATS={summary['id']['missing']:,}; PDF={pdf['id']['missing']:,}"),
+        ("global HATS rows match metadata", summary["id"]["count"] == expected_rows, f"observed={summary['id']['count']:,}; metadata={expected_rows:,}"),
+        ("PDF-QA HATS and PDF row counts match", pdf_summary["id"]["count"] == pdf["id"]["count"], f"{pdf_summary['id']['count']:,} / {pdf['id']['count']:,}"),
+        ("PDF-QA HATS and PDF objectId fingerprints match", _id_equal(pdf_summary["id"], pdf["id"]), "count + 3 commutative uint64 digests"),
+        ("no missing objectId", summary["id"]["missing"] == 0 and pdf_summary["id"]["missing"] == 0 and pdf["id"]["missing"] == 0, f"global HATS={summary['id']['missing']:,}; PDF-QA HATS={pdf_summary['id']['missing']:,}; PDF={pdf['id']['missing']:,}"),
         ("coordinates are valid", all_summary["coord_invalid"] == 0, f"{all_summary['coord_invalid']:,} invalid"),
         ("credible intervals are finite and ordered", all_summary["interval_invalid"] + all_summary["interval_nonfinite"] == 0, f"{all_summary['interval_invalid']:,} unordered; {all_summary['interval_nonfinite']:,} non-finite"),
         ("credible intervals lie inside the redshift grid", all_summary["interval_outside"] == 0, f"{all_summary['interval_outside']:,} outside"),
@@ -883,36 +957,38 @@ def run_qa(config: dict) -> QAResult:
         ))
     if exact_uniqueness:
         checks.extend([
-            ("HATS objectId values are unique", summary_unique == summary["id"]["count"], f"{summary_unique:,} unique / {summary['id']['count']:,} non-null"),
-            ("PDF objectId values are unique", pdf_unique == pdf["id"]["count"], f"{pdf_unique:,} unique / {pdf['id']['count']:,} non-null"),
+            ("global HATS objectId values are unique", summary_unique == summary["id"]["count"], f"{summary_unique:,} unique / {summary['id']['count']:,} non-null"),
+            ("PDF-QA objectId values are unique", pdf_unique == pdf["id"]["count"], f"{pdf_unique:,} unique / {pdf['id']['count']:,} non-null"),
         ])
     max_nonfinite = float(thresholds.get("max_nonfinite_point_fraction", 0.0))
     for selection in selections:
         name = selection["name"]
         label = selection.get("label", name)
         selected_summary = summary["selections"][name]
+        selected_pdf_summary = pdf_summary["selections"][name]
         selected_pdf = pdf["selections"][name]
         invalid_fraction = selected_pdf["invalid"] / max(1, selected_pdf["rows"])
         checks.extend([
-            (f"[{label}] selection is non-empty", selected_summary["rows"] > 0, f"{selected_summary['rows']:,} rows"),
-            (f"[{label}] HATS and PDF rows match", selected_summary["rows"] == selected_pdf["rows"], f"{selected_summary['rows']:,} / {selected_pdf['rows']:,}"),
-            (f"[{label}] objectId fingerprints match", _id_equal(selected_summary["id"], selected_pdf["id"]), "count + 3 commutative uint64 digests"),
-            (f"[{label}] PDF invalid fraction within limit", invalid_fraction <= max_bad_pdf, f"{invalid_fraction:.3g} <= {max_bad_pdf:.3g}"),
+            (f"[{label}] global selection is non-empty", selected_summary["rows"] > 0, f"{selected_summary['rows']:,} rows"),
+            (f"[{label}] PDF-QA selection is non-empty", selected_pdf_summary["rows"] > 0, f"{selected_pdf_summary['rows']:,} rows"),
+            (f"[{label}] PDF-QA HATS and PDF rows match", selected_pdf_summary["rows"] == selected_pdf["rows"], f"{selected_pdf_summary['rows']:,} / {selected_pdf['rows']:,}"),
+            (f"[{label}] PDF-QA objectId fingerprints match", _id_equal(selected_pdf_summary["id"], selected_pdf["id"]), "count + 3 commutative uint64 digests"),
+            (f"[{label}] PDF-QA invalid fraction within limit", invalid_fraction <= max_bad_pdf, f"{invalid_fraction:.3g} <= {max_bad_pdf:.3g}"),
         ])
         if pdf_layout == "nested":
             checks.extend([
                 (
-                    f"[{label}] nested xvals match the reference float32 grid",
+                    f"[{label}] PDF-QA nested xvals match the reference float32 grid",
                     selected_pdf["invalid_xvals"] == 0,
                     f"{selected_pdf['invalid_xvals']:,} invalid",
                 ),
                 (
-                    f"[{label}] nested yvals use float32",
+                    f"[{label}] PDF-QA nested yvals use float32",
                     selected_pdf["invalid_yvals_dtype"] == 0,
                     f"{selected_pdf['invalid_yvals_dtype']:,} invalid",
                 ),
                 (
-                    f"[{label}] nested yvals use the expected list size",
+                    f"[{label}] PDF-QA nested yvals use the expected list size",
                     selected_pdf["wrong_length"] == 0,
                     f"{selected_pdf['wrong_length']:,} invalid",
                 ),
@@ -927,7 +1003,7 @@ def run_qa(config: dict) -> QAResult:
             ])
     if not crosscheck.empty:
         checks.append((
-            "sampled PDF summaries reproduce HATS",
+            "PDF-QA sampled summaries reproduce HATS",
             bool((crosscheck["fraction_over_tolerance"] == 0).all()),
             f"n={int(crosscheck['compared'].min()):,}; tolerance={tolerance:g}",
         ))
@@ -937,9 +1013,12 @@ def run_qa(config: dict) -> QAResult:
         "HATS summary": str(summary_path),
         "PDF layout": pdf_layout,
         "PDF source": str(pdf_dir) if pdf_dir is not None else pdf_column,
-        "PDF shards/partitions": len(pdf_files) if pdf_layout == "companion" else partitions_used,
+        "PDF shards/partitions": len(pdf_files) if pdf_layout == "companion" else pdf_partitions_used,
         "HATS partitions": catalog.npartitions,
-        "HATS partitions inspected": partitions_used,
+        "HATS partitions inspected for science metrics": catalog.npartitions,
+        "HATS partitions inspected for PDF QA": (
+            catalog.npartitions if pdf_layout == "companion" else pdf_partitions_used
+        ),
         "exact objectId uniqueness": exact_uniqueness,
     }, name="value")
     grid_report = pd.Series({
@@ -955,6 +1034,20 @@ def run_qa(config: dict) -> QAResult:
             columns=["total_variation", "wasserstein_z"],
             index=pd.MultiIndex.from_arrays([[], []], names=["selection", "point_estimate"]),
         )
+    pdf_metrics_table = pd.DataFrame(pdf_metric_rows)
+    if len(pdf_metrics_table):
+        pdf_metrics_table = pdf_metrics_table.set_index(["selection", "estimator"])
+    else:
+        pdf_metrics_table = pd.DataFrame(
+            columns=[
+                "count", "mean", "std", "p16", "median", "p84",
+                "outside_grid_fraction", "low_z_fraction",
+                "lower_edge_fraction", "upper_edge_fraction", "edge_fraction",
+            ],
+            index=pd.MultiIndex.from_arrays(
+                [[], []], names=["selection", "estimator"]
+            ),
+        )
     return QAResult(
         config=config,
         paths=paths_report,
@@ -962,6 +1055,7 @@ def run_qa(config: dict) -> QAResult:
         grid_values=grid.copy(),
         checks=pd.DataFrame(checks, columns=["check", "passed", "detail"]).set_index("check"),
         global_metrics=pd.DataFrame(metric_rows).set_index(["selection", "estimator"]),
+        pdf_metrics=pdf_metrics_table,
         pdf_health=pd.DataFrame(health_rows).set_index("selection"),
         distribution_distances=distance_table,
         crosscheck=crosscheck,
@@ -1016,28 +1110,24 @@ def plot_nz(result: QAResult):
     if ymax_headroom <= 1:
         raise ValueError("plots.nz_ymax_headroom must be greater than 1")
     fig, axes = plt.subplots(len(selections), 2, figsize=(15, 4.5 * len(selections)), squeeze=False, constrained_layout=True)
-    colors = {"zmode": "#0072B2", "zmean": "#D55E00", "zmedian": "#009E73", "stacked_pdf": "black"}
+    colors = {"zmode": "#0072B2", "zmean": "#D55E00", "zmedian": "#009E73"}
     for row, selection in enumerate(selections):
         name, label = selection["name"], selection.get("label", selection["name"])
         count_curves = []
         normalized_curves = []
-        for estimator, values in result.nz[name].items():
-            if estimator == "stacked_pdf":
-                layout = result.config.get("pdf", {}).get("layout", "companion")
-                curve_label = "Nested HATS stacked PDF" if layout == "nested" else "Parquet stacked PDF"
-            else:
-                curve_label = f"HATS {estimator}"
-            if estimator != "stacked_pdf":
-                axes[row, 0].step(grid, values, where="mid", label=curve_label, color=colors[estimator], linewidth=1.5)
-                count_curves.append((curve_label, values))
+        for estimator in POINT_COLUMNS:
+            values = result.nz[name][estimator]
+            curve_label = f"HATS {estimator}"
+            axes[row, 0].step(grid, values, where="mid", label=curve_label, color=colors[estimator], linewidth=1.5)
+            count_curves.append((curve_label, values))
             if values.sum():
                 normalized = values / values.sum()
-                axes[row, 1].plot(grid, normalized, label=curve_label, color=colors[estimator], linewidth=2 if estimator == "stacked_pdf" else 1.5)
+                axes[row, 1].plot(grid, normalized, label=curve_label, color=colors[estimator], linewidth=1.5)
                 normalized_curves.append((curve_label, normalized))
         _set_robust_y_range(axes[row, 0], count_curves, grid, ymax_quantile, ymax_headroom)
         _set_robust_y_range(axes[row, 1], normalized_curves, grid, ymax_quantile, ymax_headroom)
         axes[row, 0].set(title=f"{label}: HATS point-estimate N(z)", xlabel="Photometric redshift", ylabel="Objects per bin")
-        axes[row, 1].set(title=f"{label}: HATS estimates vs PDF stack", xlabel="Photometric redshift", ylabel="Fraction per bin")
+        axes[row, 1].set(title=f"{label}: normalized global HATS estimates", xlabel="Photometric redshift", ylabel="Fraction per bin")
         axes[row, 0].legend()
         axes[row, 1].legend()
     return fig
@@ -1068,7 +1158,10 @@ def plot_zmean_selections(result: QAResult):
         squeeze=False,
         constrained_layout=True,
     )
-    full_scan = result.paths["HATS partitions inspected"] == result.paths["HATS partitions"]
+    full_scan = (
+        result.paths["HATS partitions inspected for science metrics"]
+        == result.paths["HATS partitions"]
+    )
     scope = "global" if full_scan else "bounded-partition"
     for axis, selection in zip(axes.flat, selections):
         name = selection["name"]
@@ -1113,6 +1206,7 @@ def write_report(result: QAResult) -> Path | None:
     directory.mkdir(parents=True, exist_ok=True)
     result.checks.to_csv(directory / "checks.csv")
     result.global_metrics.to_csv(directory / "global_metrics.csv")
+    result.pdf_metrics.to_csv(directory / "pdf_qa_metrics.csv")
     result.pdf_health.to_csv(directory / "pdf_health.csv")
     result.distribution_distances.to_csv(directory / "distribution_distances.csv")
     result.crosscheck.to_csv(directory / "summary_pdf_crosscheck.csv")
