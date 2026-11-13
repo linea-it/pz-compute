@@ -38,8 +38,7 @@ it to a standard format. It does the following preprocessing steps:
 - Generate files only with necessary columns (magnitudes and errors).
 - Convert infinite values to NaN.
 - Convert flux to magnitude.
-
-Note: dereddening is not implemented yet (TDB).
+- Apply optional extinction correction.
 
 Preprocessing is done as efficiently as possible and memory usage is limited
 even with arbitrarily large files. The resulting output files are a set

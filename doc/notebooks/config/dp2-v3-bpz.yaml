@@ -1,0 +1,79 @@
+run:
+  name: DP2-v3 BPZ GAaP 1.0 clipped nested HATS
+  data_release: DP2
+  processing_version: dp2-v3
+  algorithm: bpz
+
+paths:
+  summary_hats: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/bpz/stage3/output/pz-bpz-gaap1p0-clipped-hats
+  report_dir: null
+
+pdf:
+  layout: nested
+  column: bpz_ens_interp
+
+expected:
+  pdf_bins: 601
+  z_min: 0.0
+  z_max: 6.0
+
+selections:
+  - name: all
+    label: All objects
+  - name: clean_i_lt_26
+    label: "i_gaap1p0Mag_sfd < 26"
+    filters:
+      - column: i_gaap1p0Mag_sfd
+        maximum: 26.0
+        finite: true
+  - name: galaxies
+    label: "Extended sources (galaxy proxy)"
+    filters:
+      - column: refExtendedness
+        minimum: 1.0
+        maximum: 2.0
+        finite: true
+  - name: galaxies_i_lt_26
+    label: "Extended sources with i_gaap1p0Mag_sfd < 26"
+    filters:
+      - column: refExtendedness
+        minimum: 1.0
+        maximum: 2.0
+        finite: true
+      - column: i_gaap1p0Mag_sfd
+        maximum: 26.0
+        finite: true
+
+metrics:
+  # Zero means a full catalog scan. Global QA metrics must remain global.
+  max_hats_partitions: 0
+  pdf_batch_rows: 10000
+  pdf_edge_bins: 1
+  low_z_threshold: 0.1
+  crosscheck_sample_size: 10000
+  exact_id_uniqueness: false
+
+plots:
+  nz_ymax_quantile: 0.995
+  nz_ymax_headroom: 1.10
+
+thresholds:
+  max_invalid_pdf_fraction: 0.0
+  max_point_outside_fraction: 0.0
+  max_nonfinite_point_fraction: 0.0
+  summary_pdf_abs_tolerance: 1.0e-5
+
+cluster:
+  type: slurm
+  minimum_jobs: 1
+  maximum_jobs: 8
+  cores: 2
+  memory: 40GiB
+  processes: 1
+  queue: cpu_photoz
+  account: hpc-photoz
+  interface: ib0
+  walltime: "01:00:00"
+  wait_timeout: 600
+  job_extra_directives:
+    - --propagate
