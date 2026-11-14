@@ -12,6 +12,49 @@ sys.path.insert(0, str(ROOT / "doc" / "notebooks"))
 import pz_qa  # noqa: E402
 
 
+def test_selection_report_is_derived_from_configuration():
+    config = {
+        "selections": [
+            {
+                "name": "all",
+                "label": "Complete catalog",
+                "description": "All configured rows.",
+            },
+            {
+                "name": "limited",
+                "label": "Configured subset",
+                "description": "A product-specific interpretation.",
+                "filters": [
+                    {
+                        "column": "measurement",
+                        "minimum": 1.0,
+                        "maximum": 2.0,
+                        "finite": True,
+                    }
+                ],
+            },
+        ]
+    }
+
+    report = pz_qa.selection_report(config)
+
+    assert report.loc["Complete catalog", "configured cut"] == (
+        "No additional cut (complete configured catalog)"
+    )
+    assert report.loc["Configured subset", "configured cut"] == (
+        "finite(measurement) and 1 ≤ measurement < 2"
+    )
+    assert report.loc["Configured subset", "interpretation"] == (
+        "A product-specific interpretation."
+    )
+
+
+def test_all_shipped_selections_include_report_context():
+    for config_path in (ROOT / "doc" / "notebooks" / "config").glob("*.yaml"):
+        config = pz_qa.load_config(config_path)
+        assert all(selection.get("description") for selection in config["selections"])
+
+
 def test_main_catalog_row_count_comes_from_loaded_catalog_metadata():
     catalog = SimpleNamespace(
         hc_structure=SimpleNamespace(

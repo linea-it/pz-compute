@@ -1,7 +1,7 @@
 """Scalable, configuration-driven QA helpers for final photo-z products.
 
 The public entry points are intentionally small so the companion notebook stays
-readable: load_config, start_cluster, run_qa, plot_nz,
+readable: load_config, selection_report, start_cluster, run_qa, plot_nz,
 plot_zmean_selections, and write_report.
 """
 
@@ -73,6 +73,43 @@ def load_config(path: str | Path) -> dict:
         raise ValueError("Selection names must be unique")
     config["selections"] = enabled
     return config
+
+
+def _format_filter(filter_config: dict) -> str:
+    """Render one configured cut without assigning scientific semantics to it."""
+    column = str(filter_config["column"])
+    minimum = filter_config.get("minimum")
+    maximum = filter_config.get("maximum")
+    clauses = []
+    if filter_config.get("finite", True):
+        clauses.append(f"finite({column})")
+    if minimum is not None and maximum is not None:
+        clauses.append(f"{minimum:g} ≤ {column} < {maximum:g}")
+    elif minimum is not None:
+        clauses.append(f"{column} ≥ {minimum:g}")
+    elif maximum is not None:
+        clauses.append(f"{column} < {maximum:g}")
+    return " and ".join(clauses) if clauses else f"configured values of {column}"
+
+
+def selection_report(config: dict) -> pd.DataFrame:
+    """Return report-ready selection definitions and scientific caveats."""
+    rows = []
+    for selection in config["selections"]:
+        filters = selection.get("filters", [])
+        rows.append({
+            "sample": selection.get("label", selection["name"]),
+            "configured cut": (
+                "No additional cut (complete configured catalog)"
+                if not filters
+                else " and ".join(_format_filter(item) for item in filters)
+            ),
+            "interpretation": selection.get(
+                "description",
+                "No additional scientific interpretation was supplied in the configuration.",
+            ),
+        })
+    return pd.DataFrame(rows).set_index("sample")
 
 
 def start_cluster(config: dict):

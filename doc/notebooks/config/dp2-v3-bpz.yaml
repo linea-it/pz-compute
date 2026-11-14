@@ -20,14 +20,20 @@ expected:
 selections:
   - name: all
     label: All objects
+    description: All catalog rows before any configured science selection.
   - name: clean_i_lt_26
     label: "i_gaap1p0Mag_sfd < 26"
+    description: Selection based on finite SFD-corrected GAaP i-band magnitude.
     filters:
       - column: i_gaap1p0Mag_sfd
         maximum: 26.0
         finite: true
   - name: galaxies
     label: "Extended sources (galaxy proxy)"
+    description: >-
+      Reference-band extended sources used as a practical galaxy proxy. This is
+      not a truth-level classification and implies no perfect completeness,
+      purity, or stellar rejection; null classifications are excluded.
     filters:
       - column: refExtendedness
         minimum: 1.0
@@ -35,6 +41,9 @@ selections:
         finite: true
   - name: galaxies_i_lt_26
     label: "Extended sources with i_gaap1p0Mag_sfd < 26"
+    description: >-
+      Intersection of the configured extended-source proxy and magnitude cut;
+      the same classification caveats apply.
     filters:
       - column: refExtendedness
         minimum: 1.0

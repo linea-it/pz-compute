@@ -14,14 +14,14 @@ Available run configurations:
 - `config/dp2-v3-dnf.yaml`
 - `config/dp2-v3-bpz-test.yaml`
 
-The first two configurations retain the companion layout used by DP1-v2 and
-DP2-v2. All DP2-v3 configurations read `<algorithm>_ens_interp` directly from
-the final HATS catalog. Their `paths.summary_hats` points to the HATS collection
-root, and the QA code opens it with `lsdb.open_catalog()`. LSDB selects the main
-`pz_summary` catalog and attaches the collection's default margin without
-including margin rows in the main catalog scan.
+The named files above are product-specific examples; version and algorithm
+names are not encoded in the notebook. The first two use the Companion layout,
+while the remaining examples read the configured Nested column directly from
+the final HATS catalog. A Nested `paths.summary_hats` points to the collection
+root, which the QA code opens with `lsdb.open_catalog()`. LSDB selects the main
+catalog without including margin rows in its scan.
 
-Do not recursively read Parquet from a DP2-v3 collection root: that would mix
+Do not recursively read Parquet from a HATS collection root: that would mix
 the main catalog with its margin catalog and duplicate boundary objects. Code
 that intentionally bypasses LSDB and performs a recursive Parquet read must
 start at `<hats_collection>/pz_summary/dataset`, for example:
@@ -31,18 +31,19 @@ start at `<hats_collection>/pz_summary/dataset`, for example:
   pz-fzboost-gaap1p0-clipped-hats/pz_summary/dataset
 ```
 
-DP2-v3 always performs a full distributed scan of the scalar HATS columns used
-by the scientific redshift distributions and selections. Nested-PDF integrity
-checks default to `metrics.max_pdf_partitions: 4`, because reading the repeated
-601-value `xvals` and `yvals` arrays for every object is far more expensive.
+The notebook always performs a full distributed scan of the projected scalar
+HATS columns used by scientific redshift distributions and selections. A
+Nested configuration can bound PDF integrity checks with
+`metrics.max_pdf_partitions`, because reading repeated `xvals` and `yvals`
+arrays for every object is much more expensive.
 PDF-derived results are explicitly technical subset diagnostics, never global
 scientific N(z) measurements. The Nested subset consists of the first
 configured HATS partitions for reproducibility; because HATS partitions are
 spatial, it is not claimed to be statistically representative.
-The DP2-v3 SLURM profiles start with one adaptive worker and allow the scan to
-begin under cluster contention. Each worker uses one process, two threads, and
-40 GiB so at most two memory-intensive Nested-PDF partition tasks share that
-allocation.
+The current Nested SLURM profiles start with one adaptive worker and allow the
+scan to begin under cluster contention. Each worker uses one process, two
+threads, and 40 GiB so at most two memory-intensive Nested-PDF partition tasks
+share that allocation.
 
 From the repository root, start Jupyter with the selected configuration:
 
@@ -50,10 +51,10 @@ From the repository root, start Jupyter with the selected configuration:
 PZ_QA_CONFIG=doc/notebooks/config/dp1-v2-fzboost.yaml jupyter lab
 ```
 
-Open `doc/notebooks/pz_compute_qa.ipynb` and run all cells. If
-`PZ_QA_CONFIG` is absent, the notebook uses the DP1 configuration. Relative
-configuration paths are resolved relative to the YAML file; environment
-variables such as `${PZ_RUN_ROOT}` are expanded.
+Open `doc/notebooks/pz_compute_qa.ipynb` and run all cells. `PZ_QA_CONFIG` is
+required deliberately: the notebook will not silently select a product.
+Relative configuration paths are resolved relative to the YAML file;
+environment variables such as `${PZ_RUN_ROOT}` are expanded.
 
 After execution, export a report without input cells using:
 
@@ -70,69 +71,45 @@ legends are written to remain understandable when the Python code is hidden.
 
 ## Quality-selected curves
 
-Selections are evaluated alongside the full sample in the same partition
-passes. All standard configurations produce both the complete-sample metrics
-and a finite `i_gaap1p0Mag_sfd < 26` selection:
+Selections are evaluated together in the same partition passes. The notebook
+supports any number of selections and derives their displayed cuts, labels,
+interpretations, and caveats from YAML rather than column-name conventions:
 
 ```yaml
 selections:
   - name: all
-    label: All objects
-  - name: clean_i_lt_26
-    label: "i_gaap1p0Mag_sfd < 26"
+    label: Complete catalog
+    description: All rows before any configured science selection.
+  - name: example_limited_sample
+    label: Example limited sample
+    description: Scientific interpretation and caveats for this sample.
     filters:
-      - column: i_gaap1p0Mag_sfd
-        maximum: 26.0
-        finite: true
-```
-
-Every filter column must be available with the scalar and PDF fields. For the
-nested DP2-v3 layout they are in the same HATS row. Multiple filters within a
-selection are combined with logical AND.
-`minimum` is inclusive and `maximum` is exclusive.
-
-All DP2-v3 configurations also select `refExtendedness == 1` as an extended-
-source galaxy proxy and define its intersection with the magnitude cut.
-Point-like objects (`0`) and null, unclassified values are excluded. The
-notebook presents all four samples in a dedicated 2-by-2 `zmean` figure as well
-as in the standard multi-estimator panels:
-
-```yaml
-  - name: galaxies
-    label: "Extended sources (galaxy proxy)"
-    filters:
-      - column: refExtendedness
+      - column: configured_measurement
         minimum: 1.0
         maximum: 2.0
         finite: true
-  - name: galaxies_i_lt_26
-    label: "Extended sources with i_gaap1p0Mag_sfd < 26"
-    filters:
-      - column: refExtendedness
-        minimum: 1.0
-        maximum: 2.0
-        finite: true
-      - column: i_gaap1p0Mag_sfd
-        maximum: 26.0
-        finite: true
 ```
 
-This is a morphology-based proxy, not a truth-level star/galaxy label. It is
-computed with the other selections in the same distributed catalog pass. In
-Nested mode, the four masks share one global scalar pass rather than triggering
-four reads. Inside the bounded PDF-QA subset, scalar and PDF diagnostics are
-bundled into one task per HATS partition so their comparisons use identical
-rows without duplicating the heavy Nested read.
+Every filter column must be available in the HATS catalog and, for Companion
+products, in the PDF shards. Multiple filters within a selection are combined
+with logical AND. `minimum` is inclusive, `maximum` is exclusive, and `finite`
+defaults to true. `description` is rendered verbatim as scientific context, so
+product-specific semantics must live in the configuration. The `zmean` layout
+adapts to the configured number of selections. In Nested mode, all masks share
+one global scalar pass. Within bounded PDF-QA coverage, scalar and PDF
+diagnostics are bundled per HATS partition so comparisons use identical rows
+without duplicating the heavy Nested read.
 
 ## N(z) display range and low-redshift peaks
 
-The standard configurations report `low_z_fraction` for `z <= 0.1` and the
-fractions in the first and last redshift-grid bins. The scalar fraction is
-counted directly from every finite point estimate in the complete HATS catalog;
-the PDF value is posterior mass on grid points at or below the threshold within
-the explicitly reported PDF-QA coverage. These metrics help distinguish a
-concentration of point-estimate modes at `z = 0` from posterior probability in
-the stacked PDFs without presenting the bounded DP2-v3 PDF subset as global.
+The configurations set `metrics.low_z_threshold`; the report displays its
+actual value rather than assuming a particular scientific cut. The scalar
+fraction is counted directly from every finite point estimate in the complete
+HATS catalog; the PDF value is posterior mass on grid points at or below the
+threshold within the explicitly reported PDF-QA coverage. These metrics help
+distinguish a concentration of point-estimate modes at `z = 0` from posterior
+probability in the stacked PDFs without presenting bounded Nested-PDF coverage
+as global.
 
 N(z) panels use a robust y-axis display range so isolated boundary spikes do
 not flatten the scientifically useful part of the curves. Off-scale maxima are
@@ -155,8 +132,7 @@ The notebook reports:
   non-negative values, and positive PDF sums;
 - commutative `objectId` fingerprints between the scalar and PDF projections;
 - global moments and histogram percentiles for scalar point estimates;
-- a four-panel `zmean` comparison for the uncut, magnitude-limited,
-  extended-source, and combined DP2-v3 samples;
+- an adaptive `zmean` comparison for every configured science sample;
 - PDF raw-sum diagnostics before per-object normalization;
 - complete-catalog interval-validity and redshift-edge diagnostics, with the
   interval-width median explicitly identified as a deterministic sample;
@@ -171,15 +147,14 @@ The fingerprints make cross-product comparison scalable without a catalog-wide
 shuffle. They test equality of the identifier multisets with three independent
 64-bit aggregates; they are not a formal proof of uniqueness. Set
 `metrics.exact_id_uniqueness: true` to add exact `nunique` checks when the
-distributed shuffle is acceptable (enabled for DP1, disabled for the much
-larger DP2 configurations). The sampled summary reconstruction is an
+distributed shuffle is acceptable. The sampled summary reconstruction is an
 integration check, not a truth-redshift metric.
 
 Set `paths.report_dir` to save the compact result tables as CSV/JSON. No full
 object catalog or PDF matrix is collected into notebook memory. The only
 collected objects are fixed-size reductions and the configured deterministic
-cross-check sample. DP2-v3 scans every HATS partition for scalar science
-metrics and only the configured subset for heavy Nested-PDF diagnostics.
+cross-check sample. Scalar science metrics scan every HATS partition; heavy
+Nested-PDF diagnostics use the explicitly configured coverage.
 
 Required packages are `lsdb`, `nested-pandas`, `dask`, `distributed`,
 `dask-jobqueue` for SLURM, `pandas`, `numpy`, `pyarrow`, `matplotlib`, and
