@@ -150,6 +150,8 @@ The following parameters are important for the output file:
 - `--algorithm`: selects which estimation algorithm to use.
 - `--bins`: chooses the number of points for the resulting redshift
   probability density p(z) function.
+- `--bands`: chooses an ordered LSST-band subset in compact (`griz`) or
+  comma-separated (`g,r,i,z`) form. The default is `ugrizy`.
 
 The list of available algorithms is shown in the help message. One
 example of execution setting the algorithm to bpz and the number of bins
@@ -187,6 +189,14 @@ the current estimate run. Generated fields required by both the estimator and
 the output list are calculated only once. Before estimation, the selected
 values are copied so estimator-side non-detection handling cannot mutate them;
 they are written under `ancillary/<column>` in the output HDF5.
+
+Estimator-specific qp diagnostics remain under `ancil/` by default. Promote
+only reviewed one-dimensional fields with an explicit allow-list, for example:
+
+    --output-ancil-columns=DNF_ZN
+
+The selected fields are validated and copied to `ancillary/`; unrelated
+estimator diagnostics remain internal to the Stage 2 HDF5.
 
 If an input table has zero rows, `rail-estimate` does not invoke the estimator.
 It writes a complete zero-row output using the configured redshift grid, keeps

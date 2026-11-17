@@ -6,7 +6,14 @@ from rail_scripts.photometry import (
     normalize_sfd_coefficients,
     parse_column_list,
     projected_input_columns,
+    replace_nondetections,
     table_row_count,
+)
+from rail_scripts import (
+    DEFAULT_BANDS,
+    create_column_mapping_dict,
+    parse_bands,
+    validate_column_mapping_overrides,
 )
 
 
@@ -110,3 +117,63 @@ def test_table_row_count_handles_empty_tables_and_column_order():
 
     assert table_row_count(empty) == 0
     assert table_row_count(reordered) == 2
+
+
+def test_band_parser_defaults_are_explicit_at_call_site_and_preserve_order():
+    assert parse_bands("ugrizy") == DEFAULT_BANDS
+    assert parse_bands("griz") == ("g", "r", "i", "z")
+    assert parse_bands("r,i,z") == ("r", "i", "z")
+    with np.testing.assert_raises(ValueError):
+        parse_bands("griq")
+    with np.testing.assert_raises(ValueError):
+        parse_bands("grig")
+
+
+def test_column_mapping_uses_only_selected_bands_and_rejects_conflicts():
+    limits = {f"mag_{band}_lsst": 20.0 + index for index, band in enumerate("ugrizy")}
+    mapping = create_column_mapping_dict(
+        "{band}_cModelMag",
+        "{band}_cModelMagErr",
+        limits,
+        bands=parse_bands("riz"),
+    )
+
+    assert mapping["bands"] == ["r_cModelMag", "i_cModelMag", "z_cModelMag"]
+    assert mapping["err_bands"] == [
+        "r_cModelMagErr",
+        "i_cModelMagErr",
+        "z_cModelMagErr",
+    ]
+    validate_column_mapping_overrides(
+        {"bands": mapping["bands"], "err_bands": mapping["err_bands"]}, mapping
+    )
+    with np.testing.assert_raises(ValueError):
+        validate_column_mapping_overrides(
+            {"bands": ["g_cModelMag", "r_cModelMag"]}, mapping
+        )
+
+
+def test_replace_nondetections_is_copy_on_write_safe_and_exact():
+    table = pd.DataFrame(
+        {
+            "r_mag": [20.0, np.nan, 22.0],
+            "r_err": [0.1, np.nan, np.nan],
+            "i_mag": [np.nan, 21.0, 22.0],
+            "i_err": [0.2, 0.3, 0.4],
+        }
+    )
+
+    counts = replace_nondetections(
+        table,
+        ("r_mag", "i_mag"),
+        ("r_err", "i_err"),
+        {"r_mag": 27.1, "i_mag": 26.7},
+        np.nan,
+    )
+
+    assert counts == {"r_mag": 1, "i_mag": 1}
+    np.testing.assert_allclose(table["r_mag"], [20.0, 27.1, 22.0])
+    np.testing.assert_allclose(table["i_mag"], [26.7, 21.0, 22.0])
+    assert table.loc[1, "r_err"] == 1.0
+    assert table.loc[0, "i_err"] == 1.0
+    assert np.isnan(table.loc[2, "r_err"])

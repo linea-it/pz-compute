@@ -233,3 +233,39 @@ def copy_columns(table, columns: Sequence[str]) -> dict[str, np.ndarray]:
     if missing:
         raise ValueError(f"output columns are unavailable: {missing}")
     return {name: np.array(_column(table, name), copy=True) for name in columns}
+
+
+def replace_nondetections(
+    table,
+    magnitude_columns: Sequence[str],
+    error_columns: Sequence[str],
+    magnitude_limits: Mapping[str, float],
+    nondetect_value: float,
+    replacement_error: float = 1.0,
+) -> dict[str, int]:
+    """Apply configured magnitude-limit replacement without chained assignment."""
+    if len(magnitude_columns) != len(error_columns):
+        raise ValueError("magnitude and error column counts must match")
+    names = table_column_names(table)
+    required = list(magnitude_columns) + list(error_columns)
+    missing = [name for name in required if name not in names]
+    if missing:
+        raise ValueError(f"non-detection columns are unavailable: {missing}")
+    missing_limits = [name for name in magnitude_columns if name not in magnitude_limits]
+    if missing_limits:
+        raise ValueError(f"magnitude limits are unavailable: {missing_limits}")
+
+    counts = {}
+    use_nan = np.isnan(nondetect_value)
+    for magnitude_name, error_name in zip(magnitude_columns, error_columns):
+        magnitudes = np.array(_column(table, magnitude_name), copy=True)
+        errors = np.array(_column(table, error_name), copy=True)
+        mask = np.isnan(magnitudes) if use_nan else np.isclose(
+            magnitudes, nondetect_value
+        )
+        magnitudes[mask] = float(magnitude_limits[magnitude_name])
+        errors[mask] = float(replacement_error)
+        _set_column(table, magnitude_name, magnitudes)
+        _set_column(table, error_name, errors)
+        counts[magnitude_name] = int(np.count_nonzero(mask))
+    return counts

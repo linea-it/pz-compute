@@ -21,6 +21,8 @@ Options:
                                    [default: mag_{band}]
     --column-template-error=<template-error>  Set the names of the input error
                                               columns [default: magerr_{band}]
+    --bands=<bands>               Ordered LSST band subset, compact or comma-separated
+                                  [default: ugrizy].
 
 
 Available algorithms: bpz, dnf, fzboost, tpz, gpz, lephare
@@ -36,7 +38,9 @@ from docopt import docopt
 from yaml import YAMLError, safe_load
 
 from rail_scripts import ESTIMATOR_CONFIGURATION_TEMPLATE, VERSION_TEXT, \
-        abort, error, create_column_mapping_dict, info
+        abort, error, create_column_mapping_dict, info, parse_bands, \
+        validate_column_mapping_overrides
+from rail_scripts.photometry import replace_nondetections
 
 from datetime import datetime 
 
@@ -45,6 +49,7 @@ DEFAULT_ESTIMATOR = 'fzboost'
 
 Configuration = namedtuple('Configuration', ('input', 'output', 'estimator',
                                              'num_bins', 'hdf5_group',
+                                             'bands',
                                              'column_template',
                                              'column_template_error',
                                              'extra_args'))
@@ -59,6 +64,12 @@ def parse_cmdline():
     column_template_error = args['--column-template-error']
     output = args['<output>'] or ESTIMATOR_CONFIGURATION_TEMPLATE % estimator
     param_file = args['--param-file']
+
+    try:
+        bands = parse_bands(args['--bands'])
+    except ValueError as e:
+        error('Invalid --bands: %s' % e)
+        abort()
 
     try:
         num_bins = int(args['--bins'])
@@ -78,13 +89,15 @@ def parse_cmdline():
     info('Estimator algorithm: %s' % estimator)
     info('Bins: %d' % num_bins)
     info('HDF5 group name: \"%s\"' % hdf5_group)
+    info('Bands: "%s"' % ''.join(bands))
     info('Column template for magnitude data: \"%s\"' % column_template)
     info('Column template for error data: \"%s\"' % column_template_error)
     info('Extra parameter file: "%s"' % param_file)
 
     return Configuration(input=args['<input>'], output=output,
                          estimator=estimator, num_bins=num_bins,
-                         hdf5_group=hdf5_group, column_template=column_template,
+                         hdf5_group=hdf5_group, bands=bands,
+                         column_template=column_template,
                          column_template_error=column_template_error,
                          extra_args=extra_args)
 
@@ -125,7 +138,7 @@ def load_slow_modules(estimator):
 
     DS = DataStore()
 
-def setup_trainer(estimator, output, column_template, column_template_error,
+def setup_trainer(estimator, output, bands, column_template, column_template_error,
                   extra_args, hdf5_group='', num_bins=301):
     all_args = {
             'name': 'train',
@@ -137,8 +150,11 @@ def setup_trainer(estimator, output, column_template, column_template_error,
     if estimator == 'tpz':
         all_args['nondetect_val'] = nan
 
-    all_args.update(create_column_mapping_dict(
-            column_template, column_template_error, DEF_MAGLIMS))
+    mapping = create_column_mapping_dict(
+        column_template, column_template_error, DEF_MAGLIMS, bands=bands
+    )
+    validate_column_mapping_overrides(extra_args, mapping)
+    all_args.update(mapping)
 
     all_args.update(extra_args)
 
@@ -169,10 +185,11 @@ def setup(cfg):
 
     try:
         info('Configuring trainer...')
-        trainer = setup_trainer(cfg.estimator, cfg.output, cfg.column_template,
+        trainer = setup_trainer(cfg.estimator, cfg.output, cfg.bands,
+                                cfg.column_template,
                                 cfg.column_template_error, cfg.extra_args,
                                 cfg.hdf5_group, cfg.num_bins)
-    except OSError as e:
+    except (OSError, ValueError) as e:
         error('Error: unable to load trainer configuration file.')
         error(e)
         abort()
@@ -195,6 +212,16 @@ def setup(cfg):
 
 def train(cfg, ctx):
     info('Starting training.')
+    if cfg.estimator == 'dnf':
+        config = ctx.trainer.config
+        counts = replace_nondetections(
+            ctx.input.data,
+            config.bands,
+            config.err_bands,
+            config.mag_limits,
+            config.nondetect_val,
+        )
+        info('DNF non-detections replaced: %s' % counts)
     ctx.trainer.inform(ctx.input)
     info('Training done.')
 

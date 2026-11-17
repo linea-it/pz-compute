@@ -28,6 +28,9 @@ Options:
     --pdf-dtype=<dtype>    Numeric dtype for stored PDF values. Choices:
                            float32, float64 [default: float32].
     --no-pdf-product       Deprecated alias for --pdf-layout=none.
+    --summary-prefix=<name> Emit Rubin-style <name>_z_* scalar columns instead
+                            of the legacy unprefixed names [default: ].
+    --include-95-interval  Add the 2.5th and 97.5th percentile scalar columns.
     --batch-size=<rows>    Number of rows converted per batch [default: 50000].
     --fast-path-size-mb=<mb>  Max staged parquet size to build with LSDB
                               in memory before using hats-import [default: 100].
@@ -128,6 +131,8 @@ class Configuration:
     pdf_dtype: str
     write_companion_pdf: bool
     embed_pdf: bool
+    summary_prefix: str
+    include_95_interval: bool
     batch_size: int
     fast_path_size_mb: float
     catalog_name: str
@@ -218,9 +223,18 @@ def parse_cmdline() -> Configuration:
     pdf_column = args["--pdf-column"]
     if not pdf_column or "." in pdf_column:
         raise SystemExit("Error: --pdf-column must be a non-empty top-level column name.")
+    summary_prefix = args["--summary-prefix"].strip()
+    if summary_prefix and not (
+        summary_prefix[0].isalpha()
+        and all(char.isalnum() or char == "_" for char in summary_prefix)
+    ):
+        raise SystemExit(
+            "Error: --summary-prefix must start with a letter and contain only "
+            "letters, digits, or underscores."
+        )
     reserved_pdf_columns = {
-        "objectId", "coord_ra", "coord_dec", "zmode", "zmean", "zmedian",
-        "z_p16", "z_p84", "pdf",
+        "objectId", "coord_ra", "coord_dec", "pdf",
+        *summary_column_names(summary_prefix, args["--include-95-interval"]),
     }
     if pdf_column in reserved_pdf_columns:
         raise SystemExit(f"Error: --pdf-column is reserved: {pdf_column}")
@@ -276,6 +290,8 @@ def parse_cmdline() -> Configuration:
         pdf_dtype=pdf_dtype,
         write_companion_pdf=write_companion_pdf,
         embed_pdf=embed_pdf,
+        summary_prefix=summary_prefix,
+        include_95_interval=args["--include-95-interval"],
         batch_size=batch_size,
         fast_path_size_mb=fast_path_size_mb,
         catalog_name=args["--catalog-name"],
@@ -559,7 +575,34 @@ def weighted_quantile(xvals: np.ndarray, yvals: np.ndarray, q: float) -> np.ndar
     return out
 
 
-def summarize_pdf(xvals: np.ndarray, yvals: np.ndarray) -> dict[str, np.ndarray]:
+def summary_column_names(prefix: str = "", include_95_interval: bool = False):
+    """Return scalar product columns for the legacy or Rubin-style schema."""
+    if prefix:
+        names = [
+            f"{prefix}_z_mean",
+            f"{prefix}_z_median",
+            f"{prefix}_z_mode",
+            f"{prefix}_z_err68_low",
+            f"{prefix}_z_err68_high",
+        ]
+        if include_95_interval:
+            names.extend(
+                [f"{prefix}_z_err95_low", f"{prefix}_z_err95_high"]
+            )
+        return tuple(names)
+
+    names = ["zmode", "zmean", "zmedian", "z_p16", "z_p84"]
+    if include_95_interval:
+        names.extend(["z_p025", "z_p975"])
+    return tuple(names)
+
+
+def summarize_pdf(
+    xvals: np.ndarray,
+    yvals: np.ndarray,
+    prefix: str = "",
+    include_95_interval: bool = False,
+) -> dict[str, np.ndarray]:
     yvals = np.asarray(yvals, dtype=np.float64)
     totals = yvals.sum(axis=1)
     valid = totals > 0
@@ -570,13 +613,38 @@ def summarize_pdf(xvals: np.ndarray, yvals: np.ndarray) -> dict[str, np.ndarray]
     zmean = np.full(yvals.shape[0], np.nan, dtype=np.float64)
     zmean[valid] = (yvals[valid] * xvals).sum(axis=1) / totals[valid]
 
-    return {
+    zmedian = weighted_quantile(xvals, yvals, 0.50)
+    zlow68 = weighted_quantile(xvals, yvals, 0.16)
+    zhigh68 = weighted_quantile(xvals, yvals, 0.84)
+
+    if prefix:
+        result = {
+            f"{prefix}_z_mean": zmean,
+            f"{prefix}_z_median": zmedian,
+            f"{prefix}_z_mode": zmode,
+            f"{prefix}_z_err68_low": zlow68,
+            f"{prefix}_z_err68_high": zhigh68,
+        }
+        if include_95_interval:
+            result[f"{prefix}_z_err95_low"] = weighted_quantile(
+                xvals, yvals, 0.025
+            )
+            result[f"{prefix}_z_err95_high"] = weighted_quantile(
+                xvals, yvals, 0.975
+            )
+        return result
+
+    result = {
         "zmode": zmode,
         "zmean": zmean,
-        "zmedian": weighted_quantile(xvals, yvals, 0.50),
-        "z_p16": weighted_quantile(xvals, yvals, 0.16),
-        "z_p84": weighted_quantile(xvals, yvals, 0.84),
+        "zmedian": zmedian,
+        "z_p16": zlow68,
+        "z_p84": zhigh68,
     }
+    if include_95_interval:
+        result["z_p025"] = weighted_quantile(xvals, yvals, 0.025)
+        result["z_p975"] = weighted_quantile(xvals, yvals, 0.975)
+    return result
 
 
 def parquet_part_name(relative_path: str, batch_index: int) -> str:
@@ -745,8 +813,12 @@ def write_summary_parts(
         ancillary_group = output_handle.get("ancillary")
         ancillary_columns = {}
         if ancillary_group is not None:
-            reserved = {"objectId", "coord_ra", "coord_dec", "zmode", "zmean",
-                        "zmedian", "z_p16", "z_p84", "pdf"}
+            reserved = {
+                "objectId", "coord_ra", "coord_dec", "pdf",
+                *summary_column_names(
+                    cfg.summary_prefix, cfg.include_95_interval
+                ),
+            }
             if cfg.embed_pdf:
                 reserved.add(cfg.pdf_column)
             collisions = sorted(reserved.intersection(ancillary_group.keys()))
@@ -781,7 +853,12 @@ def write_summary_parts(
             batch_object_ids = object_ids[start:stop]
             batch_coord_ra = coord_ra[start:stop]
             batch_coord_dec = coord_dec[start:stop]
-            stats = summarize_pdf(xvals, batch_yvals)
+            stats = summarize_pdf(
+                xvals,
+                batch_yvals,
+                cfg.summary_prefix,
+                cfg.include_95_interval,
+            )
             propagated = {
                 name: dataset[start:stop]
                 for name, dataset in ancillary_columns.items()

@@ -20,6 +20,7 @@ live under `common/`; after preparing them, choose an execution route:
 | `common/` | preparing inputs reused by either execution route | [`common/README.md`](common/README.md) |
 | `individual/` | canonical path for new releases, pilots, tuning, and one named algorithm | [`individual/README.md`](individual/README.md) |
 | `batch/` | replaying already validated official configurations under one serial fail-fast controller | [`batch/README.md`](batch/README.md) |
+| `custom/` | scientifically reviewed DP2-derived runs outside the official reproduction | [`custom/README.md`](custom/README.md) |
 
 The individual files always include the algorithm in the filename:
 

@@ -57,3 +57,40 @@ def test_builder_configures_default_margin_for_both_hats_paths():
     assert ").add_margin(" in source
     assert "is_default=True" in source
 
+
+def test_legacy_summary_schema_remains_unchanged_by_default():
+    builder = load_builder()
+    xvals = np.linspace(0.0, 1.0, 101)
+    yvals = np.ones((2, len(xvals)))
+
+    summary = builder.summarize_pdf(xvals, yvals)
+
+    assert list(summary) == ["zmode", "zmean", "zmedian", "z_p16", "z_p84"]
+    assert builder.summary_column_names() == (
+        "zmode", "zmean", "zmedian", "z_p16", "z_p84"
+    )
+
+
+def test_rubin_summary_schema_adds_named_68_and_95_percentiles():
+    builder = load_builder()
+    xvals = np.arange(101, dtype=np.float64) / 100.0
+    yvals = np.ones((1, len(xvals)))
+
+    summary = builder.summarize_pdf(
+        xvals, yvals, prefix="dnf", include_95_interval=True
+    )
+
+    assert list(summary) == [
+        "dnf_z_mean",
+        "dnf_z_median",
+        "dnf_z_mode",
+        "dnf_z_err68_low",
+        "dnf_z_err68_high",
+        "dnf_z_err95_low",
+        "dnf_z_err95_high",
+    ]
+    assert summary["dnf_z_err68_low"][0] == 0.16
+    assert summary["dnf_z_err68_high"][0] == 0.84
+    assert summary["dnf_z_err95_low"][0] == 0.02
+    assert summary["dnf_z_err95_high"][0] == 0.98
+

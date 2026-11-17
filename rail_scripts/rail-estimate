@@ -23,6 +23,8 @@ Options:
                                    [default: mag_{band}]
     --column-template-error=<template-error>  Set the names of the input error
                                               columns [default: magerr_{band}]
+    --bands=<bands>               Ordered LSST band subset, compact or comma-separated
+                                  [default: ugrizy].
     --sfd-deredden             Generate columns ending in _sfd from uncorrected
                                magnitudes (or LSST fluxes in nJy) and input ebv.
     --ebv-column=<name>        Input E(B-V) column used by --sfd-deredden
@@ -32,6 +34,8 @@ Options:
     --output-columns=<columns> Comma-separated input or generated columns to
                                retain with the PDFs and downstream HATS product
                                [default: ].
+    --output-ancil-columns=<columns> Comma-separated qp ancil datasets to copy
+                               into downstream ancillary output [default: ].
     --row-id-column=<name>     Input identifier column used to fingerprint row
                                identity and order [default: ].
     --bpz-ref-data-path=<path> BPZ reference-data root containing SED, FILTER,
@@ -58,18 +62,22 @@ from rail_scripts import (
     find_data_file,
     info,
     load_user_params,
+    parse_bands,
+    validate_column_mapping_overrides,
 )
 from rail_scripts.integrity import (
     FINGERPRINT_ALGORITHM,
     INTEGRITY_GROUP,
     row_id_fingerprint,
 )
+from rail_scripts.ancillary import load_estimator_ancillary
 from rail_scripts.photometry import (
     copy_columns,
     materialize_sfd_columns,
     normalize_sfd_coefficients,
     parse_column_list,
     projected_input_columns,
+    replace_nondetections,
     table_column_names,
     table_row_count,
 )
@@ -89,12 +97,14 @@ Configuration = namedtuple(
         "estimator_config",
         "num_bins",
         "hdf5_group",
+        "bands",
         "column_template",
         "column_template_error",
         "sfd_deredden",
         "ebv_column",
         "sfd_coefficients",
         "output_columns",
+        "output_ancil_columns",
         "row_id_column",
         "extra_args",
     ),
@@ -114,10 +124,23 @@ def parse_cmdline():
     column_template = args["--column-template"]
     column_template_error = args["--column-template-error"]
     try:
+        bands = parse_bands(args["--bands"])
+    except ValueError as err:
+        error("Invalid --bands: %s" % err)
+        abort()
+    try:
         output_columns = parse_column_list(args["--output-columns"])
-        collisions = sorted(RESERVED_OUTPUT_COLUMNS.intersection(output_columns))
+        output_ancil_columns = parse_column_list(args["--output-ancil-columns"])
+        collisions = sorted(
+            RESERVED_OUTPUT_COLUMNS.intersection(
+                set(output_columns).union(output_ancil_columns)
+            )
+        )
         if collisions:
             raise ValueError(f"reserved product column names: {collisions}")
+        duplicates = sorted(set(output_columns).intersection(output_ancil_columns))
+        if duplicates:
+            raise ValueError(f"input and qp ancillary names overlap: {duplicates}")
     except ValueError as err:
         error("Invalid --output-columns: %s" % err)
         abort()
@@ -169,6 +192,7 @@ def parse_cmdline():
     info("Estimator calibration file: %s" % calibration_file)
     info("Bins: %d" % num_bins)
     info('HDF5 group name: "%s"' % hdf5_group)
+    info('Bands: "%s"' % "".join(bands))
     info('Column template for magnitude data: "%s"' % column_template)
     info('Column template for error data: "%s"' % column_template_error)
     info("SFD dereddening: %s" % args["--sfd-deredden"])
@@ -179,6 +203,10 @@ def parse_cmdline():
             % ", ".join(str(sfd_coefficients[band]) for band in "ugrizy")
         )
     info("Output columns: %s" % (", ".join(output_columns) or "(none)"))
+    info(
+        "Output qp ancillary columns: %s"
+        % (", ".join(output_ancil_columns) or "(none)")
+    )
     info('Row identifier column: "%s"' % args["--row-id-column"])
     info('Extra parameter file: "%s"' % param_file)
     if estimator == "bpz":
@@ -192,12 +220,14 @@ def parse_cmdline():
         estimator_config=calibration_file,
         num_bins=num_bins,
         hdf5_group=hdf5_group,
+        bands=bands,
         column_template=column_template,
         column_template_error=column_template_error,
         sfd_deredden=args["--sfd-deredden"],
         ebv_column=args["--ebv-column"],
         sfd_coefficients=sfd_coefficients,
         output_columns=output_columns,
+        output_ancil_columns=output_ancil_columns,
         row_id_column=args["--row-id-column"],
         extra_args=extra_args,
     )
@@ -239,6 +269,7 @@ def setup_estimator(
     output,
     estimator,
     estimator_config,
+    bands,
     column_template,
     column_template_error,
     extra_args,
@@ -256,9 +287,11 @@ def setup_estimator(
     if estimator == 'tpz':
         all_args['nondetect_val'] = nan
 
-    all_args.update(create_column_mapping_dict(
-        column_template, column_template_error, DEF_MAGLIMS
-    ))
+    mapping = create_column_mapping_dict(
+        column_template, column_template_error, DEF_MAGLIMS, bands=bands
+    )
+    validate_column_mapping_overrides(extra_args, mapping)
+    all_args.update(mapping)
 
     all_args.update(load_user_params(Estimator, estimator))
 
@@ -270,9 +303,8 @@ def setup_estimator(
 
 
 def required_estimator_columns(cfg):
-    bands = "ugrizy"
-    columns = [cfg.column_template.format(band=band) for band in bands]
-    columns += [cfg.column_template_error.format(band=band) for band in bands]
+    columns = [cfg.column_template.format(band=band) for band in cfg.bands]
+    columns += [cfg.column_template_error.format(band=band) for band in cfg.bands]
     return columns
 
 
@@ -327,7 +359,7 @@ def prepare_input(cfg, input_handle):
     return copy_columns(input_handle.data, cfg.output_columns), fingerprint
 
 
-def write_empty_estimate_output(output_file, estimator):
+def write_empty_estimate_output(output_file, estimator, output_ancil_columns=()):
     zmin = float(estimator.config.zmin)
     zmax = float(estimator.config.zmax)
     num_bins = int(estimator.config.nzbins)
@@ -342,10 +374,13 @@ def write_empty_estimate_output(output_file, estimator):
         data.create_dataset("yvals", shape=(0, num_bins), dtype=np.float64)
         ancil = handle.create_group("ancil")
         ancil.create_dataset("distribution_type", shape=(0,), dtype=np.int64)
+        for name in output_ancil_columns:
+            ancil.create_dataset(name, shape=(0,), dtype=np.float64)
 
 
 def finalize_output(
-    output_file, columns, row_id_column, fingerprint, sfd_coefficients=None
+    output_file, columns, output_ancil_columns, row_id_column, fingerprint,
+    sfd_bands=(), sfd_coefficients=None
 ):
     with h5py.File(output_file, "a") as handle:
         integrity = handle.require_group(INTEGRITY_GROUP)
@@ -353,10 +388,15 @@ def finalize_output(
         if "data/yvals" not in handle:
             raise ValueError("estimator output is missing data/yvals")
         expected_rows = handle["data/yvals"].shape[0]
+        estimator_ancillary = load_estimator_ancillary(
+            handle, output_ancil_columns, expected_rows
+        )
         if "ancillary" in handle:
             del handle["ancillary"]
-        group = handle.create_group("ancillary") if columns else None
-        for name, values in columns.items():
+        propagated = dict(columns)
+        propagated.update(estimator_ancillary)
+        group = handle.create_group("ancillary") if propagated else None
+        for name, values in propagated.items():
             if values.ndim != 1:
                 raise ValueError(f"output column {name} is not one-dimensional")
             if len(values) != expected_rows:
@@ -378,9 +418,9 @@ def finalize_output(
             if name in integrity.attrs:
                 del integrity.attrs[name]
         if sfd_coefficients is not None:
-            integrity.attrs["sfd_bands"] = "ugrizy"
+            integrity.attrs["sfd_bands"] = "".join(sfd_bands)
             integrity.attrs["sfd_a_ebv"] = np.asarray(
-                [sfd_coefficients[band] for band in "ugrizy"], dtype=np.float64
+                [sfd_coefficients[band] for band in sfd_bands], dtype=np.float64
             )
         for name in (
             "row_id_column",
@@ -424,13 +464,14 @@ def setup(cfg):
             cfg.output,
             cfg.estimator,
             cfg.estimator_config,
+            cfg.bands,
             cfg.column_template,
             cfg.column_template_error,
             cfg.extra_args,
             cfg.hdf5_group,
             cfg.num_bins,
         )
-    except OSError as err:
+    except (OSError, ValueError) as err:
         error("Error: unable to load estimator calibration file.")
         error(err)
         abort()
@@ -468,15 +509,29 @@ def estimate(cfg, ctx):
     with parallel_config(backend='threading', n_jobs=1):
         if table_row_count(ctx.input.data) == 0:
             info("Input has zero rows; writing an empty estimate output.")
-            write_empty_estimate_output(cfg.output, ctx.estimator)
+            write_empty_estimate_output(
+                cfg.output, ctx.estimator, cfg.output_ancil_columns
+            )
         else:
+            if cfg.estimator == "dnf":
+                config = ctx.estimator.config
+                counts = replace_nondetections(
+                    ctx.input.data,
+                    config.bands,
+                    config.err_bands,
+                    config.mag_limits,
+                    config.nondetect_val,
+                )
+                info("DNF non-detections replaced: %s" % counts)
             ctx.estimator.estimate(ctx.input)
 
     finalize_output(
         cfg.output,
         ctx.output_columns,
+        cfg.output_ancil_columns,
         cfg.row_id_column,
         ctx.row_id_fingerprint,
+        cfg.bands if cfg.sfd_deredden else (),
         cfg.sfd_coefficients if cfg.sfd_deredden else None,
     )
 

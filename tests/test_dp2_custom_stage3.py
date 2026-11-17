@@ -1,0 +1,92 @@
+import importlib.util
+import json
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+
+ROOT = Path(__file__).parents[1]
+PROJECT = ROOT / "doc/dp2_v3/custom/dnf_cmodel_griz_riz"
+SCRIPT = PROJECT / "scripts/validate-hats.py"
+
+
+def load_validator():
+    spec = importlib.util.spec_from_file_location("test_custom_hats_validator", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def valid_frame():
+    return pd.DataFrame(
+        {
+            "objectId": [1, 2],
+            "coord_ra": [10.0, 20.0],
+            "coord_dec": [-10.0, 10.0],
+            "dnf_z_mean": [0.5, 1.5],
+            "dnf_z_median": [0.5, 1.5],
+            "dnf_z_mode": [0.4, 1.4],
+            "dnf_z_err68_low": [0.3, 1.3],
+            "dnf_z_err68_high": [0.7, 1.7],
+            "dnf_z_err95_low": [0.1, 1.1],
+            "dnf_z_err95_high": [0.9, 1.9],
+            "DNF_ZN": [0.45, 1.55],
+        }
+    )
+
+
+def test_partition_stats_accept_exact_scalar_contract():
+    validator = load_validator()
+    stats = validator.partition_stats(valid_frame())
+    assert stats["rows"] == 2
+    assert stats["coord_invalid"] == 0
+    assert stats["interval_invalid"] == 0
+    assert stats["grid_outside"] == 0
+    assert not any(stats["nonfinite"].values())
+    assert np.isclose(stats["zn_sum"], 2.0)
+
+
+def test_partition_stats_detects_nonfinite_and_unordered_intervals():
+    validator = load_validator()
+    frame = valid_frame()
+    frame.loc[0, "dnf_z_mean"] = np.nan
+    frame.loc[1, "dnf_z_err95_low"] = 2.0
+    stats = validator.partition_stats(frame)
+    assert stats["nonfinite"]["dnf_z_mean"] == 1
+    assert stats["interval_invalid"] == 1
+
+
+def test_pdf_named_product_is_rejected(tmp_path):
+    validator = load_validator()
+    hats = tmp_path / "scalar-hats"
+    hats.mkdir()
+    (tmp_path / "scalar-hats.pdf").mkdir()
+    with pytest.raises(ValueError, match="PDF"):
+        validator.reject_pdf_products(hats)
+
+
+def test_stage3_runner_is_explicitly_scalar_only():
+    runner = (PROJECT / "scripts/run-one-hats.sbatch").read_text()
+    assert "--pdf-layout=none" in runner
+    assert "--summary-prefix=dnf" in runner
+    assert "--include-95-interval" in runner
+    assert "--require-complete-marker" in runner
+    assert "--overwrite" not in runner
+    assert "--delete-hdf5-outputs" not in runner
+
+
+def test_validation_record_captures_publication_contract(tmp_path):
+    validator = load_validator()
+    path = validator.write_validation_record(
+        tmp_path, "griz", {"rows": 12, "columns": 11, "margin_arcsec": 5.0}
+    )
+    document = json.loads(path.read_text())
+    assert document["project"] == "dp2_v3p1_custom"
+    assert document["variant"] == "griz"
+    assert document["rows"] == 12
+    assert document["columns"] == list(validator.SUMMARY_COLUMNS)
+    assert document["science_dtype"] == "float64"
+    assert document["pdf_layout"] == "none"

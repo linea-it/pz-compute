@@ -56,8 +56,8 @@ This run used the legacy DP2/FlexZBoost orchestration documented in
 but it is not itself a v3 production validation.
 
 The sources for this section are the operator discussion retained from the
-LineA Slack thread and the generated `not-tracked/summary_stage1.json`,
-`summary_stage2.json`, and `summary_stage3.json` profiler artifacts.
+LineA Slack thread and the generated `summary_stage1.json`,
+`summary_stage2.json`, and `summary_stage3.json` local profiler artifacts.
 Infrastructure follow-up was assigned to ticket 476. Profiler timestamps are
 from Slurm accounting; message timestamps are identified explicitly where they
 are still used. The JSON files are local evidence and are not versioned with
@@ -66,9 +66,9 @@ their SHA-256 digests:
 
 | profiler artifact | SHA-256 |
 |---|---|
-| `not-tracked/summary_stage1.json` | `18aba63cfa1550551c17aba8c3ff9f6761c3d79e0759ba56ce700b2768142703` |
-| `not-tracked/summary_stage2.json` | `52f9500bed080b0b65af7e931a816689a2702c644516facdefbd42baafbc532e` |
-| `not-tracked/summary_stage3.json` | `9aea60a47ba9801bc30d33232bff0b6be37b48b5a0874f011c4845042aebfe09` |
+| `summary_stage1.json` | `18aba63cfa1550551c17aba8c3ff9f6761c3d79e0759ba56ce700b2768142703` |
+| `summary_stage2.json` | `52f9500bed080b0b65af7e931a816689a2702c644516facdefbd42baafbc532e` |
+| `summary_stage3.json` | `9aea60a47ba9801bc30d33232bff0b6be37b48b5a0874f011c4845042aebfe09` |
 
 ### Stage 1 measured profile
 

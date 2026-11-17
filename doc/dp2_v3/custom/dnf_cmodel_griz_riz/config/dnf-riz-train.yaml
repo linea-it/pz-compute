@@ -1,0 +1,19 @@
+# Custom DP2 DNF cModel riz training configuration.
+# Consumed only by this project's Stage 1 launcher.
+zmin: 0.0
+zmax: 6.0
+nzbins: 601
+nondetect_val: .nan
+bands:
+  - r_cModelMag
+  - i_cModelMag
+  - z_cModelMag
+err_bands:
+  - r_cModelMagErr
+  - i_cModelMagErr
+  - z_cModelMagErr
+mag_limits:
+  r_cModelMag: 27.1
+  i_cModelMag: 26.7
+  z_cModelMag: 25.8
+redshift_col: redshift

@@ -102,17 +102,23 @@ the last ones are used. The list of options follows:
 
 **--column-template=**_template_::
   Set the names of the input columns. This is a template text, by default
-  ``mag_\{band}''. The color bands required are ``u'', ``g'', ``r'', ``i'',
+  ``mag_\{band}''. The default color bands are ``u'', ``g'', ``r'', ``i'',
   ``z'' and ``y'', so, for example, when setting this option to
   ``\{band}magnitue'', it will require the columns ``umagnitude'',
   ``gmagnitude'', ``rmagnitude'', etc. present in the input file.
 
 **--column-template-error=**_template-error_::
   Set the names of the input error columns. This is a template text, by default
-  ``magerr_\{band}''. The color bands required are ``u'', ``g'', ``r'', ``i'',
+  ``magerr_\{band}''. The default color bands are ``u'', ``g'', ``r'', ``i'',
   ``z'' and ``y'', so, for example, when setting this option to
   ``\{band}error'', it will require the columns ``uerror'', ``gerror'',
   ``rerror'', etc. present in the input file.
+
+**--bands=**_bands_::
+  Select an ordered, unique subset of LSST bands. Compact (`griz`) and
+  comma-separated (`g,r,i,z`) forms are accepted. The default is `ugrizy`.
+  Parquet projection, SFD materialization, estimator configuration, and the
+  recorded SFD marker use only this selected order.
 
 *--sfd-deredden*::
   Generate requested magnitude and magnitude-error columns whose names end in
@@ -126,6 +132,11 @@ the last ones are used. The list of options follows:
 *--output-columns=*__columns__::
   Comma-separated input or generated scalar columns to store under `ancillary/`
   in the HDF5 output for propagation by *pz-build-hats*.
+
+*--output-ancil-columns=*__columns__::
+  Comma-separated allow-list of one-dimensional qp `ancil` datasets to copy
+  into `ancillary/` for propagation by *pz-build-hats*. The default is empty;
+  estimator diagnostics are never promoted implicitly.
 
 *--row-id-column=*__name__::
   Input identifier column used to store an order-sensitive row fingerprint.

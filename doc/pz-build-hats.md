@@ -51,6 +51,29 @@ z_p16
 z_p84
 ```
 
+This legacy schema remains the default. To publish Rubin-style algorithm
+columns, pass a validated prefix:
+
+```bash
+--summary-prefix=dnf --include-95-interval
+```
+
+The resulting scalar columns are:
+
+```text
+dnf_z_mean
+dnf_z_median
+dnf_z_mode
+dnf_z_err68_low
+dnf_z_err68_high
+dnf_z_err95_low
+dnf_z_err95_high
+```
+
+The 68% bounds are the 16th and 84th percentiles; the 95% bounds are the
+2.5th and 97.5th percentiles. Combine these options with `--pdf-layout=none`
+when PDFs are needed only internally to derive the scalar product.
+
 The companion PDF schema is:
 
 ```text
