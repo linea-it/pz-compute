@@ -233,7 +233,7 @@ jobids=$(
 test -n "$jobids"
 
 sacct --jobs="$jobids" --parsable2 --noheader \
-  --format=JobIDRaw,State,ExitCode,Elapsed,MaxRSS |
+  --format=JobID%30,State,ExitCode,Elapsed,MaxRSS |
 awk -F '|' '
   $1 ~ /^[0-9]+_[0-9]+$/ {
     split($1, parts, "_")
