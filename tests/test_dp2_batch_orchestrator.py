@@ -13,6 +13,8 @@ ESTIMATE_RUNNER = SCRIPTS / "run-one-estimate.sbatch"
 HATS_SUBMIT = SCRIPTS / "submit-hats.sh"
 HATS_RUNNER = SCRIPTS / "run-one-hats.sbatch"
 WORKER_IDS = SCRIPTS / "collect-hats-worker-job-ids.sh"
+TASK_METADATA = ROOT / "performance" / "slurm" / "manifest-task-metadata"
+SLURM_WATCH = ROOT / "performance" / "slurm" / "slurm-watch"
 
 
 def test_batch_shell_scripts_are_syntactically_valid_and_executable():
@@ -25,6 +27,8 @@ def test_batch_shell_scripts_are_syntactically_valid_and_executable():
     assert SUBMIT.stat().st_mode & 0o111
     assert RUNNER.stat().st_mode & 0o111
     assert WORKER_IDS.stat().st_mode & 0o111
+    assert TASK_METADATA.stat().st_mode & 0o111
+    assert SLURM_WATCH.stat().st_mode & 0o111
 
 
 def test_batch_submit_help_documents_serial_fail_fast_contract():
@@ -112,6 +116,8 @@ def test_stage2_and_stage3_are_contention_tolerant_and_unrestricted():
     assert "wait_for_workers" not in hats_runner_source
     assert runner_source.count("--cluster-context-nodes 'apl[01-28]'") == 2
     assert runner_source.count("--capture-slurm-snapshot") == 3
+    assert '--task-metadata-file "$metadata_file"' in runner_source
+    assert runner_source.count('--storage-path "$PZ_DP2_ROOT"') == 3
 
 
 def test_worker_id_collection_includes_accounting_only_jobs(tmp_path):

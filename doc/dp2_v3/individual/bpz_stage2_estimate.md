@@ -77,6 +77,7 @@ pilot benchmark:
 stage2=$PZ_DP2_ROOT/bpz/stage2
 pilot_jobid=$(tail -n 1 "$stage2/submitted-job-ids.tsv" | cut -f3)
 pilot_manifest=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.txt
+pilot_metadata=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.metadata.tsv
 pilot_expected=$(wc -l < "$pilot_manifest")
 test -n "$pilot_jobid"
 
@@ -87,6 +88,9 @@ performance/slurm/slurm-profile \
   --cluster-context-nodes 'apl[01-28]' \
   --label "bpz-stage2-pilot-$pilot_jobid" \
   --output-dir "$stage2/benchmark/pilot-$pilot_jobid" \
+  --task-metadata-file "$pilot_metadata" \
+  --context-file "$pilot_metadata" \
+  --storage-path "$PZ_DP2_ROOT" \
   --capture-slurm-snapshot \
   --fail-on-unsuccessful
 
@@ -120,6 +124,7 @@ validation passes, generate its production benchmark:
 stage2=$PZ_DP2_ROOT/bpz/stage2
 production_jobid=$(tail -n 1 "$stage2/submitted-job-ids.tsv" | cut -f3)
 production_manifest=$PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
+production_metadata=$PZ_DP2_ROOT/common/manifests/input-parquet-files.metadata.tsv
 production_expected=$(wc -l < "$production_manifest")
 test -n "$production_jobid"
 
@@ -130,6 +135,9 @@ performance/slurm/slurm-profile \
   --cluster-context-nodes 'apl[01-28]' \
   --label "bpz-stage2-production-$production_jobid" \
   --output-dir "$stage2/benchmark/production-$production_jobid" \
+  --task-metadata-file "$production_metadata" \
+  --context-file "$production_metadata" \
+  --storage-path "$PZ_DP2_ROOT" \
   --capture-slurm-snapshot \
   --fail-on-unsuccessful
 

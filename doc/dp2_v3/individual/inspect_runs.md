@@ -19,6 +19,23 @@ the training, pilot, production, driver, and worker benchmark commands appear
 at their chronological execution points. The artifacts and metrics are
 described in the [Slurm profiling guide](../../slurm_profile.md).
 
+For a retained low-cost live profile, start `slurm-watch` in another terminal
+immediately after submission. Use a 3-second interval for the short Stage 1
+training job and 60 seconds for Stage 2 or Stage 3:
+
+```bash
+performance/slurm/slurm-watch \
+  --job-id "$jobid" \
+  --interval-seconds 60 \
+  --storage-path "$PZ_DP2_ROOT" \
+  --context "algorithm=$algorithm" \
+  --output-dir "$stage_dir/benchmark/live-$jobid"
+```
+
+Set `stage_dir` to the active stage directory. The watcher records pending
+reasons, live step metrics, and free filesystem capacity without opening
+scientific data. It exits after the job reaches a terminal accounting state.
+
 ## Stage 1: training
 
 Recover the latest training job ID and inspect its queue and accounting state:
@@ -202,6 +219,21 @@ echo "run tag: $run_tag"
 squeue -j "$jobid" || true
 sacct -j "$jobid" --units=G \
   --format=JobID%20,State,ExitCode,Elapsed,TotalCPU,AllocCPUS,MaxRSS,ReqMem
+```
+
+Retain the driver and adaptive-worker live metrics under the same Stage 3
+benchmark directory:
+
+```bash
+worker_job_name=pz3-${algorithm}-${run_tag}
+performance/slurm/slurm-watch \
+  --job-id "$jobid" \
+  --job-name "$worker_job_name" \
+  --interval-seconds 60 \
+  --storage-path "$PZ_DP2_ROOT" \
+  --context "algorithm=$algorithm" \
+  --context stage=3 \
+  --output-dir "$stage3/benchmark/$run_tag/live"
 ```
 
 Follow the driver and inspect the Dask worker population from another terminal:

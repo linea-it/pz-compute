@@ -85,6 +85,25 @@ for variant in griz riz; do
 done
 ```
 
+For a retained low-cost live record, run one watcher per variant in a separate
+terminal while its job is active. The short training jobs justify a 3-second
+sampling interval:
+
+```bash
+variant=griz  # repeat with riz
+stage1=$PZ_DP2_CUSTOM_ROOT/$variant/stage1
+jobid=$(tail -n 1 "$stage1/submitted-job-ids.tsv" | cut -f3)
+
+performance/slurm/slurm-watch \
+  --job-id "$jobid" \
+  --interval-seconds 3 \
+  --storage-path "$PZ_DP2_CUSTOM_ROOT" \
+  --context algorithm=dnf \
+  --context "custom_variant=$variant" \
+  --context stage=1 \
+  --output-dir "$stage1/benchmark/live-$jobid"
+```
+
 ## Validate the completed models
 
 Only load pickle files produced by this controlled workflow. After both jobs
@@ -108,6 +127,7 @@ Record the first completed resource measurements separately for each variant:
 for variant in griz riz; do
   stage1=$PZ_DP2_CUSTOM_ROOT/$variant/stage1
   jobid=$(tail -n 1 "$stage1/submitted-job-ids.tsv" | cut -f3)
+  config=doc/dp2_v3/custom/dnf_cmodel_griz_riz/config/dnf-$variant-train.yaml
   test -n "$jobid"
 
   performance/slurm/slurm-profile \
@@ -117,6 +137,11 @@ for variant in griz riz; do
     --cluster-context-nodes 'apl[01-28]' \
     --label "dnf-cmodel-$variant-stage1-$jobid" \
     --output-dir "$stage1/benchmark/training-$jobid" \
+    --context algorithm=dnf \
+    --context "custom_variant=$variant" \
+    --context stage=1 \
+    --context-file "$config" \
+    --storage-path "$PZ_DP2_CUSTOM_ROOT" \
     --capture-slurm-snapshot \
     --fail-on-unsuccessful
 

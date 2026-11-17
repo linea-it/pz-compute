@@ -1,4 +1,5 @@
 import csv
+import gzip
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,13 @@ def test_slurm_profile_builds_array_metrics(tmp_path):
 
     job_ids = tmp_path / "job-ids.txt"
     job_ids.write_text("100\n", encoding="utf-8")
+    metadata = tmp_path / "metadata.tsv"
+    metadata.write_text(
+        "array_task_id\tinput_path\tinput_bytes\tinput_rows\n"
+        "0\t/input/a.parquet\t1000\t10\n"
+        "1\t/input/b.parquet\t2000\t20\n",
+        encoding="utf-8",
+    )
     output = tmp_path / "metrics"
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -50,6 +58,10 @@ def test_slurm_profile_builds_array_metrics(tmp_path):
             "--concurrency-target", "2",
             "--label", "test-array",
             "--output-dir", str(output),
+            "--task-metadata-file", str(metadata),
+            "--context", "algorithm=test",
+            "--context-file", str(metadata),
+            "--storage-path", str(tmp_path),
             "--capture-slurm-snapshot",
             "--fail-on-unsuccessful",
         ],
@@ -74,7 +86,11 @@ def test_slurm_profile_builds_array_metrics(tmp_path):
     }
 
     assert (output / "sacct.tsv").is_file()
+    assert (output / "sacct.tsv.gz").is_file()
     assert (output / "tasks.tsv").is_file()
+    assert (output / "tasks.tsv.gz").is_file()
+    assert (output / "task-metadata.tsv").is_file()
+    assert (output / "benchmark-context.json").is_file()
     assert (output / "time-profile.tsv").is_file()
     assert (output / "summary.log").is_file()
     assert summary["slurm_snapshot"]["available"] is True
@@ -82,6 +98,21 @@ def test_slurm_profile_builds_array_metrics(tmp_path):
     assert (output / "slurm-snapshot" / "config.txt").is_file()
     assert "<svg" in (output / "time-profile.svg").read_text(encoding="utf-8")
     ET.parse(output / "time-profile.svg")
+    with gzip.open(output / "tasks.tsv.gz", "rt", encoding="utf-8") as stream:
+        tasks = list(csv.DictReader(stream, delimiter="\t"))
+    assert tasks[0]["metadata_input_path"] == "/input/a.parquet"
+    assert tasks[1]["metadata_input_bytes"] == "2000"
+    assert summary["task_metadata"]["matched_tasks"] == 2
+    assert abs(
+        summary["task_metadata"]["correlations"]["input_bytes"][
+            "duration_seconds"
+        ]["pearson"]
+        - 1
+    ) < 1e-12
+    context = json.loads((output / "benchmark-context.json").read_text())
+    assert context["values"] == {"algorithm": "test"}
+    assert context["files"][0]["sha256"]
+    assert context["storage"][0]["available_bytes"] > 0
 
 
 def test_slurm_profile_accepts_regular_worker_job_ids(tmp_path):
@@ -154,7 +185,7 @@ def test_slurm_profile_collects_io_metrics_from_batch_step(tmp_path):
     )
 
     summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
-    assert summary["schema_version"] == 3
+    assert summary["schema_version"] == 4
     assert summary["io"]["jobs_with_accounting"] == 1
     assert summary["io"]["max_disk_read_gib"]["maximum"] == 2
     assert summary["io"]["max_disk_write_gib"]["maximum"] == 1
@@ -221,3 +252,152 @@ def test_slurm_profile_reports_scheduler_and_cluster_context(tmp_path):
     assert summary["cluster_context"]["includes_initial_queue_wait"] is True
     assert (output / "cluster-context-sacct.tsv").is_file()
     assert (output / "cluster-context-profile.tsv").is_file()
+
+
+def test_manifest_task_metadata_maps_array_ids_and_file_sizes(tmp_path):
+    helper = (
+        Path(__file__).parents[1]
+        / "performance"
+        / "slurm"
+        / "manifest-task-metadata"
+    )
+    first = tmp_path / "first.dat"
+    second = tmp_path / "second.dat"
+    first.write_bytes(b"one")
+    second.write_bytes(b"twenty")
+    manifest = tmp_path / "inputs.txt"
+    manifest.write_text(f"{first}\n{second}\n", encoding="utf-8")
+    output = tmp_path / "metadata.tsv"
+
+    subprocess.run(
+        [sys.executable, str(helper), str(manifest), str(output)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    with output.open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream, delimiter="\t"))
+    assert [row["array_task_id"] for row in rows] == ["0", "1"]
+    assert [row["input_bytes"] for row in rows] == ["3", "6"]
+    assert [row["input_path"] for row in rows] == [str(first), str(second)]
+
+
+def test_slurm_watch_samples_scheduler_steps_and_storage(tmp_path):
+    watcher = Path(__file__).parents[1] / "performance" / "slurm" / "slurm-watch"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    state_file = tmp_path / "squeue-count"
+    squeue = fake_bin / "squeue"
+    squeue.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in --version) echo 'slurm 1'; exit 0;; esac\n"
+        f"if [ ! -f '{state_file}' ]; then touch '{state_file}'; "
+        "printf '%s\\n' '500_[0-2%2]|PENDING|Resources' "
+        "'500_3|RUNNING|None'; fi\n",
+        encoding="utf-8",
+    )
+    sstat = fake_bin / "sstat"
+    sstat.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in --version) echo 'slurm 1'; exit 0;; esac\n"
+        "printf '500_3.batch|00:01|1024K|2048K|4096K|1K|2K|3K|4K|\\n'\n",
+        encoding="utf-8",
+    )
+    sacct = fake_bin / "sacct"
+    sacct.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in --version) echo 'slurm 1'; exit 0;; esac\n"
+        "printf 'COMPLETED|\\n'\n",
+        encoding="utf-8",
+    )
+    for executable in (squeue, sstat, sacct):
+        executable.chmod(0o755)
+    environment = os.environ.copy()
+    environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+    output = tmp_path / "monitor"
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(watcher),
+            "--job-id",
+            "500",
+            "--interval-seconds",
+            "0.01",
+            "--storage-path",
+            str(tmp_path),
+            "--context",
+            "algorithm=test",
+            "--output-dir",
+            str(output),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    summary = json.loads((output / "monitor-summary.json").read_text())
+    assert summary["status"] == "completed"
+    assert summary["max_tasks_by_state"] == {"PENDING": 3, "RUNNING": 1}
+    assert summary["max_tasks_by_reason"] == {"None": 1, "Resources": 3}
+    assert summary["minimum_available_bytes_by_path"][str(tmp_path.resolve())] > 0
+    assert (output / "step-samples.tsv").read_text().count("500_3.batch") >= 1
+
+
+def test_slurm_watch_discovers_jobs_by_name(tmp_path):
+    watcher = Path(__file__).parents[1] / "performance" / "slurm" / "slurm-watch"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    state_file = tmp_path / "squeue-count"
+    sstat_args = tmp_path / "sstat-args"
+    squeue = fake_bin / "squeue"
+    squeue.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in --version) echo 'slurm 1'; exit 0;; esac\n"
+        f"if [ ! -f '{state_file}' ]; then touch '{state_file}'; "
+        "printf '%s\\n' '700|RUNNING|None'; fi\n",
+        encoding="utf-8",
+    )
+    sstat = fake_bin / "sstat"
+    sstat.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in --version) echo 'slurm 1'; exit 0;; esac\n"
+        f"printf '%s\\n' \"$*\" > '{sstat_args}'\n"
+        "printf '700.batch|00:01|1024K|2048K|4096K|1K|2K|3K|4K|\\n'\n",
+        encoding="utf-8",
+    )
+    sacct = fake_bin / "sacct"
+    sacct.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in --version) echo 'slurm 1'; exit 0;; esac\n",
+        encoding="utf-8",
+    )
+    for executable in (squeue, sstat, sacct):
+        executable.chmod(0o755)
+    environment = os.environ.copy()
+    environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+    output = tmp_path / "monitor"
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(watcher),
+            "--job-name",
+            "adaptive-workers",
+            "--interval-seconds",
+            "0.01",
+            "--output-dir",
+            str(output),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    context = json.loads((output / "monitor-context.json").read_text())
+    assert context["job_names"] == ["adaptive-workers"]
+    assert "--jobs=700" in sstat_args.read_text()
+    assert (output / "scheduler-samples.tsv").read_text().count("700") == 1

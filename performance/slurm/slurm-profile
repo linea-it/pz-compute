@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
+import hashlib
 import html
 import json
 import math
 import os
 import re
+import socket
 import subprocess
 import sys
 from collections import Counter
@@ -104,6 +107,36 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--task-metadata-file",
+        type=Path,
+        help=(
+            "Optional TSV keyed by job_id or array_task_id. Additional columns "
+            "are copied into tasks.tsv with a metadata_ prefix and correlated "
+            "with duration and MaxRSS when numeric."
+        ),
+    )
+    parser.add_argument(
+        "--context",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Additional reproducibility context; may be repeated.",
+    )
+    parser.add_argument(
+        "--context-file",
+        action="append",
+        default=[],
+        type=Path,
+        help="File to record by path, size, and SHA-256; may be repeated.",
+    )
+    parser.add_argument(
+        "--storage-path",
+        action="append",
+        default=[],
+        type=Path,
+        help="Filesystem path whose post-run capacity is recorded; may be repeated.",
+    )
+    parser.add_argument(
         "--expected-jobs",
         type=int,
         help="Expected total number of logical jobs.",
@@ -127,6 +160,9 @@ def parse_args() -> argparse.Namespace:
         parser.error("provide --job-id, --job-id-file, or --sacct-file")
     if args.cluster_sacct_file and args.cluster_context_nodes:
         parser.error("use either --cluster-context-nodes or --cluster-sacct-file, not both")
+    for item in args.context:
+        if "=" not in item or not item.split("=", 1)[0].strip():
+            parser.error("--context values must use KEY=VALUE")
     return args
 
 
@@ -279,6 +315,9 @@ def parse_sacct_lines(lines: list[str], has_header: bool | None = None) -> list[
 
 
 def read_sacct_file(path: Path) -> list[dict[str, str]]:
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as stream:
+            return parse_sacct_lines(stream.readlines())
     return parse_sacct_lines(path.read_text(encoding="utf-8").splitlines())
 
 
@@ -287,6 +326,87 @@ def write_tsv(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
         writer = csv.DictWriter(stream, fieldnames=fieldnames, delimiter="\t", extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
+
+
+def write_tsv_gzip(path: Path, fieldnames: list[str], rows: list[dict]) -> None:
+    with gzip.open(path, "wt", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream, fieldnames=fieldnames, delimiter="\t", extrasaction="ignore"
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def storage_snapshot(path: Path) -> dict:
+    resolved = path.resolve()
+    stats = os.statvfs(resolved)
+    return {
+        "path": str(resolved),
+        "total_bytes": stats.f_blocks * stats.f_frsize,
+        "available_bytes": stats.f_bavail * stats.f_frsize,
+        "free_bytes": stats.f_bfree * stats.f_frsize,
+    }
+
+
+def git_context(path: Path) -> dict | None:
+    result = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "--show-toplevel", "HEAD"],
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode:
+        return None
+    lines = result.stdout.splitlines()
+    dirty = subprocess.run(
+        ["git", "-C", lines[0], "status", "--porcelain"],
+        text=True,
+        capture_output=True,
+    )
+    return {
+        "root": lines[0],
+        "commit": lines[1],
+        "dirty": bool(dirty.stdout.strip()) if dirty.returncode == 0 else None,
+    }
+
+
+def build_benchmark_context(args: argparse.Namespace) -> dict:
+    values = {}
+    for item in args.context:
+        key, value = item.split("=", 1)
+        values[key.strip()] = value
+    files = []
+    for path in args.context_file:
+        resolved = path.resolve()
+        files.append(
+            {
+                "path": str(resolved),
+                "size_bytes": resolved.stat().st_size,
+                "sha256": sha256_file(resolved),
+            }
+        )
+    return {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "label": args.label,
+        "requested_job_ids": collect_job_ids(args),
+        "expected_jobs": args.expected_jobs,
+        "concurrency_target": args.concurrency_target,
+        "hostname": socket.gethostname(),
+        "working_directory": str(Path.cwd()),
+        "python": sys.version.splitlines()[0],
+        "command": sys.argv,
+        "git": git_context(Path.cwd()),
+        "values": values,
+        "files": files,
+        "storage": [storage_snapshot(path) for path in args.storage_path],
+    }
 
 
 def parse_datetime(value: str) -> datetime | None:
@@ -507,6 +627,109 @@ TASK_FIELDS = [
     "max_disk_write_gib",
     "node_list",
 ]
+
+
+def read_task_metadata(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt", encoding="utf-8", newline="") as stream:
+        reader = csv.DictReader(stream, delimiter="\t")
+        if not reader.fieldnames:
+            raise SystemExit(f"task metadata has no header: {path}")
+        keys = {"job_id", "array_task_id"} & set(reader.fieldnames)
+        if not keys:
+            raise SystemExit(
+                "task metadata must contain job_id or array_task_id: " + str(path)
+            )
+        fields = [field for field in reader.fieldnames if field not in keys]
+        if not fields:
+            raise SystemExit(f"task metadata has no value columns: {path}")
+        rows = list(reader)
+    return fields, rows
+
+
+def enrich_tasks_with_metadata(
+    tasks: list[dict], fields: list[str], metadata_rows: list[dict[str, str]]
+) -> dict:
+    by_job = {}
+    by_array = {}
+    for row in metadata_rows:
+        job_id = (row.get("job_id") or "").strip()
+        array_id = (row.get("array_task_id") or "").strip()
+        target = by_job if job_id else by_array
+        key = job_id or array_id
+        if not key:
+            raise SystemExit("task metadata row has neither job_id nor array_task_id")
+        if key in target:
+            raise SystemExit(f"duplicate task metadata key: {key}")
+        target[key] = row
+
+    matched = 0
+    matched_keys = set()
+    for task in tasks:
+        row = by_job.get(str(task["job_id"]))
+        match_key = ("job_id", str(task["job_id"]))
+        if row is None and task["array_task_id"] != "":
+            array_id = str(task["array_task_id"])
+            row = by_array.get(array_id)
+            match_key = ("array_task_id", array_id)
+        if row is not None:
+            matched += 1
+            matched_keys.add(match_key)
+        for field in fields:
+            task[f"metadata_{field}"] = row.get(field, "") if row else ""
+
+    unmatched_metadata = len(metadata_rows) - len(matched_keys)
+    return {
+        "rows": len(metadata_rows),
+        "matched_tasks": matched,
+        "unmatched_tasks": len(tasks) - matched,
+        "unmatched_metadata_rows": unmatched_metadata,
+        "fields": fields,
+    }
+
+
+def parse_float(value) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def pearson(values: list[tuple[float, float]]) -> float | None:
+    if len(values) < 2:
+        return None
+    xs = [item[0] for item in values]
+    ys = [item[1] for item in values]
+    x_mean = mean(xs)
+    y_mean = mean(ys)
+    numerator = sum((x - x_mean) * (y - y_mean) for x, y in values)
+    x_scale = math.sqrt(sum((x - x_mean) ** 2 for x in xs))
+    y_scale = math.sqrt(sum((y - y_mean) ** 2 for y in ys))
+    return numerator / (x_scale * y_scale) if x_scale and y_scale else None
+
+
+def metadata_correlations(tasks: list[dict], fields: list[str]) -> dict:
+    result = {}
+    for field in fields:
+        metadata_key = f"metadata_{field}"
+        correlations = {}
+        for metric in ("duration_seconds", "max_rss_gib", "total_cpu_seconds"):
+            pairs = []
+            for task in tasks:
+                x = parse_float(task.get(metadata_key))
+                y = parse_float(task.get(metric))
+                if x is not None and y is not None:
+                    pairs.append((x, y))
+            coefficient = pearson(pairs)
+            if coefficient is not None:
+                correlations[metric] = {
+                    "pearson": coefficient,
+                    "pairs": len(pairs),
+                }
+        if correlations:
+            result[field] = correlations
+    return result
 
 
 def build_tasks(logical_rows: list[dict[str, str]], all_rows: list[dict[str, str]]) -> list[dict]:
@@ -924,7 +1147,7 @@ def build_summary(
     duration_stats = stats(durations)
     concurrency_detail = concurrency_timing(profile, concurrency_target)
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "label": label,
         "requested_job_ids": requested_ids,
@@ -1128,6 +1351,16 @@ def write_summary_log(path: Path, summary: dict) -> None:
                 f"slurm_snapshot_directory: {snapshot['directory']}",
             ]
         )
+    metadata = summary.get("task_metadata")
+    if metadata:
+        lines.extend(
+            [
+                f"task_metadata_rows: {metadata['rows']}",
+                f"task_metadata_matched_tasks: {metadata['matched_tasks']}",
+                f"task_metadata_unmatched_tasks: {metadata['unmatched_tasks']}",
+                "task_metadata_fields: " + ", ".join(metadata["fields"]),
+            ]
+        )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -1221,8 +1454,17 @@ def main() -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     write_tsv(args.output_dir / "sacct.tsv", list(SACCT_FIELDS), rows)
+    write_tsv_gzip(args.output_dir / "sacct.tsv.gz", list(SACCT_FIELDS), rows)
     logical_rows = select_logical_rows(rows, requested_ids)
     tasks = build_tasks(logical_rows, rows)
+    metadata_fields = []
+    metadata_summary = None
+    metadata_rows = []
+    if args.task_metadata_file:
+        metadata_fields, metadata_rows = read_task_metadata(args.task_metadata_file)
+        metadata_summary = enrich_tasks_with_metadata(tasks, metadata_fields, metadata_rows)
+        metadata_summary["source"] = str(args.task_metadata_file.resolve())
+        metadata_summary["correlations"] = metadata_correlations(tasks, metadata_fields)
     profile, peak, average_active, first_start, last_end = build_profile(tasks)
     summary = build_summary(
         args.label,
@@ -1236,6 +1478,8 @@ def main() -> int:
         first_start,
         last_end,
     )
+    if metadata_summary is not None:
+        summary["task_metadata"] = metadata_summary
 
     submit_times = [task["_submit_dt"] for task in tasks if task["_submit_dt"] is not None]
     context_start = min(submit_times) if submit_times else first_start
@@ -1262,6 +1506,11 @@ def main() -> int:
         cluster_summary["includes_initial_queue_wait"] = True
         summary["cluster_context"] = cluster_summary
         write_tsv(args.output_dir / "cluster-context-sacct.tsv", list(SACCT_FIELDS), cluster_rows)
+        write_tsv_gzip(
+            args.output_dir / "cluster-context-sacct.tsv.gz",
+            list(SACCT_FIELDS),
+            cluster_rows,
+        )
         write_tsv(
             args.output_dir / "cluster-context-profile.tsv",
             CLUSTER_PROFILE_FIELDS,
@@ -1274,8 +1523,21 @@ def main() -> int:
             summary["slurm"]["partitions"],
         )
 
-    serializable_tasks = [{key: task.get(key) for key in TASK_FIELDS} for task in tasks]
-    write_tsv(args.output_dir / "tasks.tsv", TASK_FIELDS, serializable_tasks)
+    task_fields = TASK_FIELDS + [f"metadata_{field}" for field in metadata_fields]
+    serializable_tasks = [{key: task.get(key) for key in task_fields} for task in tasks]
+    write_tsv(args.output_dir / "tasks.tsv", task_fields, serializable_tasks)
+    write_tsv_gzip(args.output_dir / "tasks.tsv.gz", task_fields, serializable_tasks)
+    if args.task_metadata_file:
+        metadata_keys = [
+            key
+            for key in ("job_id", "array_task_id")
+            if any((row.get(key) or "").strip() for row in metadata_rows)
+        ]
+        write_tsv(
+            args.output_dir / "task-metadata.tsv",
+            metadata_keys + metadata_fields,
+            metadata_rows,
+        )
     write_tsv(
         args.output_dir / "time-profile.tsv",
         [
@@ -1290,8 +1552,18 @@ def main() -> int:
         ],
         profile,
     )
+    context = build_benchmark_context(args)
+    summary["benchmark_context"] = {
+        "artifact": "benchmark-context.json",
+        "context_values": len(context["values"]),
+        "context_files": len(context["files"]),
+        "storage_paths": len(context["storage"]),
+    }
     (args.output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    (args.output_dir / "benchmark-context.json").write_text(
+        json.dumps(context, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     write_summary_log(args.output_dir / "summary.log", summary)
     write_svg(

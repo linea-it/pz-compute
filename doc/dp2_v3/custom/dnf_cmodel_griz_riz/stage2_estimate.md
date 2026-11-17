@@ -68,6 +68,27 @@ for variant in griz riz; do
 done
 ```
 
+To retain pending reasons, transient step memory/I/O, and filesystem headroom,
+run the generic watcher for each active array:
+
+```bash
+variant=griz  # repeat with riz
+stage2=$PZ_DP2_CUSTOM_ROOT/$variant/stage2
+ledger=$stage2/submitted-job-ids.tsv
+jobid=$(awk -F '\t' '$2 == variant && $3 == "pilot" {id=$4} END {print id}' \
+  variant="$variant" "$ledger")
+
+performance/slurm/slurm-watch \
+  --job-id "$jobid" \
+  --interval-seconds 60 \
+  --storage-path "$PZ_DP2_CUSTOM_ROOT" \
+  --context algorithm=dnf \
+  --context "custom_variant=$variant" \
+  --context stage=2 \
+  --context scope=pilot \
+  --output-dir "$stage2/benchmark/live-pilot-$jobid"
+```
+
 After both arrays leave `squeue`, require all five tasks in each array to have
 state `COMPLETED` and exit code `0:0`. Then validate and seal the pilot:
 
@@ -90,7 +111,10 @@ for variant in griz riz; do
   stage2=$PZ_DP2_CUSTOM_ROOT/$variant/stage2
   jobid=$(awk -F '\t' '$2 == variant && $3 == "pilot" {id=$4} END {print id}' \
     variant="$variant" "$stage2/submitted-job-ids.tsv")
-  expected=$(wc -l < "$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.txt")
+  manifest=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.txt
+  metadata=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.metadata.tsv
+  config=doc/dp2_v3/custom/dnf_cmodel_griz_riz/config/dnf-$variant-estimate.yaml
+  expected=$(wc -l < "$manifest")
 
   performance/slurm/slurm-profile \
     --job-id "$jobid" \
@@ -99,6 +123,15 @@ for variant in griz riz; do
     --cluster-context-nodes 'apl[01-28]' \
     --label "dnf-cmodel-$variant-stage2-pilot-$jobid" \
     --output-dir "$stage2/benchmark/pilot-$jobid" \
+    --task-metadata-file "$metadata" \
+    --context algorithm=dnf \
+    --context "custom_variant=$variant" \
+    --context stage=2 \
+    --context scope=pilot \
+    --context-file "$manifest" \
+    --context-file "$metadata" \
+    --context-file "$config" \
+    --storage-path "$PZ_DP2_CUSTOM_ROOT" \
     --capture-slurm-snapshot \
     --fail-on-unsuccessful
 
@@ -156,10 +189,46 @@ $PZ_DP2_CUSTOM_ROOT/<variant>/stage2/
 └── submitted-job-ids.tsv
 ```
 
-Profile each production array with its accepted concurrency and the full
-manifest count, following the same `slurm-profile` pattern used for the pilot.
-If retries are required, retain all job IDs and use a job-ID file when
-profiling the combined attempts.
+Profile each production array with its accepted concurrency, full manifest,
+and per-shard metadata:
+
+```bash
+for variant in griz riz; do
+  stage2=$PZ_DP2_CUSTOM_ROOT/$variant/stage2
+  jobid=$(awk -F '\t' '$2 == variant && $3 == "production" {id=$4} END {print id}' \
+    variant="$variant" "$stage2/submitted-job-ids.tsv")
+  manifest=$PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
+  metadata=$PZ_DP2_ROOT/common/manifests/input-parquet-files.metadata.tsv
+  config=doc/dp2_v3/custom/dnf_cmodel_griz_riz/config/dnf-$variant-estimate.yaml
+  expected=$(wc -l < "$manifest")
+
+  performance/slurm/slurm-profile \
+    --job-id "$jobid" \
+    --expected-jobs "$expected" \
+    --concurrency-target 102 \
+    --cluster-context-nodes 'apl[01-28]' \
+    --label "dnf-cmodel-$variant-stage2-production-$jobid" \
+    --output-dir "$stage2/benchmark/production-$jobid" \
+    --task-metadata-file "$metadata" \
+    --context algorithm=dnf \
+    --context "custom_variant=$variant" \
+    --context stage=2 \
+    --context scope=production \
+    --context-file "$manifest" \
+    --context-file "$metadata" \
+    --context-file "$config" \
+    --storage-path "$PZ_DP2_CUSTOM_ROOT" \
+    --capture-slurm-snapshot \
+    --fail-on-unsuccessful
+
+  cat "$stage2/benchmark/production-$jobid/summary.log"
+done
+```
+
+Use the resolved concurrency instead of `102` when an override was active.
+For a live production record, repeat the watcher example with
+`scope=production` and `live-production-$jobid`. If retries are required,
+retain all job IDs and use a job-ID file when profiling the combined attempts.
 
 Continue with [`stage3_build_hats.md`](stage3_build_hats.md) only after both
 `production/READY` markers exist and their checksums still validate.

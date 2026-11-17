@@ -15,9 +15,14 @@ esac
 
 PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
 PZ_DP2_INPUT_DATASET=${PZ_DP2_INPUT_DATASET:-/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset}
+scripts_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+repo_dir=$(cd "$scripts_dir/../../.." && pwd)
+metadata_tool=$repo_dir/performance/slurm/manifest-task-metadata
 manifest_dir=$PZ_DP2_ROOT/common/manifests
 full_manifest=$manifest_dir/input-parquet-files.txt
 pilot_manifest=$manifest_dir/pilot-parquet-files.txt
+full_metadata=$manifest_dir/input-parquet-files.metadata.tsv
+pilot_metadata=$manifest_dir/pilot-parquet-files.metadata.tsv
 
 mkdir -p "$manifest_dir"
 full_tmp=$(mktemp "$manifest_dir/input-parquet-files.tmp.XXXXXX")
@@ -29,6 +34,7 @@ if [ ! -s "$full_tmp" ]; then
 fi
 mv "$full_tmp" "$full_manifest"
 echo "full manifest: $full_manifest ($(wc -l < "$full_manifest") files)"
+"$metadata_tool" --parquet-rows "$full_manifest" "$full_metadata"
 
 if [ "$mode" = all ]; then
     pilot_tmp=$(mktemp "$manifest_dir/pilot-parquet-files.tmp.XXXXXX")
@@ -38,4 +44,5 @@ if [ "$mode" = all ]; then
       awk -F '\t' 'NR <= 5 {sub(/^[^\t]*\t/, ""); print}' > "$pilot_tmp"
     mv "$pilot_tmp" "$pilot_manifest"
     echo "pilot manifest: $pilot_manifest ($(wc -l < "$pilot_manifest") files)"
+    "$metadata_tool" --parquet-rows "$pilot_manifest" "$pilot_metadata"
 fi

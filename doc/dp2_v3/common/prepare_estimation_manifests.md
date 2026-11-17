@@ -22,8 +22,16 @@ The command writes:
 
 ```text
 $PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
+$PZ_DP2_ROOT/common/manifests/input-parquet-files.metadata.tsv
 $PZ_DP2_ROOT/common/manifests/pilot-parquet-files.txt
+$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.metadata.tsv
 ```
+
+Each metadata table maps the zero-based array task id to its input path, byte
+size, modification timestamp, and Parquet row count. It is algorithm-neutral
+and can be joined into any `slurm-profile` result with
+`--task-metadata-file`, allowing duration, CPU, and `MaxRSS` to be correlated
+with input size without opening scientific columns.
 
 Verify the manifests before submission:
 

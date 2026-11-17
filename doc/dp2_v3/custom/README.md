@@ -12,6 +12,12 @@ project may reuse immutable inputs and generic tools, but it must not place
 models, estimates, HATS products, or run-specific configuration in the
 official output trees.
 
+Custom projects should use the shared benchmark module described in
+[`../../slurm_profile.md`](../../slurm_profile.md). In particular, retain
+task metadata for arrays, resolved context and configuration checksums,
+compressed raw accounting, and inexpensive live scheduler/storage samples
+when they are relevant to the workflow.
+
 ## Compatibility rule
 
 Generic code changes needed by a custom project must preserve the existing

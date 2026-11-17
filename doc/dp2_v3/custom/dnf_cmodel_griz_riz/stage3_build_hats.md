@@ -85,6 +85,28 @@ for variant in griz riz; do
 done
 ```
 
+Start the general watcher in a separate terminal for each build. Selecting the
+driver by ID and the adaptive workers by their run-specific Slurm name captures
+both populations even though worker IDs do not exist at submission time:
+
+```bash
+variant=griz  # repeat with riz
+stage3=$PZ_DP2_CUSTOM_ROOT/$variant/stage3
+IFS=$'\t' read -r submitted recorded_variant jobid run_tag < \
+  <(tail -n 1 "$stage3/submitted-job-ids.tsv")
+worker_job_name=pz3c-${variant}-${run_tag}
+
+performance/slurm/slurm-watch \
+  --job-id "$jobid" \
+  --job-name "$worker_job_name" \
+  --interval-seconds 60 \
+  --storage-path "$PZ_DP2_CUSTOM_ROOT" \
+  --context algorithm=dnf \
+  --context "custom_variant=$variant" \
+  --context stage=3 \
+  --output-dir "$stage3/benchmark/$run_tag/live"
+```
+
 The driver runs final validation automatically and returns nonzero if it
 fails. After completion, require its explicit exit marker and optionally rerun
 the validator:
@@ -137,6 +159,8 @@ IFS=$'\t' read -r submitted recorded_variant jobid run_tag < \
   <(tail -n 1 "$stage3/submitted-job-ids.tsv")
 benchmark=$stage3/benchmark/$run_tag
 worker_logs=$stage3/log/dask-$run_tag
+run_context=$benchmark/run-context.log
+worker_name=$benchmark/worker-job-name.txt
 
 performance/slurm/slurm-profile \
   --job-id "$jobid" \
@@ -144,6 +168,13 @@ performance/slurm/slurm-profile \
   --concurrency-target 1 \
   --label "dnf-cmodel-$variant-stage3-driver-$jobid" \
   --output-dir "$benchmark/driver" \
+  --context algorithm=dnf \
+  --context "custom_variant=$variant" \
+  --context stage=3 \
+  --context role=driver \
+  --context-file "$run_context" \
+  --context-file "$worker_name" \
+  --storage-path "$PZ_DP2_CUSTOM_ROOT" \
   --capture-slurm-snapshot \
   --fail-on-unsuccessful
 
@@ -158,12 +189,21 @@ performance/slurm/slurm-profile \
   --cluster-context-nodes 'apl[01-28]' \
   --label "dnf-cmodel-$variant-stage3-workers-$run_tag" \
   --output-dir "$benchmark/workers" \
+  --context algorithm=dnf \
+  --context "custom_variant=$variant" \
+  --context stage=3 \
+  --context role=worker \
+  --context-file "$run_context" \
+  --context-file "$worker_name" \
+  --storage-path "$PZ_DP2_CUSTOM_ROOT" \
   --capture-slurm-snapshot
 ```
 
 Adaptive workers may be cancelled during scale-down, so do not use
 `--fail-on-unsuccessful` for the worker union. Success is determined by the
 driver exit code, clean validation, `VALIDATION.json`, and `READY`.
+The profiler also retains compressed accounting/task tables and a
+`benchmark-context.json`; keep those artifacts with the publication record.
 
 ## 5. Publication provenance
 

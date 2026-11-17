@@ -21,7 +21,11 @@ Each invocation creates an isolated output directory containing:
 | `summary.log` | compact human-readable production log |
 | `summary.json` | machine-readable copy of all aggregate metrics |
 | `sacct.tsv` | raw Slurm accounting records used by the analysis |
+| `sacct.tsv.gz` | compressed raw accounting for long-term retention |
 | `tasks.tsv` | one normalized row per array task or worker job |
+| `tasks.tsv.gz` | compressed per-task accounting for long-term retention |
+| `benchmark-context.json` | command, host, Git state, context values, file checksums, and storage capacity |
+| `task-metadata.tsv` | optional retained input metadata joined to array tasks |
 | `time-profile.tsv` | timestamped active/finished-job series |
 | `time-profile.svg` | concurrency and cumulative-finished-job profile |
 | `cluster-context-sacct.tsv` | optional raw accounting for other allocations overlapping the run |
@@ -74,6 +78,85 @@ from `scontrol` and `squeue`. This preserves the topology and scheduler
 configuration needed to interpret a future comparison even if nodes or
 partitions change. Snapshot command failures are recorded in `summary.json`
 without discarding the accounting profile.
+
+The raw accounting and normalized task tables are also written as gzip files
+by default. Keep those compressed copies even when pruning a large benchmark:
+they preserve the task that produced each resource peak and are normally small
+compared with workflow logs.
+
+## Reproducibility and task metadata
+
+Use repeated `--context KEY=VALUE` options for resolved workflow settings,
+`--context-file` for manifests or configurations that should be recorded by
+checksum, and `--storage-path` for a post-run filesystem-capacity snapshot.
+The profiler also records its command, host, Python version, working directory,
+and Git commit automatically in `benchmark-context.json`.
+
+For Slurm arrays, pass a tab-separated table keyed by `array_task_id` or
+`job_id`:
+
+```bash
+performance/slurm/slurm-profile \
+  --job-id "$ARRAY_JOB_ID" \
+  --task-metadata-file input-files.metadata.tsv \
+  --context-file input-files.metadata.tsv \
+  --storage-path "$RUN_ROOT" \
+  --output-dir benchmark/production
+```
+
+Additional columns are copied into `tasks.tsv` with a `metadata_` prefix.
+Numeric fields receive Pearson correlations against duration, `MaxRSS`, and
+total CPU time in `summary.json`. The generic helper below creates metadata
+from any line-oriented file manifest; `--parquet-rows` reads only Parquet
+footers:
+
+```bash
+performance/slurm/manifest-task-metadata \
+  --parquet-rows input-files.txt input-files.metadata.tsv
+```
+
+## Lightweight live sampling
+
+Post-run accounting cannot reconstruct historical pending reasons, transient
+step RSS, or the minimum free filesystem capacity. Start `slurm-watch` after
+submission when those measurements matter:
+
+```bash
+performance/slurm/slurm-watch \
+  --job-id "$JOB_ID" \
+  --interval-seconds 60 \
+  --storage-path "$RUN_ROOT" \
+  --context algorithm=fzboost \
+  --output-dir benchmark/live-$JOB_ID
+```
+
+The watcher stops after accounting reports a terminal job. It writes:
+
+- `scheduler-samples.tsv`, including task counts by state and pending reason;
+- `step-samples.tsv`, with inexpensive metrics exposed by `sstat`;
+- `storage-samples.tsv`, with total, free, and user-available filesystem bytes;
+- `monitor-summary.json` and `monitor-context.json`.
+
+The default 60-second interval is suitable for long arrays and distributed
+workflows. Use 2–5 seconds only for short jobs such as model training. Storage
+samples use `statvfs`; they do not traverse output trees and do not replace
+project-quota monitoring when quota differs from filesystem capacity.
+
+For adaptive workers whose IDs are not known when monitoring starts, add the
+exact Slurm job name. The watcher discovers their IDs from `squeue`, includes
+their live `sstat` records, and deduplicates jobs also selected by ID:
+
+```bash
+performance/slurm/slurm-watch \
+  --job-id "$DRIVER_JOB_ID" \
+  --job-name "$WORKER_JOB_NAME" \
+  --interval-seconds 60 \
+  --output-dir benchmark/live-$DRIVER_JOB_ID
+```
+
+`--job-name` may also be used by itself. In that mode the watcher waits up to
+the startup timeout for the first matching job and exits after the observed
+job population disappears from the queue.
 
 ## Basic usage
 

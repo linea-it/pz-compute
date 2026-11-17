@@ -292,6 +292,7 @@ profile_regular_job() {
       --concurrency-target "$target"
       --label "$label"
       --output-dir "$output_dir"
+      --storage-path "$PZ_DP2_ROOT"
       --capture-slurm-snapshot
       --fail-on-unsuccessful
     )
@@ -307,6 +308,7 @@ profile_array_job() {
     local target=${3:?target is required}
     local label=${4:?label is required}
     local output_dir=${5:?output directory is required}
+    local metadata_file=${6:?task metadata file is required}
     "$profile" \
       --job-id "$jobid" \
       --expected-jobs "$expected" \
@@ -314,6 +316,9 @@ profile_array_job() {
       --cluster-context-nodes 'apl[01-28]' \
       --label "$label" \
       --output-dir "$output_dir" \
+      --task-metadata-file "$metadata_file" \
+      --context-file "$metadata_file" \
+      --storage-path "$PZ_DP2_ROOT" \
       --capture-slurm-snapshot \
       --fail-on-unsuccessful
 }
@@ -365,7 +370,8 @@ require_fresh_downstream_tree() {
 run_algorithm() {
     local algorithm=${1:?algorithm is required}
     local upper stage1 stage2 stage3 ledger before jobid
-    local pilot_manifest full_manifest pilot_expected production_expected
+    local pilot_manifest full_manifest pilot_metadata full_metadata
+    local pilot_expected production_expected
     local production_target run_tag benchmark_dir driver_logs worker_logs worker_count
 
     current_algorithm=$algorithm
@@ -415,6 +421,7 @@ run_algorithm() {
     record_status COMPLETED "smoke test passed"
 
     pilot_manifest=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.txt
+    pilot_metadata=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.metadata.tsv
     pilot_expected=$(wc -l < "$pilot_manifest")
     current_stage=stage2-pilot
     record_status STARTED "submitting $pilot_expected pilot tasks"
@@ -429,7 +436,8 @@ run_algorithm() {
     current_stage=stage2-pilot-benchmark
     record_status STARTED "profiling pilot array $jobid"
     profile_array_job "$jobid" "$pilot_expected" 5 \
-      "$algorithm-stage2-pilot-$jobid" "$stage2/benchmark/pilot-$jobid"
+      "$algorithm-stage2-pilot-$jobid" "$stage2/benchmark/pilot-$jobid" \
+      "$pilot_metadata"
     record_status COMPLETED "pilot benchmark written"
     record_artifact benchmark "$stage2/benchmark/pilot-$jobid"
 
@@ -442,6 +450,7 @@ run_algorithm() {
     dp2_algorithm_config "$algorithm"
     production_target=$PZ_DEFAULT_MAX_CONCURRENT
     full_manifest=$PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
+    full_metadata=$PZ_DP2_ROOT/common/manifests/input-parquet-files.metadata.tsv
     production_expected=$(wc -l < "$full_manifest")
     current_stage=stage2-production
     record_status STARTED "submitting $production_expected production tasks with target $production_target"
@@ -454,7 +463,8 @@ run_algorithm() {
     current_stage=stage2-production-benchmark
     record_status STARTED "profiling production array $jobid"
     profile_array_job "$jobid" "$production_expected" "$production_target" \
-      "$algorithm-stage2-production-$jobid" "$stage2/benchmark/production-$jobid"
+      "$algorithm-stage2-production-$jobid" "$stage2/benchmark/production-$jobid" \
+      "$full_metadata"
     record_status COMPLETED "production benchmark written"
     record_artifact benchmark "$stage2/benchmark/production-$jobid"
 
@@ -505,6 +515,7 @@ run_algorithm() {
       --cluster-context-nodes 'apl[01-28]' \
       --label "$algorithm-stage3-workers-$run_tag" \
       --output-dir "$benchmark_dir/workers" \
+      --storage-path "$PZ_DP2_ROOT" \
       --capture-slurm-snapshot
     test -f "$driver_logs/driver-resource-usage.log"
     record_status COMPLETED "$worker_count worker jobs profiled"

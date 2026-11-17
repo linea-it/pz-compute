@@ -47,6 +47,10 @@ estimates. Both passed full scalar scans, interval ordering, Stage 2/HATS
 
 The measured resource evidence and accepted defaults are recorded in
 [`resource_measurements.md`](resource_measurements.md).
+All three guides use the general profiling tools documented in
+[`../../../slurm_profile.md`](../../../slurm_profile.md), including task-input
+metadata, reproducibility context, compressed accounting, storage headroom,
+and low-frequency live monitoring.
 
 These guides reuse the official environment and operational patterns from
 [`../../individual/`](../../individual/README.md), but all project-specific
