@@ -7,20 +7,21 @@ to the next algorithm.
 
 ## 1. Driver and adaptive workers
 
-The controller invokes `submit-hats.sh <algorithm>`, not `all`. The standard
-configuration is:
+The controller invokes `submit-hats.sh <algorithm>`, not `all`. It resolves the
+accepted per-algorithm resources before each submission:
 
-| Component | Resources |
-|---|---|
-| Driver | 1 node, 1 task, 2 CPUs, 8 GiB, 2 days |
-| Dask workers | adaptive 1–80 jobs |
-| Each worker | 2 CPUs, 40 GiB, 12 hours |
-| Worker scale-down delay | 180 seconds |
-| Default margin catalog | 5 arcseconds |
+| Component | FlexZBoost | DNF and BPZ |
+|---|---|---|
+| Driver | 2 CPUs, 12 GiB, 6 hours | 2 CPUs, 8 GiB, 2 days |
+| Dask workers | adaptive 1–64 jobs | adaptive 1–80 jobs |
+| Each worker | 2 CPUs, 40 GiB, 3 hours | 2 CPUs, 40 GiB, 12 hours |
+| Worker scale-down delay | 180 seconds | 180 seconds |
+| Default margin catalog | 5 arcseconds | 5 arcseconds |
 
 Only one adaptive cluster exists at a time. It starts with one requested job
-and can scale to 80 as capacity becomes available, without competing with DNF,
-BPZ, or FlexZBoost workers created by this batch workflow. There is no
+and can scale to its algorithm-specific ceiling as capacity becomes available,
+without competing with workers from another algorithm in this batch workflow.
+There is no
 `wait_for_workers` barrier: hats-import can begin with the first worker that
 Slurm starts, while further worker jobs remain independently pending.
 Each job contains one worker process with two threads, limiting it to two
@@ -56,6 +57,7 @@ driver's unique run tag:
 $PZ_DP2_ROOT/<algorithm>/stage3/benchmark/<run-tag>/
 ├── driver/
 ├── workers/
+├── live/
 ├── worker-job-ids.txt
 ├── worker-job-name.txt
 └── run-context.log
@@ -65,9 +67,13 @@ The driver profile must be successful and retains its Slurm allocation and
 end-to-end context. Every Dask worker receives a unique run-specific Slurm job
 name. Worker IDs are recovered from accounting by that name and unioned with
 the isolated worker logs, so jobs cancelled while still pending are retained.
-They are then profiled together with concurrency target 80 and external cluster
-context over `apl01-28`. Driver and worker profiles also retain lightweight
-Slurm topology/configuration snapshots.
+They are then profiled together with the resolved concurrency target and
+external cluster context over `apl01-28`. Driver and worker profiles retain
+compressed accounting/task tables, storage capacity, the controller and
+Stage 3 run contexts by checksum, and lightweight Slurm
+topology/configuration snapshots. The `live/` directory samples the driver and
+adaptive workers by ID and run-specific name, preserving transient scheduler,
+step CPU/memory/I/O, and filesystem-headroom measurements.
 
 Adaptive Dask may cancel healthy workers during scale-down or cluster closure,
 so worker terminal state alone is not the success criterion. The authoritative

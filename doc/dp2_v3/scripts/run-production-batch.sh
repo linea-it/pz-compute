@@ -9,6 +9,7 @@ set -Eeuo pipefail
 scripts_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_dir=$(cd "$scripts_dir/../../.." && pwd)
 profile=$repo_dir/performance/slurm/slurm-profile
+watch=$repo_dir/performance/slurm/slurm-watch
 gaap_env=${PZ_GAAP_ENV_SCRIPT:-/scripts/$(whoami)/ondemand/env-dp2-gaap1p0.sh}
 hats_env=${PZ_HATS_ENV_SCRIPT:-/scripts/$(whoami)/ondemand/env-dp2-stage3-hats.sh}
 
@@ -23,12 +24,26 @@ PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-1}
 PZ_HATS_MAX_WORKERS=${PZ_HATS_MAX_WORKERS:-80}
 PZ_HATS_SCALE_DOWN_DELAY=${PZ_HATS_SCALE_DOWN_DELAY:-180}
 PZ_HATS_MARGIN_ARCSEC=${PZ_HATS_MARGIN_ARCSEC:-5}
+PZ_HATS_WORKER_TIME=${PZ_HATS_WORKER_TIME:-12:00:00}
+PZ_HATS_DRIVER_TIME=${PZ_HATS_DRIVER_TIME:-2-00:00:00}
+PZ_HATS_DRIVER_MEMORY=${PZ_HATS_DRIVER_MEMORY:-8G}
+PZ_FZBOOST_HATS_MAX_WORKERS=${PZ_FZBOOST_HATS_MAX_WORKERS:-64}
+PZ_FZBOOST_HATS_WORKER_TIME=${PZ_FZBOOST_HATS_WORKER_TIME:-03:00:00}
+PZ_FZBOOST_HATS_DRIVER_TIME=${PZ_FZBOOST_HATS_DRIVER_TIME:-06:00:00}
+PZ_FZBOOST_HATS_DRIVER_MEMORY=${PZ_FZBOOST_HATS_DRIVER_MEMORY:-12G}
 batch_dp2_root=$PZ_DP2_ROOT
 batch_input_dataset=$PZ_DP2_INPUT_DATASET
 batch_hats_min_workers=$PZ_HATS_MIN_WORKERS
 batch_hats_max_workers=$PZ_HATS_MAX_WORKERS
 batch_hats_scale_down_delay=$PZ_HATS_SCALE_DOWN_DELAY
 batch_hats_margin_arcsec=$PZ_HATS_MARGIN_ARCSEC
+batch_hats_worker_time=$PZ_HATS_WORKER_TIME
+batch_hats_driver_time=$PZ_HATS_DRIVER_TIME
+batch_hats_driver_memory=$PZ_HATS_DRIVER_MEMORY
+batch_fzboost_hats_max_workers=$PZ_FZBOOST_HATS_MAX_WORKERS
+batch_fzboost_hats_worker_time=$PZ_FZBOOST_HATS_WORKER_TIME
+batch_fzboost_hats_driver_time=$PZ_FZBOOST_HATS_DRIVER_TIME
+batch_fzboost_hats_driver_memory=$PZ_FZBOOST_HATS_DRIVER_MEMORY
 
 status_file=$PZ_BATCH_RUN_DIR/status.tsv
 jobs_file=$PZ_BATCH_RUN_DIR/jobs.tsv
@@ -44,6 +59,7 @@ current_stage=initialization
 current_jobid=
 current_job_state=
 active_child=0
+watcher_pid=
 failure_written=0
 
 sanitize() {
@@ -75,7 +91,16 @@ record_artifact() {
       "$kind" "$path" >> "$artifacts_file"
 }
 
+stop_live_watcher() {
+    if [ -n "$watcher_pid" ]; then
+        kill "$watcher_pid" >/dev/null 2>&1 || true
+        wait "$watcher_pid" >/dev/null 2>&1 || true
+        watcher_pid=
+    fi
+}
+
 cancel_active_child() {
+    stop_live_watcher
     if [ "$active_child" -eq 1 ] && [ -n "$current_jobid" ]; then
         scancel "$current_jobid" >/dev/null 2>&1 || true
         record_status CANCEL_REQUESTED "controller stopped while child job was active"
@@ -181,8 +206,12 @@ load_gaap_environment() {
     PZ_HATS_MAX_WORKERS=$batch_hats_max_workers
     PZ_HATS_SCALE_DOWN_DELAY=$batch_hats_scale_down_delay
     PZ_HATS_MARGIN_ARCSEC=$batch_hats_margin_arcsec
+    PZ_HATS_WORKER_TIME=$batch_hats_worker_time
+    PZ_HATS_DRIVER_TIME=$batch_hats_driver_time
+    PZ_HATS_DRIVER_MEMORY=$batch_hats_driver_memory
     export PZ_DP2_ROOT PZ_DP2_INPUT_DATASET
     export PZ_HATS_MIN_WORKERS PZ_HATS_MAX_WORKERS PZ_HATS_SCALE_DOWN_DELAY PZ_HATS_MARGIN_ARCSEC
+    export PZ_HATS_WORKER_TIME PZ_HATS_DRIVER_TIME PZ_HATS_DRIVER_MEMORY
     cd "$repo_dir"
 }
 
@@ -195,8 +224,12 @@ load_hats_environment() {
     PZ_HATS_MAX_WORKERS=$batch_hats_max_workers
     PZ_HATS_SCALE_DOWN_DELAY=$batch_hats_scale_down_delay
     PZ_HATS_MARGIN_ARCSEC=$batch_hats_margin_arcsec
+    PZ_HATS_WORKER_TIME=$batch_hats_worker_time
+    PZ_HATS_DRIVER_TIME=$batch_hats_driver_time
+    PZ_HATS_DRIVER_MEMORY=$batch_hats_driver_memory
     export PZ_DP2_ROOT PZ_DP2_INPUT_DATASET
     export PZ_HATS_MIN_WORKERS PZ_HATS_MAX_WORKERS PZ_HATS_SCALE_DOWN_DELAY PZ_HATS_MARGIN_ARCSEC
+    export PZ_HATS_WORKER_TIME PZ_HATS_DRIVER_TIME PZ_HATS_DRIVER_MEMORY
     cd "$repo_dir"
 }
 
@@ -280,12 +313,46 @@ wait_for_job() {
     done
 }
 
+start_live_watch() {
+    local jobid=${1:?job id is required}
+    local output_dir=${2:?output directory is required}
+    local interval=${3:?interval is required}
+    local job_name=${4:-}
+    local args=(
+      --job-id "$jobid"
+      --interval-seconds "$interval"
+      --storage-path "$PZ_DP2_ROOT"
+      --context "algorithm=$current_algorithm"
+      --context "operation=$current_stage"
+      --output-dir "$output_dir"
+    )
+    if [ -n "$job_name" ]; then
+        args+=(--job-name "$job_name")
+    fi
+    mkdir -p "$output_dir"
+    "$watch" "${args[@]}" > "$output_dir/watcher.log" 2>&1 &
+    watcher_pid=$!
+}
+
+finish_live_watch() {
+    local output_dir=${1:?output directory is required}
+    local pid=${watcher_pid:?live watcher is not running}
+    if ! wait "$pid"; then
+        watcher_pid=
+        echo "Live Slurm watcher failed; inspect $output_dir/watcher.log" >&2
+        return 1
+    fi
+    watcher_pid=
+    record_artifact live-benchmark "$output_dir"
+}
+
 profile_regular_job() {
     local jobid=${1:?job id is required}
     local target=${2:?target is required}
     local label=${3:?label is required}
     local output_dir=${4:?output directory is required}
     local nodes=${5:-}
+    shift 5
     local args=(
       --job-id "$jobid"
       --expected-jobs 1
@@ -299,6 +366,7 @@ profile_regular_job() {
     if [ -n "$nodes" ]; then
         args+=(--cluster-context-nodes "$nodes")
     fi
+    args+=("$@")
     "$profile" "${args[@]}"
 }
 
@@ -309,18 +377,22 @@ profile_array_job() {
     local label=${4:?label is required}
     local output_dir=${5:?output directory is required}
     local metadata_file=${6:?task metadata file is required}
-    "$profile" \
-      --job-id "$jobid" \
-      --expected-jobs "$expected" \
-      --concurrency-target "$target" \
-      --cluster-context-nodes 'apl[01-28]' \
-      --label "$label" \
-      --output-dir "$output_dir" \
-      --task-metadata-file "$metadata_file" \
-      --context-file "$metadata_file" \
-      --storage-path "$PZ_DP2_ROOT" \
-      --capture-slurm-snapshot \
+    shift 6
+    local args=(
+      --job-id "$jobid"
+      --expected-jobs "$expected"
+      --concurrency-target "$target"
+      --cluster-context-nodes 'apl[01-28]'
+      --label "$label"
+      --output-dir "$output_dir"
+      --task-metadata-file "$metadata_file"
+      --context-file "$metadata_file"
+      --storage-path "$PZ_DP2_ROOT"
+      --capture-slurm-snapshot
       --fail-on-unsuccessful
+    )
+    args+=("$@")
+    "$profile" "${args[@]}"
 }
 
 require_free_gib() {
@@ -372,7 +444,10 @@ run_algorithm() {
     local upper stage1 stage2 stage3 ledger before jobid
     local pilot_manifest full_manifest pilot_metadata full_metadata
     local pilot_expected production_expected
-    local production_target run_tag benchmark_dir driver_logs worker_logs worker_count
+    local production_target train_config estimate_config
+    local run_tag benchmark_dir driver_logs worker_logs worker_count worker_job_name
+    local stage3_max_workers stage3_worker_time stage3_driver_time stage3_driver_memory
+    local live_dir
 
     current_algorithm=$algorithm
     upper=${algorithm^^}
@@ -393,17 +468,26 @@ run_algorithm() {
     current_job_state=
     record_status STARTED "submitting training"
     load_gaap_environment
+    source "$scripts_dir/algorithm-config.sh"
+    dp2_algorithm_config "$algorithm"
+    train_config=$PZ_TRAIN_CONFIG
+    estimate_config=$PZ_ESTIMATE_CONFIG
     ledger=$stage1/submitted-job-ids.tsv
     before=$(ledger_count "$ledger")
     "$scripts_dir/submit-training.sh" "$algorithm"
     jobid=$(new_job_from_ledger "$ledger" "$before")
     record_job training "$jobid"
+    live_dir=$stage1/benchmark/live-$jobid
+    start_live_watch "$jobid" "$live_dir" 3
     wait_for_job "$jobid"
+    finish_live_watch "$live_dir"
 
     current_stage=stage1-benchmark
     record_status STARTED "profiling training job $jobid"
     profile_regular_job "$jobid" 1 "$algorithm-stage1-training-$jobid" \
-      "$stage1/benchmark/training-$jobid" 'apl[01-28]'
+      "$stage1/benchmark/training-$jobid" 'apl[01-28]' \
+      --context "algorithm=$algorithm" --context stage=1 \
+      --context-file "$train_config" --context-file "$context_file"
     record_status COMPLETED "training benchmark written"
     record_artifact benchmark "$stage1/benchmark/training-$jobid"
 
@@ -431,13 +515,19 @@ run_algorithm() {
       "$scripts_dir/submit-estimates.sh" "$algorithm"
     jobid=$(new_job_from_ledger "$ledger" "$before")
     record_job pilot-array "$jobid"
+    live_dir=$stage2/benchmark/live-pilot-$jobid
+    start_live_watch "$jobid" "$live_dir" 60
     wait_for_job "$jobid"
+    finish_live_watch "$live_dir"
 
     current_stage=stage2-pilot-benchmark
     record_status STARTED "profiling pilot array $jobid"
     profile_array_job "$jobid" "$pilot_expected" 5 \
       "$algorithm-stage2-pilot-$jobid" "$stage2/benchmark/pilot-$jobid" \
-      "$pilot_metadata"
+      "$pilot_metadata" \
+      --context "algorithm=$algorithm" --context stage=2 --context scope=pilot \
+      --context-file "$pilot_manifest" --context-file "$estimate_config" \
+      --context-file "$context_file"
     record_status COMPLETED "pilot benchmark written"
     record_artifact benchmark "$stage2/benchmark/pilot-$jobid"
 
@@ -446,7 +536,6 @@ run_algorithm() {
     "$scripts_dir/validate-stage2.py" "$algorithm" --manifest "$pilot_manifest"
     record_status COMPLETED "pilot validation passed"
 
-    source "$scripts_dir/algorithm-config.sh"
     dp2_algorithm_config "$algorithm"
     production_target=$PZ_DEFAULT_MAX_CONCURRENT
     full_manifest=$PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
@@ -458,13 +547,19 @@ run_algorithm() {
     "$scripts_dir/submit-estimates.sh" "$algorithm"
     jobid=$(new_job_from_ledger "$ledger" "$before")
     record_job production-array "$jobid"
+    live_dir=$stage2/benchmark/live-production-$jobid
+    start_live_watch "$jobid" "$live_dir" 60
     wait_for_job "$jobid"
+    finish_live_watch "$live_dir"
 
     current_stage=stage2-production-benchmark
     record_status STARTED "profiling production array $jobid"
     profile_array_job "$jobid" "$production_expected" "$production_target" \
       "$algorithm-stage2-production-$jobid" "$stage2/benchmark/production-$jobid" \
-      "$full_metadata"
+      "$full_metadata" \
+      --context "algorithm=$algorithm" --context stage=2 --context scope=production \
+      --context-file "$full_manifest" --context-file "$estimate_config" \
+      --context-file "$context_file"
     record_status COMPLETED "production benchmark written"
     record_artifact benchmark "$stage2/benchmark/production-$jobid"
 
@@ -479,27 +574,51 @@ run_algorithm() {
     current_job_state=
     record_status STARTED "submitting Stage 3 driver"
     load_hats_environment
+    stage3_max_workers=$batch_hats_max_workers
+    stage3_worker_time=$batch_hats_worker_time
+    stage3_driver_time=$batch_hats_driver_time
+    stage3_driver_memory=$batch_hats_driver_memory
+    if [ "$algorithm" = fzboost ]; then
+        stage3_max_workers=$batch_fzboost_hats_max_workers
+        stage3_worker_time=$batch_fzboost_hats_worker_time
+        stage3_driver_time=$batch_fzboost_hats_driver_time
+        stage3_driver_memory=$batch_fzboost_hats_driver_memory
+    fi
     ledger=$stage3/submitted-job-ids.tsv
     before=$(ledger_count "$ledger")
-    "$scripts_dir/submit-hats.sh" "$algorithm"
+    env \
+      PZ_HATS_MAX_WORKERS="$stage3_max_workers" \
+      PZ_HATS_WORKER_TIME="$stage3_worker_time" \
+      PZ_HATS_DRIVER_TIME="$stage3_driver_time" \
+      PZ_HATS_DRIVER_MEMORY="$stage3_driver_memory" \
+      "$scripts_dir/submit-hats.sh" "$algorithm"
     jobid=$(new_job_from_ledger "$ledger" "$before")
     run_tag=$(tail -n 1 "$ledger" | cut -f4)
     test -n "$run_tag"
     record_job stage3-driver "$jobid" "$run_tag"
+    benchmark_dir=$stage3/benchmark/$run_tag
+    worker_job_name=pz3-${algorithm}-${run_tag}
+    live_dir=$benchmark_dir/live
+    start_live_watch "$jobid" "$live_dir" 60 "$worker_job_name"
     wait_for_job "$jobid"
+    finish_live_watch "$live_dir"
 
     current_stage=stage3-validation
     record_status STARTED "validating HATS with nested PDFs"
     "$scripts_dir/validate-hats.py" "$algorithm"
     record_status COMPLETED "Stage 3 validation passed"
 
-    benchmark_dir=$stage3/benchmark/$run_tag
     driver_logs=$stage3/log/driver-$run_tag
     worker_logs=$stage3/log/dask-$run_tag
     current_stage=stage3-driver-benchmark
     record_status STARTED "profiling Stage 3 driver $jobid"
     profile_regular_job "$jobid" 1 "$algorithm-stage3-driver-$jobid" \
-      "$benchmark_dir/driver" ''
+      "$benchmark_dir/driver" '' \
+      --context "algorithm=$algorithm" --context stage=3 --context role=driver \
+      --context "max_workers=$stage3_max_workers" \
+      --context-file "$benchmark_dir/run-context.log" \
+      --context-file "$benchmark_dir/worker-job-name.txt" \
+      --context-file "$context_file"
     record_status COMPLETED "driver benchmark written"
     record_artifact benchmark "$benchmark_dir/driver"
 
@@ -511,10 +630,17 @@ run_algorithm() {
     "$profile" \
       --job-id-file "$benchmark_dir/worker-job-ids.txt" \
       --expected-jobs "$worker_count" \
-      --concurrency-target "$PZ_HATS_MAX_WORKERS" \
+      --concurrency-target "$stage3_max_workers" \
       --cluster-context-nodes 'apl[01-28]' \
       --label "$algorithm-stage3-workers-$run_tag" \
       --output-dir "$benchmark_dir/workers" \
+      --context "algorithm=$algorithm" \
+      --context stage=3 \
+      --context role=worker \
+      --context "max_workers=$stage3_max_workers" \
+      --context-file "$benchmark_dir/run-context.log" \
+      --context-file "$benchmark_dir/worker-job-name.txt" \
+      --context-file "$context_file" \
       --storage-path "$PZ_DP2_ROOT" \
       --capture-slurm-snapshot
     test -f "$driver_logs/driver-resource-usage.log"
@@ -542,9 +668,12 @@ test "$PZ_HATS_MIN_WORKERS" -le "$PZ_HATS_MAX_WORKERS"
 test -r "$gaap_env"
 test -r "$hats_env"
 test -x "$profile"
+test -x "$watch"
 command -v sacct >/dev/null
 command -v sbatch >/dev/null
 command -v scancel >/dev/null
+command -v squeue >/dev/null
+command -v sstat >/dev/null
 load_gaap_environment
 
 IFS=',' read -r -a algorithms <<< "$PZ_BATCH_ALGORITHMS"
@@ -602,6 +731,13 @@ require_free_gib "$PZ_BATCH_MIN_FREE_GIB"
     printf 'hats_max_workers=%s\n' "$PZ_HATS_MAX_WORKERS"
     printf 'hats_scale_down_delay=%s\n' "$PZ_HATS_SCALE_DOWN_DELAY"
     printf 'hats_margin_arcsec=%s\n' "$PZ_HATS_MARGIN_ARCSEC"
+    printf 'hats_worker_time=%s\n' "$batch_hats_worker_time"
+    printf 'hats_driver_time=%s\n' "$batch_hats_driver_time"
+    printf 'hats_driver_memory=%s\n' "$batch_hats_driver_memory"
+    printf 'fzboost_hats_max_workers=%s\n' "$batch_fzboost_hats_max_workers"
+    printf 'fzboost_hats_worker_time=%s\n' "$batch_fzboost_hats_worker_time"
+    printf 'fzboost_hats_driver_time=%s\n' "$batch_fzboost_hats_driver_time"
+    printf 'fzboost_hats_driver_memory=%s\n' "$batch_fzboost_hats_driver_memory"
     df -h "$PZ_DP2_ROOT"
     df -ih "$PZ_DP2_ROOT"
 } > "$context_file"

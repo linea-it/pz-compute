@@ -54,7 +54,7 @@ The controller performs a fail-fast preflight before training anything. It:
   the shared training catalog;
 - verifies all three trusted model checksums;
 - validates the official BPZ reference-data tree;
-- creates the full and five-largest-shard manifests;
+- creates the full and five-largest-shard manifests plus per-shard metadata;
 - requires at least 24 TiB free initially for the three retained workflows and
   rechecks an 8-TiB floor before each algorithm;
 - records the repository commit, environment settings, storage state, and
@@ -85,10 +85,14 @@ resources documented for its individual algorithm and stage.
 
 Stage 1 child jobs do not set a node list, so Slurm may place them on any node
 eligible for `cpu_photoz`, including `apl27` and `apl28`. They also set no
-exclusion list. FlexZBoost requests 52 logical CPUs and 113,984 MiB, staying
-below 95% of an older node's schedulable CPU and memory. DNF and BPZ request
-one logical CPU and 8 GiB each. Thus every Stage 1 resource shape fits an older
-node without excluding newer nodes.
+exclusion list. FlexZBoost requests 16 logical CPUs, 24 GiB, and 30 minutes;
+DNF and BPZ request one logical CPU, 8 GiB, and one hour. Thus every Stage 1
+resource shape fits an older node without excluding newer nodes.
+
+The controller starts `slurm-watch` alongside every submitted child. Stage 1
+uses a 3-second interval; Stage 2 and Stage 3 use 60 seconds. These live
+artifacts complement the completed-job profiles with transient pending
+reasons, step resource/I/O measurements, and filesystem headroom.
 
 ## 3. Monitor progress
 
@@ -178,6 +182,13 @@ export PZ_HATS_MIN_WORKERS=1
 export PZ_HATS_MAX_WORKERS=80
 export PZ_HATS_SCALE_DOWN_DELAY=180
 export PZ_HATS_MARGIN_ARCSEC=5
+export PZ_HATS_WORKER_TIME=12:00:00
+export PZ_HATS_DRIVER_TIME=2-00:00:00
+export PZ_HATS_DRIVER_MEMORY=8G
+export PZ_FZBOOST_HATS_MAX_WORKERS=64
+export PZ_FZBOOST_HATS_WORKER_TIME=03:00:00
+export PZ_FZBOOST_HATS_DRIVER_TIME=06:00:00
+export PZ_FZBOOST_HATS_DRIVER_MEMORY=12G
 
 doc/dp2_v3/scripts/submit-production-batch.sh
 ```
@@ -186,7 +197,9 @@ doc/dp2_v3/scripts/submit-production-batch.sh
 job, including queue wait. A timeout cancels that child and produces a failure
 report. `PZ_BATCH_ALGORITHMS` may select an official subset or alternate serial
 order for a new run; it is not a stage-resume control. The production default
-remains `fzboost,dnf,bpz`.
+remains `fzboost,dnf,bpz`. Generic `PZ_HATS_*` resource overrides apply to DNF
+and BPZ; the `PZ_FZBOOST_HATS_*` variables preserve FlexZBoost's independently
+measured Stage 3 shape.
 
 The stage-specific automation and resulting artifacts are detailed in:
 

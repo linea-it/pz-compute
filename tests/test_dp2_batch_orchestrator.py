@@ -112,12 +112,23 @@ def test_stage2_and_stage3_are_contention_tolerant_and_unrestricted():
     assert 'PZ_HATS_DRIVER_TIME=${PZ_HATS_DRIVER_TIME:-2-00:00:00}' in hats_submit_source
     assert 'PZ_HATS_DRIVER_MEMORY=${PZ_HATS_DRIVER_MEMORY:-8G}' in hats_submit_source
     assert '--mem="$PZ_HATS_DRIVER_MEMORY"' in hats_submit_source
+    assert 'PZ_FZBOOST_HATS_MAX_WORKERS=${PZ_FZBOOST_HATS_MAX_WORKERS:-64}' in runner_source
+    assert 'PZ_FZBOOST_HATS_WORKER_TIME=${PZ_FZBOOST_HATS_WORKER_TIME:-03:00:00}' in runner_source
+    assert 'PZ_FZBOOST_HATS_DRIVER_TIME=${PZ_FZBOOST_HATS_DRIVER_TIME:-06:00:00}' in runner_source
+    assert 'PZ_FZBOOST_HATS_DRIVER_MEMORY=${PZ_FZBOOST_HATS_DRIVER_MEMORY:-12G}' in runner_source
+    assert 'PZ_HATS_MAX_WORKERS="$stage3_max_workers"' in runner_source
+    assert '--concurrency-target "$stage3_max_workers"' in runner_source
     assert '--slurm-job-name="$worker_job_name"' in hats_runner_source
     assert "wait_for_workers" not in hats_runner_source
     assert runner_source.count("--cluster-context-nodes 'apl[01-28]'") == 2
     assert runner_source.count("--capture-slurm-snapshot") == 3
     assert '--task-metadata-file "$metadata_file"' in runner_source
-    assert runner_source.count('--storage-path "$PZ_DP2_ROOT"') == 3
+    assert runner_source.count('--storage-path "$PZ_DP2_ROOT"') == 4
+    assert 'start_live_watch "$jobid" "$live_dir" 3' in runner_source
+    assert runner_source.count('start_live_watch "$jobid" "$live_dir" 60') == 3
+    assert 'start_live_watch "$jobid" "$live_dir" 60 "$worker_job_name"' in runner_source
+    assert '--context-file "$benchmark_dir/run-context.log"' in runner_source
+    assert '--context-file "$benchmark_dir/worker-job-name.txt"' in runner_source
 
 
 def test_worker_id_collection_includes_accounting_only_jobs(tmp_path):
@@ -171,7 +182,7 @@ def test_batch_runner_has_durable_success_and_failure_outputs():
 def test_batch_runner_writes_failure_report_for_invalid_algorithm(tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    for command in ("sacct", "sbatch", "scancel"):
+    for command in ("sacct", "sbatch", "scancel", "squeue", "sstat"):
         executable = fake_bin / command
         executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         executable.chmod(0o755)

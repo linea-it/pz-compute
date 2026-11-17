@@ -33,10 +33,10 @@ submit-training.sh <algorithm>
 → validate-models.py <algorithm>
 ```
 
-FlexZBoost requests 52 logical CPUs and 113,984 MiB. These values stay at or
-below 95% of the 56 logical CPUs and 119,984 schedulable MiB on an older node,
-preserving a 5% operational margin while respecting the two-thread whole-core
-allocation. DNF and BPZ each request one task, one CPU, and 8 GiB. No Stage 1
+FlexZBoost requests 16 logical CPUs, 24 GiB, and 30 minutes. This retains
+headroom over the measured 7.55 average CPUs, 15.34-GiB historical memory
+peak, and 146-second production runtime without reserving most of a node. DNF
+and BPZ each request one task, one CPU, 8 GiB, and one hour. No Stage 1
 submission sets a node list: Slurm may select any node eligible for
 `cpu_photoz`, while every resource shape remains small enough to fit an older
 node. The next stage does not start merely
@@ -49,14 +49,17 @@ The resulting layout is identical to an individual run:
 $PZ_DP2_ROOT/<algorithm>/stage1/
 ├── model/
 ├── log/
+├── benchmark/live-<jobid>/
 ├── benchmark/training-<jobid>/
 ├── environment-freeze.txt
 └── submitted-job-ids.tsv
 ```
 
-The benchmark contains queue wait, elapsed time, CPU and memory use, node
-placement, allocation profiles, and overlapping cluster context over
-`apl01-28`.
+The live benchmark samples scheduler state, pending reasons, step CPU/memory/I/O,
+and filesystem headroom every three seconds. The completed-job benchmark
+contains queue wait, elapsed time, CPU and memory use, node placement,
+allocation profiles, compressed raw tables, the training-configuration
+checksum, repository context, and overlapping allocations over `apl01-28`.
 
 ## Failure boundary
 

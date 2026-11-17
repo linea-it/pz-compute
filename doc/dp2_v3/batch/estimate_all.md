@@ -21,19 +21,26 @@ Failure of the smoke test stops the workflow without submitting a pilot.
 
 ## 2. Five-largest-shard pilot
 
-The shared manifests are created during batch preflight. The controller submits
-one five-task pilot for the current algorithm, with maximum concurrency 5, and
-waits for all tasks to finish.
+The shared manifests and their per-shard metadata sidecars are created during
+batch preflight. The metadata records input path, bytes, modification time,
+and Parquet row count. The controller submits one five-task pilot for the
+current algorithm, with maximum concurrency 5, and waits for all tasks to
+finish while a 60-second live sampler records scheduler and storage state.
 
 It then writes:
 
 ```text
 $PZ_DP2_ROOT/<algorithm>/stage2/benchmark/pilot-<jobid>/
+$PZ_DP2_ROOT/<algorithm>/stage2/benchmark/live-pilot-<jobid>/
 ```
 
 The profiler requires five successful logical jobs and records memory,
 walltime, CPU, I/O, queue wait, realized concurrency, node placement, and
-overlapping cluster allocations. The fast Stage 2 validator then checks the
+overlapping cluster allocations. It joins the shard metadata to each task and
+reports correlations of input size and row count with duration, `MaxRSS`, and
+CPU time. It also retains compressed accounting, configuration/manifests by
+checksum, repository context, and filesystem capacity. The fast Stage 2
+validator then checks the
 five expected HDF5 outputs against the pilot manifest. A failed pilot,
 profiling error, or invalid output stops the entire batch.
 
@@ -56,7 +63,7 @@ full sorted manifest. Production defaults remain algorithm-specific:
 
 | Algorithm | Maximum concurrent tasks | Memory/task | Walltime/task |
 |---|---:|---:|---:|
-| FlexZBoost | 82 | 40 GiB | 01:00:00 |
+| FlexZBoost | 82 | 38 GiB | 00:30:00 |
 | DNF | 82 | 40 GiB | 02:00:00 |
 | BPZ official | 20 | 40 GiB | 24:00:00 |
 
@@ -69,6 +76,7 @@ task, and writes:
 
 ```text
 $PZ_DP2_ROOT/<algorithm>/stage2/benchmark/production-<jobid>/
+$PZ_DP2_ROOT/<algorithm>/stage2/benchmark/live-production-<jobid>/
 ```
 
 It finally validates every expected HDF5 against the full manifest. Complete
@@ -85,6 +93,7 @@ $PZ_DP2_ROOT/<algorithm>/stage2/
 ├── log/slurm-*.{out,err}
 ├── smoke/{smoke-test.hdf5,READY}
 ├── benchmark/{pilot-<jobid>,production-<jobid>}/
+├── benchmark/{live-pilot-<jobid>,live-production-<jobid>}/
 ├── environment-freeze.txt
 └── submitted-job-ids.tsv
 ```
