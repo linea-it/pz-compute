@@ -66,6 +66,7 @@ stage2=$PZ_DP2_ROOT/bpz_test/stage2
 pilot_jobid=$(tail -n 1 "$stage2/submitted-job-ids.tsv" | cut -f3)
 pilot_manifest=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.txt
 pilot_metadata=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.metadata.tsv
+estimate_config=doc/dp2_v3/config/bpz-test-estimate.yaml
 pilot_expected=$(wc -l < "$pilot_manifest")
 test -n "$pilot_jobid"
 
@@ -77,7 +78,12 @@ performance/slurm/slurm-profile \
   --label "bpz-test-stage2-pilot-$pilot_jobid" \
   --output-dir "$stage2/benchmark/pilot-$pilot_jobid" \
   --task-metadata-file "$pilot_metadata" \
+  --context algorithm=bpz_test \
+  --context stage=2 \
+  --context scope=pilot \
+  --context-file "$pilot_manifest" \
   --context-file "$pilot_metadata" \
+  --context-file "$estimate_config" \
   --storage-path "$PZ_DP2_ROOT" \
   --capture-slurm-snapshot \
   --fail-on-unsuccessful
@@ -127,6 +133,7 @@ stage2=$PZ_DP2_ROOT/bpz_test/stage2
 production_jobid=$(tail -n 1 "$stage2/submitted-job-ids.tsv" | cut -f3)
 production_manifest=$PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
 production_metadata=$PZ_DP2_ROOT/common/manifests/input-parquet-files.metadata.tsv
+estimate_config=doc/dp2_v3/config/bpz-test-estimate.yaml
 production_expected=$(wc -l < "$production_manifest")
 test -n "$production_jobid"
 
@@ -138,7 +145,12 @@ performance/slurm/slurm-profile \
   --label "bpz-test-stage2-full-$production_jobid" \
   --output-dir "$stage2/benchmark/full-$production_jobid" \
   --task-metadata-file "$production_metadata" \
+  --context algorithm=bpz_test \
+  --context stage=2 \
+  --context scope=production \
+  --context-file "$production_manifest" \
   --context-file "$production_metadata" \
+  --context-file "$estimate_config" \
   --storage-path "$PZ_DP2_ROOT" \
   --capture-slurm-snapshot \
   --fail-on-unsuccessful

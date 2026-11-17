@@ -79,6 +79,8 @@ test -n "$run_tag"
 benchmark_dir=$stage3/benchmark/$run_tag
 driver_logs=$stage3/log/driver-$run_tag
 worker_logs=$stage3/log/dask-$run_tag
+run_context=$benchmark_dir/run-context.log
+worker_name=$benchmark_dir/worker-job-name.txt
 
 performance/slurm/slurm-profile \
   --job-id "$jobid" \
@@ -86,6 +88,12 @@ performance/slurm/slurm-profile \
   --concurrency-target 1 \
   --label "fzboost-stage3-driver-$jobid" \
   --output-dir "$benchmark_dir/driver" \
+  --context algorithm=fzboost \
+  --context stage=3 \
+  --context role=driver \
+  --context-file "$run_context" \
+  --context-file "$worker_name" \
+  --storage-path "$PZ_DP2_ROOT" \
   --capture-slurm-snapshot \
   --fail-on-unsuccessful
 ```
@@ -109,6 +117,12 @@ performance/slurm/slurm-profile \
   --cluster-context-nodes 'apl[01-28]' \
   --label "fzboost-stage3-workers-$run_tag" \
   --output-dir "$benchmark_dir/workers" \
+  --context algorithm=fzboost \
+  --context stage=3 \
+  --context role=worker \
+  --context-file "$run_context" \
+  --context-file "$worker_name" \
+  --storage-path "$PZ_DP2_ROOT" \
   --capture-slurm-snapshot
 
 cat "$benchmark_dir/driver/summary.log"
@@ -138,13 +152,15 @@ $PZ_DP2_ROOT/fzboost/stage3/
 └── benchmark/<run-tag>/
     ├── driver/
     ├── workers/
+    ├── live/  # when slurm-watch is used
     ├── worker-job-ids.txt
     ├── worker-job-name.txt
     └── run-context.log
 ```
 
-Both profile directories contain a lightweight `slurm-snapshot/` for future
-shared-versus-exclusive cluster comparisons.
+Both profile directories contain a lightweight `slurm-snapshot/`, compressed
+accounting, storage capacity, and checksummed Stage 3 context. The `live/`
+directory retains transient scheduler, step-resource, I/O, and storage samples.
 
 Technical history and the evidence required to certify a new production run
 are documented in [`fzboost_runs.md`](../references/fzboost_runs.md).

@@ -69,28 +69,37 @@ done
 ```
 
 To retain pending reasons, transient step memory/I/O, and filesystem headroom,
-run the generic watcher for each active array:
+start both generic watchers in parallel and wait for both pilot arrays:
 
 ```bash
-variant=griz  # repeat with riz
-stage2=$PZ_DP2_CUSTOM_ROOT/$variant/stage2
-ledger=$stage2/submitted-job-ids.tsv
-jobid=$(awk -F '\t' '$2 == variant && $3 == "pilot" {id=$4} END {print id}' \
-  variant="$variant" "$ledger")
+watch_pids=()
 
-performance/slurm/slurm-watch \
-  --job-id "$jobid" \
-  --interval-seconds 60 \
-  --storage-path "$PZ_DP2_CUSTOM_ROOT" \
-  --context algorithm=dnf \
-  --context "custom_variant=$variant" \
-  --context stage=2 \
-  --context scope=pilot \
-  --output-dir "$stage2/benchmark/live-pilot-$jobid"
+for variant in griz riz; do
+  stage2=$PZ_DP2_CUSTOM_ROOT/$variant/stage2
+  ledger=$stage2/submitted-job-ids.tsv
+  jobid=$(awk -F '\t' \
+    '$2 == variant && $3 == "pilot" {id=$4} END {print id}' \
+    variant="$variant" "$ledger")
+  test -n "$jobid"
+
+  performance/slurm/slurm-watch \
+    --job-id "$jobid" \
+    --interval-seconds 60 \
+    --storage-path "$PZ_DP2_CUSTOM_ROOT" \
+    --context algorithm=dnf \
+    --context "custom_variant=$variant" \
+    --context stage=2 \
+    --context scope=pilot \
+    --output-dir "$stage2/benchmark/live-pilot-$jobid" &
+
+  watch_pids+=("$!")
+done
+
+wait "${watch_pids[@]}"
 ```
 
-After both arrays leave `squeue`, require all five tasks in each array to have
-state `COMPLETED` and exit code `0:0`. Then validate and seal the pilot:
+After both watchers return, require all five tasks in each array to have state
+`COMPLETED` and exit code `0:0`. Then validate and seal the pilot:
 
 ```bash
 pilot=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.txt
@@ -164,6 +173,42 @@ Complete pilot shards are validated and skipped when encountered by the full
 array. Invalid pre-existing outputs are moved aside with an `.incomplete-*`
 suffix before recomputation.
 
+Immediately after submission, start one live monitor per variant. The commands
+run both monitors in parallel and keep this terminal occupied until both
+production arrays reach a terminal accounting state:
+
+```bash
+watch_pids=()
+
+for variant in griz riz; do
+  stage2=$PZ_DP2_CUSTOM_ROOT/$variant/stage2
+  ledger=$stage2/submitted-job-ids.tsv
+  jobid=$(awk -F '\t' \
+    '$2 == variant && $3 == "production" {id=$4} END {print id}' \
+    variant="$variant" "$ledger")
+  test -n "$jobid"
+
+  performance/slurm/slurm-watch \
+    --job-id "$jobid" \
+    --interval-seconds 60 \
+    --storage-path "$PZ_DP2_CUSTOM_ROOT" \
+    --context algorithm=dnf \
+    --context "custom_variant=$variant" \
+    --context stage=2 \
+    --context scope=production \
+    --output-dir "$stage2/benchmark/live-production-$jobid" &
+
+  watch_pids+=("$!")
+done
+
+wait "${watch_pids[@]}"
+```
+
+Keep the terminal or persistent session open while the monitors run. This
+live record is optional for the scientific outputs, but it is required to
+retain transient pending reasons, step resource/I/O measurements, and
+filesystem headroom that cannot be reconstructed from final accounting.
+
 ## 6. Validate and seal production
 
 Once every array task has completed successfully:
@@ -226,9 +271,8 @@ done
 ```
 
 Use the resolved concurrency instead of `102` when an override was active.
-For a live production record, repeat the watcher example with
-`scope=production` and `live-production-$jobid`. If retries are required,
-retain all job IDs and use a job-ID file when profiling the combined attempts.
+If retries are required, retain all job IDs and use a job-ID file when
+profiling the combined attempts.
 
 Continue with [`stage3_build_hats.md`](stage3_build_hats.md) only after both
 `production/READY` markers exist and their checksums still validate.

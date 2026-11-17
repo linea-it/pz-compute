@@ -85,23 +85,30 @@ for variant in griz riz; do
 done
 ```
 
-For a retained low-cost live record, run one watcher per variant in a separate
-terminal while its job is active. The short training jobs justify a 3-second
-sampling interval:
+For a retained low-cost live record, start both watchers in parallel while the
+jobs are active. The short training jobs justify a 3-second sampling interval:
 
 ```bash
-variant=griz  # repeat with riz
-stage1=$PZ_DP2_CUSTOM_ROOT/$variant/stage1
-jobid=$(tail -n 1 "$stage1/submitted-job-ids.tsv" | cut -f3)
+watch_pids=()
 
-performance/slurm/slurm-watch \
-  --job-id "$jobid" \
-  --interval-seconds 3 \
-  --storage-path "$PZ_DP2_CUSTOM_ROOT" \
-  --context algorithm=dnf \
-  --context "custom_variant=$variant" \
-  --context stage=1 \
-  --output-dir "$stage1/benchmark/live-$jobid"
+for variant in griz riz; do
+  stage1=$PZ_DP2_CUSTOM_ROOT/$variant/stage1
+  jobid=$(tail -n 1 "$stage1/submitted-job-ids.tsv" | cut -f3)
+  test -n "$jobid"
+
+  performance/slurm/slurm-watch \
+    --job-id "$jobid" \
+    --interval-seconds 3 \
+    --storage-path "$PZ_DP2_CUSTOM_ROOT" \
+    --context algorithm=dnf \
+    --context "custom_variant=$variant" \
+    --context stage=1 \
+    --output-dir "$stage1/benchmark/live-$jobid" &
+
+  watch_pids+=("$!")
+done
+
+wait "${watch_pids[@]}"
 ```
 
 ## Validate the completed models

@@ -75,36 +75,49 @@ $PZ_DP2_CUSTOM_ROOT/riz/stage3/output/pz-dnf-cmodel-riz-scalar-hats/
 The ledger fields are timestamp, variant, driver job ID, and unique run tag:
 
 ```bash
+driver_logs=()
+
 for variant in griz riz; do
   stage3=$PZ_DP2_CUSTOM_ROOT/$variant/stage3
   IFS=$'\t' read -r submitted recorded_variant jobid run_tag < \
     <(tail -n 1 "$stage3/submitted-job-ids.tsv")
   test "$recorded_variant" = "$variant"
   squeue --jobs="$jobid"
-  tail -F "$stage3/log/driver-$run_tag/driver.log"
+  driver_logs+=("$stage3/log/driver-$run_tag/driver.log")
 done
+
+tail -F "${driver_logs[@]}"
 ```
 
-Start the general watcher in a separate terminal for each build. Selecting the
-driver by ID and the adaptive workers by their run-specific Slurm name captures
-both populations even though worker IDs do not exist at submission time:
+Start both general watchers in parallel from a separate terminal. Selecting
+each driver by ID and its adaptive workers by their run-specific Slurm name
+captures both populations even though worker IDs do not exist at submission
+time:
 
 ```bash
-variant=griz  # repeat with riz
-stage3=$PZ_DP2_CUSTOM_ROOT/$variant/stage3
-IFS=$'\t' read -r submitted recorded_variant jobid run_tag < \
-  <(tail -n 1 "$stage3/submitted-job-ids.tsv")
-worker_job_name=pz3c-${variant}-${run_tag}
+watch_pids=()
 
-performance/slurm/slurm-watch \
-  --job-id "$jobid" \
-  --job-name "$worker_job_name" \
-  --interval-seconds 60 \
-  --storage-path "$PZ_DP2_CUSTOM_ROOT" \
-  --context algorithm=dnf \
-  --context "custom_variant=$variant" \
-  --context stage=3 \
-  --output-dir "$stage3/benchmark/$run_tag/live"
+for variant in griz riz; do
+  stage3=$PZ_DP2_CUSTOM_ROOT/$variant/stage3
+  IFS=$'\t' read -r submitted recorded_variant jobid run_tag < \
+    <(tail -n 1 "$stage3/submitted-job-ids.tsv")
+  test "$recorded_variant" = "$variant"
+  worker_job_name=pz3c-${variant}-${run_tag}
+
+  performance/slurm/slurm-watch \
+    --job-id "$jobid" \
+    --job-name "$worker_job_name" \
+    --interval-seconds 60 \
+    --storage-path "$PZ_DP2_CUSTOM_ROOT" \
+    --context algorithm=dnf \
+    --context "custom_variant=$variant" \
+    --context stage=3 \
+    --output-dir "$stage3/benchmark/$run_tag/live" &
+
+  watch_pids+=("$!")
+done
+
+wait "${watch_pids[@]}"
 ```
 
 The driver runs final validation automatically and returns nonzero if it
@@ -153,50 +166,52 @@ For each variant, profile the authoritative driver and recover every adaptive
 Dask worker ID using the shared helper:
 
 ```bash
-variant=griz  # repeat with riz
-stage3=$PZ_DP2_CUSTOM_ROOT/$variant/stage3
-IFS=$'\t' read -r submitted recorded_variant jobid run_tag < \
-  <(tail -n 1 "$stage3/submitted-job-ids.tsv")
-benchmark=$stage3/benchmark/$run_tag
-worker_logs=$stage3/log/dask-$run_tag
-run_context=$benchmark/run-context.log
-worker_name=$benchmark/worker-job-name.txt
+for variant in griz riz; do
+  stage3=$PZ_DP2_CUSTOM_ROOT/$variant/stage3
+  IFS=$'\t' read -r submitted recorded_variant jobid run_tag < \
+    <(tail -n 1 "$stage3/submitted-job-ids.tsv")
+  test "$recorded_variant" = "$variant"
+  benchmark=$stage3/benchmark/$run_tag
+  worker_logs=$stage3/log/dask-$run_tag
+  run_context=$benchmark/run-context.log
+  worker_name=$benchmark/worker-job-name.txt
 
-performance/slurm/slurm-profile \
-  --job-id "$jobid" \
-  --expected-jobs 1 \
-  --concurrency-target 1 \
-  --label "dnf-cmodel-$variant-stage3-driver-$jobid" \
-  --output-dir "$benchmark/driver" \
-  --context algorithm=dnf \
-  --context "custom_variant=$variant" \
-  --context stage=3 \
-  --context role=driver \
-  --context-file "$run_context" \
-  --context-file "$worker_name" \
-  --storage-path "$PZ_DP2_CUSTOM_ROOT" \
-  --capture-slurm-snapshot \
-  --fail-on-unsuccessful
+  performance/slurm/slurm-profile \
+    --job-id "$jobid" \
+    --expected-jobs 1 \
+    --concurrency-target 1 \
+    --label "dnf-cmodel-$variant-stage3-driver-$jobid" \
+    --output-dir "$benchmark/driver" \
+    --context algorithm=dnf \
+    --context "custom_variant=$variant" \
+    --context stage=3 \
+    --context role=driver \
+    --context-file "$run_context" \
+    --context-file "$worker_name" \
+    --storage-path "$PZ_DP2_CUSTOM_ROOT" \
+    --capture-slurm-snapshot \
+    --fail-on-unsuccessful
 
-doc/dp2_v3/scripts/collect-hats-worker-job-ids.sh \
-  "$benchmark" "$worker_logs"
-worker_count=$(wc -l < "$benchmark/worker-job-ids.txt")
+  doc/dp2_v3/scripts/collect-hats-worker-job-ids.sh \
+    "$benchmark" "$worker_logs"
+  worker_count=$(wc -l < "$benchmark/worker-job-ids.txt")
 
-performance/slurm/slurm-profile \
-  --job-id-file "$benchmark/worker-job-ids.txt" \
-  --expected-jobs "$worker_count" \
-  --concurrency-target="${PZ_HATS_MAX_WORKERS:-80}" \
-  --cluster-context-nodes 'apl[01-28]' \
-  --label "dnf-cmodel-$variant-stage3-workers-$run_tag" \
-  --output-dir "$benchmark/workers" \
-  --context algorithm=dnf \
-  --context "custom_variant=$variant" \
-  --context stage=3 \
-  --context role=worker \
-  --context-file "$run_context" \
-  --context-file "$worker_name" \
-  --storage-path "$PZ_DP2_CUSTOM_ROOT" \
-  --capture-slurm-snapshot
+  performance/slurm/slurm-profile \
+    --job-id-file "$benchmark/worker-job-ids.txt" \
+    --expected-jobs "$worker_count" \
+    --concurrency-target="${PZ_HATS_MAX_WORKERS:-80}" \
+    --cluster-context-nodes 'apl[01-28]' \
+    --label "dnf-cmodel-$variant-stage3-workers-$run_tag" \
+    --output-dir "$benchmark/workers" \
+    --context algorithm=dnf \
+    --context "custom_variant=$variant" \
+    --context stage=3 \
+    --context role=worker \
+    --context-file "$run_context" \
+    --context-file "$worker_name" \
+    --storage-path "$PZ_DP2_CUSTOM_ROOT" \
+    --capture-slurm-snapshot
+done
 ```
 
 Adaptive workers may be cancelled during scale-down, so do not use

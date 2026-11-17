@@ -207,8 +207,12 @@ are available:
 ```bash
 command -v sbatch
 command -v sacct
+command -v squeue
+command -v sstat
 type time
 test -x "$PZ_COMPUTE_DIR/performance/slurm/slurm-profile"
+test -x "$PZ_COMPUTE_DIR/performance/slurm/slurm-watch"
+test -x "$PZ_COMPUTE_DIR/performance/slurm/manifest-task-metadata"
 ```
 
 ```bash

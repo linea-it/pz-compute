@@ -69,6 +69,7 @@ Slurm benchmark:
 ```bash
 stage1=$PZ_DP2_ROOT/bpz/stage1
 jobid=$(tail -n 1 "$stage1/submitted-job-ids.tsv" | cut -f3)
+config=doc/dp2_v3/config/bpz-train.yaml
 test -n "$jobid"
 
 performance/slurm/slurm-profile \
@@ -78,14 +79,20 @@ performance/slurm/slurm-profile \
   --cluster-context-nodes 'apl[01-28]' \
   --label "bpz-stage1-training-$jobid" \
   --output-dir "$stage1/benchmark/training-$jobid" \
+  --context algorithm=bpz \
+  --context stage=1 \
+  --context-file "$config" \
+  --storage-path "$PZ_DP2_ROOT" \
   --capture-slurm-snapshot \
   --fail-on-unsuccessful
 
 cat "$stage1/benchmark/training-$jobid/summary.log"
 ```
 
-This records duration, queue wait, CPU and memory use, node placement, and
-overlapping cluster allocations without reading the model or training data.
+This records duration, queue wait, CPU and memory use, node placement,
+overlapping allocations, storage capacity, the training-configuration
+checksum, repository context, and compressed accounting without reading the
+model or training data.
 
 ## 5. Validate
 

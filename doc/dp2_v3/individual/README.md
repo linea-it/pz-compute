@@ -15,6 +15,12 @@ latest job ID, follow logs, count completed array tasks and output files,
 inspect failures, and validate Stage 1 models, Stage 2 HDF5 files, and Stage 3
 HATS products.
 
+Every stage uses the shared benchmark module documented in
+[`../../slurm_profile.md`](../../slurm_profile.md). Start `slurm-watch` while
+jobs are active, then use `slurm-profile` after completion to retain compressed
+accounting, reproducibility context, storage capacity, and, for Stage 2,
+per-shard metadata correlations.
+
 ## FlexZBoost
 
 1. [`fzboost_stage1_train.md`](fzboost_stage1_train.md): reproduce the
