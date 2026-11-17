@@ -24,6 +24,9 @@ PZ_HATS_MIN_WORKERS=${PZ_HATS_MIN_WORKERS:-1}
 PZ_HATS_MAX_WORKERS=${PZ_HATS_MAX_WORKERS:-${PZ_HATS_WORKERS:-80}}
 PZ_HATS_SCALE_DOWN_DELAY=${PZ_HATS_SCALE_DOWN_DELAY:-180}
 PZ_HATS_MARGIN_ARCSEC=${PZ_HATS_MARGIN_ARCSEC:-5}
+PZ_HATS_WORKER_TIME=${PZ_HATS_WORKER_TIME:-12:00:00}
+PZ_HATS_DRIVER_TIME=${PZ_HATS_DRIVER_TIME:-2-00:00:00}
+PZ_HATS_DRIVER_MEMORY=${PZ_HATS_DRIVER_MEMORY:-8G}
 
 case "$PZ_HATS_MIN_WORKERS" in
     ''|*[!0-9]*) echo "PZ_HATS_MIN_WORKERS must be a positive integer" >&2; exit 2 ;;
@@ -81,11 +84,11 @@ for algorithm in "${algorithms[@]}"; do
       --nodes=1 \
       --ntasks=1 \
       --cpus-per-task=2 \
-      --mem=8G \
-      --time=2-00:00:00 \
+      --mem="$PZ_HATS_DRIVER_MEMORY" \
+      --time="$PZ_HATS_DRIVER_TIME" \
       --output="$driver_log_dir/slurm-%j.out" \
       --error="$driver_log_dir/slurm-%j.err" \
-      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_DP2_ROOT="$PZ_DP2_ROOT",PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_STAGE3_RUN_TAG="$run_tag",PZ_HATS_MIN_WORKERS="$PZ_HATS_MIN_WORKERS",PZ_HATS_MAX_WORKERS="$PZ_HATS_MAX_WORKERS",PZ_HATS_SCALE_DOWN_DELAY="$PZ_HATS_SCALE_DOWN_DELAY",PZ_HATS_MARGIN_ARCSEC="$PZ_HATS_MARGIN_ARCSEC" \
+      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_DP2_ROOT="$PZ_DP2_ROOT",PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_STAGE3_RUN_TAG="$run_tag",PZ_HATS_MIN_WORKERS="$PZ_HATS_MIN_WORKERS",PZ_HATS_MAX_WORKERS="$PZ_HATS_MAX_WORKERS",PZ_HATS_SCALE_DOWN_DELAY="$PZ_HATS_SCALE_DOWN_DELAY",PZ_HATS_MARGIN_ARCSEC="$PZ_HATS_MARGIN_ARCSEC",PZ_HATS_WORKER_TIME="$PZ_HATS_WORKER_TIME" \
       "$scripts_dir/run-one-hats.sbatch")
     job_id=${job_id%%;*}
     printf '%s\t%s\t%s\t%s\n' \

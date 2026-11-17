@@ -7,18 +7,81 @@ layout live under `../individual/`, `../batch/`, and `../scripts/`.
 
 ## Status and evidence boundary
 
-FlexZBoost has an established DP2 production workflow, and the v3 launchers
-carry its validated shape forward. The detailed legacy command recipes remain
-in:
+FlexZBoost has an established DP2 production workflow. A v3 resource run was
+completed on 2026-11-11 and 2026-11-12; its measurements are recorded below
+and now determine the individual-path defaults. The detailed legacy command
+recipes remain in:
 
 - [`doc/dp2_v2/dp2_stage1_train_instructions_clipped.md`](../../dp2_v2/dp2_stage1_train_instructions_clipped.md);
 - [`doc/dp2_v2/dp2_stage2_estimate_instructions_clipped.md`](../../dp2_v2/dp2_stage2_estimate_instructions_clipped.md);
 - [`doc/dp2_v2/dp2_stage3_build_hats.md`](../../dp2_v2/dp2_stage3_build_hats.md).
 
 Those recipes are not copied into v3. The v3 scripts change orchestration and
-artifact organization; they do not constitute a new completed production run.
-When v3 is executed, append the job IDs, environment freeze, benchmark summary,
-input/output counts, and validation result here.
+artifact organization. The retained v3 evidence supports resource sizing, but
+does not by itself replace the required model, Stage 2, and HATS scientific
+validation records.
+
+## 2026-11-11/12 v3 resource run
+
+Stage 1 job `222018` completed successfully in 146 seconds after a seven-second
+queue wait. It was allocated 52 logical CPUs and 111.31 GiB, used an average
+of 7.55 CPUs, and peaked at 9.39 GiB. CPU efficiency was 14.53%. Together with
+the 15.34-GiB historical memory peak, this supports a smaller default of 16
+logical CPUs, 24 GiB, and 30 minutes without sizing directly to the single
+lowest observed memory value.
+
+The five-largest-shard Stage 2 pilot was array job `222028`. All five tasks
+completed successfully. Maximum RSS was 28.60 GiB, median elapsed time was
+11 min 47 s, and the longest task took 18 min 40 s. Aggregate CPU efficiency
+was 56.01%.
+
+Stage 2 production array `222033` completed all 1,681 tasks successfully. Its
+resource profile was:
+
+| metric | observed value |
+|---|---:|
+| submission to completion | 7 h 12 min 13 s |
+| peak / mean concurrency | 37 / 25.29 |
+| task duration, median / p95 / maximum | 330 / 751 / 1,088 s |
+| maximum RSS, median / p95 / maximum | 3.52 / 21.97 / 31.50 GiB |
+| CPU efficiency | 56.19% |
+| successful-task throughput | 233.46 tasks/hour |
+
+The array requested 40 GiB and one hour per task, but cluster load and memory
+fragmentation limited it to 37 concurrent tasks despite the throttle of 82.
+The observed memory peak, the 33.85-GiB historical maximum, and the elapsed
+upper tail support 38 GiB and 30 minutes for the next production default.
+Thirty-eight GiB also allows three tasks to fit in the 119,984 MiB schedulable
+memory of an older node, rather than the two 40-GiB tasks that fit previously.
+The throttle remains 82 because lowering a cap that was never reached would
+only reduce throughput when more of the shared cluster becomes available.
+
+Stage 3 driver job `224256` exited successfully after 4,105 seconds
+(1 h 08 min 25 s). Its profile measured 7.60 GiB maximum RSS, or 94.98% of the
+8-GiB request, and 2.57% CPU efficiency across two allocated CPUs. The
+individual path therefore raises driver memory to 12 GiB, retains two CPUs,
+and gives the driver six hours.
+
+Across the run, 111 workers started in adaptive waves. Peak concurrency was
+66, mean concurrency was 56.17, and their profile recorded:
+
+| worker metric | observed value |
+|---|---:|
+| maximum RSS, median / p95 / maximum | 22.29 / 37.99 / 38.00 GiB |
+| memory utilization, median / p95 / maximum | 55.72% / 94.99% / 95.00% |
+| CPU efficiency | 86.73% |
+| average CPUs used, median / p95 / maximum | 1.75 / 1.80 / 1.81 |
+| duration, median / p95 / maximum | 2,324 / 4,062 / 4,062 s |
+| peak allocated CPUs / memory | 132 CPUs / 2,640 GiB |
+
+The first 47 workers converted 1,623 inputs, the following 20 converted the
+remaining 58, and 44 final-wave workers served the reduction phase. All worker
+jobs ended `CANCELLED`, consistently with adaptive shutdown, and the logs
+contained no OOM event. The 38.00-GiB maximum rules out reducing the 40-GiB
+worker request. The high CPU efficiency also supports retaining two CPUs per
+worker. The individual FlexZBoost path now caps adaptive scaling at 64 workers
+and uses a three-hour worker limit. The shared launcher retains configurable
+values for other algorithms.
 
 ## 2026-10-22 secondary-catalog Stage 2 pilot
 
@@ -226,14 +289,12 @@ final disk use, or HATS integrity-validator output.
   Stage 3 workers; these values support revisiting CPU sizing, but only through
   controlled pilots.
 
-## Stage 1 training profile carried into v3
+## Stage 1 training profile after the v3 resource run
 
-The current Apollo configuration trains on one node with 52 logical CPUs,
-113,984 MiB, and a three-hour limit. It does not set a node list, allowing
-Slurm to select any node eligible for `cpu_photoz`. The resource ceiling is
-derived from the older `apl01-16` nodes, where Slurm exposes 56 logical CPUs
-and 119,984 schedulable MiB after the 4,096-MiB system reservation. The targets
-before allocation rounding are:
+The current Apollo configuration trains on one node with 16 logical CPUs,
+24 GiB, and a 30-minute limit. It does not set a node list, allowing Slurm to
+select any node eligible for `cpu_photoz`. The prior resource ceiling was
+derived from the older `apl01-16` nodes:
 
 ```text
 CPU target: 0.95 * 56 = 53.2 logical CPUs
@@ -243,9 +304,11 @@ memory target: 0.95 * 119984 MiB = 113984.8 MiB
 request the integer floor: 113984 MiB
 ```
 
-Rounding down ensures that neither allocation crosses the 95% ceiling and
-preserves the requested operational margin. BLAS/OpenMP threads are held at
-one to avoid nested oversubscription under the multi-output XGBoost fit.
+That ceiling explains the measured job allocation but is no longer the
+default. The v3 job averaged 7.55 CPUs and peaked at 9.39 GiB; the new request
+keeps approximately twice the average CPU demand and a memory allowance above
+both the current and historical measurements. BLAS/OpenMP threads remain held
+at one to avoid nested oversubscription under the multi-output XGBoost fit.
 
 The retained technical acceptance criteria are:
 
@@ -256,27 +319,27 @@ The retained technical acceptance criteria are:
 - binary identity and identical predictions are not required across library
   versions, but the persisted scientific state must match.
 
-## Stage 2 production profile carried into v3
+## Stage 2 production profile after the v3 resource run
 
 The established runner processes one Object parquet per Slurm array task. A
-40 GiB, one-hour task request and a maximum concurrency of 82 are the v3
-defaults. The concurrency value is capacity-derived from schedulable memory
-after the 4 GiB per-node system reservation:
+38 GiB, 30-minute task request and a maximum concurrency of 82 are the current
+v3 defaults. At 38 GiB, schedulable memory after the 4 GiB per-node system
+reservation gives this capacity on the former topology:
 
 ```text
-apl01-16: floor((124080 - 4096) / 40960) = 2 tasks/node
-apl17-25: floor((253132 - 4096) / 40960) = 6 tasks/node
+apl01-16: floor((124080 - 4096) / 38912) = 3 tasks/node
+apl17-25: floor((253132 - 4096) / 38912) = 6 tasks/node
 
-theoretical capacity = 16 * 2 + 9 * 6 = 86 tasks
-round(0.95 * 86) = 82 concurrent tasks
+theoretical capacity = 16 * 3 + 9 * 6 = 102 tasks
+82 concurrent tasks retain 20 slots of coexistence headroom
 ```
 
 This is a scheduling rationale, not a substitute for a current pilot. The five
 largest shards must complete with exit code `0:0`, valid HDF5 markers, and no
 memory errors before using the production default. Future changes must use
-observed `MaxRSS` and `Elapsed` rather than treating 40 GiB, one hour, or 82 as
-scientific constants. The current values incorporate the secondary-catalog
-pilot recorded above.
+observed `MaxRSS` and `Elapsed` rather than treating 38 GiB, 30 minutes, or 82
+as scientific constants. The current values incorporate the v3 resource run
+and the earlier production maximum recorded above.
 
 One schema-validation shard recorded by the legacy workflow was
 `object_6310_lsst_cells_v2_LSSTCam_runs_DRP_DP2_v30_0_8_DM-55060_stage3_20260606T114559Z.parq`,
@@ -286,9 +349,10 @@ completion record.
 
 ## Stage 3 profile carried into v3
 
-The HATS build uses Slurm-backed Dask workers. It starts with one requested
-worker and scales adaptively up to 80, each with 2 CPUs, 40 GiB, and a 12-hour
-limit. It does not wait for a fixed worker count before submitting work.
+The HATS build uses Slurm-backed Dask workers. The individual FlexZBoost path
+starts with one requested worker and scales adaptively up to 64, each with 2
+CPUs, 40 GiB, and a three-hour limit. Its driver requests 2 CPUs, 12 GiB, and
+six hours. It does not wait for a fixed worker count before submitting work.
 Workers remain idle for approximately 180 seconds before adaptive scale-down.
 The two threads share the worker's 40 GiB allocation, reducing concurrent
 memory pressure during hats-import reduction.

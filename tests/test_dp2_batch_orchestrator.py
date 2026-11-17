@@ -75,14 +75,15 @@ def test_batch_runner_uses_named_serial_submissions_and_stage_order():
     assert positions == sorted(positions)
 
 
-def test_stage1_is_sized_for_old_nodes_without_restricting_placement():
+def test_stage1_uses_measured_fzboost_defaults_without_restricting_placement():
     submit_source = TRAIN_SUBMIT.read_text(encoding="utf-8")
     train_runner_source = TRAIN_RUNNER.read_text(encoding="utf-8")
     runner_source = RUNNER.read_text(encoding="utf-8")
     assert "--nodelist" not in submit_source
     assert "--exclude" not in submit_source + train_runner_source
-    assert "--cpus-per-task=52" in submit_source
-    assert "--mem=113984M" in submit_source
+    assert 'PZ_FZBOOST_TRAIN_CPUS:-16' in submit_source
+    assert 'PZ_FZBOOST_TRAIN_MEMORY:-24G' in submit_source
+    assert 'PZ_FZBOOST_TRAIN_TIME:-00:30:00' in submit_source
     assert "--cpus-per-task=1 --mem=8G" in submit_source
     assert '"$stage1/benchmark/training-$jobid" \'apl[01-28]\'' in runner_source
 
@@ -103,6 +104,10 @@ def test_stage2_and_stage3_are_contention_tolerant_and_unrestricted():
     assert "--slurm-cores=2" in hats_runner_source
     assert "--slurm-processes=1" in hats_runner_source
     assert "--slurm-memory=40GiB" in hats_runner_source
+    assert '--slurm-walltime="$PZ_HATS_WORKER_TIME"' in hats_runner_source
+    assert 'PZ_HATS_DRIVER_TIME=${PZ_HATS_DRIVER_TIME:-2-00:00:00}' in hats_submit_source
+    assert 'PZ_HATS_DRIVER_MEMORY=${PZ_HATS_DRIVER_MEMORY:-8G}' in hats_submit_source
+    assert '--mem="$PZ_HATS_DRIVER_MEMORY"' in hats_submit_source
     assert '--slurm-job-name="$worker_job_name"' in hats_runner_source
     assert "wait_for_workers" not in hats_runner_source
     assert runner_source.count("--cluster-context-nodes 'apl[01-28]'") == 2

@@ -10,6 +10,7 @@ set -o pipefail
 : "${PZ_HATS_MAX_WORKERS:?missing PZ_HATS_MAX_WORKERS}"
 : "${PZ_HATS_SCALE_DOWN_DELAY:?missing PZ_HATS_SCALE_DOWN_DELAY}"
 : "${PZ_HATS_MARGIN_ARCSEC:?missing PZ_HATS_MARGIN_ARCSEC}"
+: "${PZ_HATS_WORKER_TIME:?missing PZ_HATS_WORKER_TIME}"
 : "${PZ_COMPUTE_DIR:?missing PZ_COMPUTE_DIR}"
 : "${PZ_PY:?missing PZ_PY}"
 command -v pz-build-hats >/dev/null
@@ -59,7 +60,7 @@ set +e
       --slurm-cores=2 \
       --slurm-processes=1 \
       --slurm-memory=40GiB \
-      --slurm-walltime=12:00:00 \
+      --slurm-walltime="$PZ_HATS_WORKER_TIME" \
       --slurm-minimum-jobs="$PZ_HATS_MIN_WORKERS" \
       --slurm-maximum-jobs="$PZ_HATS_MAX_WORKERS" \
       --slurm-scale-down-delay="$PZ_HATS_SCALE_DOWN_DELAY" \

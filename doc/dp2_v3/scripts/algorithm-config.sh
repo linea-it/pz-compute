@@ -19,8 +19,8 @@ dp2_algorithm_config() {
             PZ_TRAIN_CONFIG=$PZ_DP2_DOC_DIR/config/fzboost-train.yaml
             PZ_ESTIMATE_CONFIG=$PZ_DP2_DOC_DIR/config/fzboost-estimate.yaml
             PZ_DEFAULT_MAX_CONCURRENT=82
-            PZ_DEFAULT_MEMORY=40G
-            PZ_DEFAULT_TIME=01:00:00
+            PZ_DEFAULT_MEMORY=38G
+            PZ_DEFAULT_TIME=00:30:00
             ;;
         bpz)
             PZ_RAIL_ALGORITHM=bpz

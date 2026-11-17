@@ -53,11 +53,14 @@ The final model receives `catalog_tag=lsst_gaap_1p0` and provenance
 
 After the job reaches `COMPLETED`, recover its ID and create the lightweight
 Slurm benchmark. The submission has no node-list restriction: Slurm may place
-it on any node eligible for `cpu_photoz`. Its resource shape is deliberately
-sized from an older node, which exposes 56 logical CPUs and 119,984 MiB after
-its 4,096-MiB system reservation. The job requests 52 logical CPUs and 113,984
-MiB: the largest whole-core CPU allocation and integer-MiB memory request that
-stay at or below 95% of those resources.
+it on any node eligible for `cpu_photoz`. It requests 16 logical CPUs, 24 GiB,
+and 30 minutes. The completed v3 production job used an average of 7.55 CPUs,
+peaked at 9.39 GiB, and finished in 146 seconds when allocated 52 CPUs and
+111.31 GiB. The smaller default retains CPU headroom, exceeds the 15.34-GiB
+historical memory peak, and leaves more than ten times the measured v3
+walltime. Override it with `PZ_FZBOOST_TRAIN_CPUS`,
+`PZ_FZBOOST_TRAIN_MEMORY`, or `PZ_FZBOOST_TRAIN_TIME` only after profiling a
+materially different training catalog or environment.
 
 ```bash
 stage1=$PZ_DP2_ROOT/fzboost/stage1

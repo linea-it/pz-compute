@@ -7,20 +7,31 @@ source /scripts/$(whoami)/ondemand/env-dp2-stage3-hats.sh
 export PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
 cd "$PZ_COMPUTE_DIR"
 
-doc/dp2_v3/scripts/submit-hats.sh fzboost
+PZ_HATS_MAX_WORKERS=64 \
+PZ_HATS_WORKER_TIME=03:00:00 \
+PZ_HATS_DRIVER_TIME=06:00:00 \
+PZ_HATS_DRIVER_MEMORY=12G \
+  doc/dp2_v3/scripts/submit-hats.sh fzboost
 ```
 
-The default Dask cluster starts with one requested worker and scales adaptively
-up to 80. Each worker requests 2 CPUs, 40 GiB, and 12 hours; idle workers become
-eligible for scale-down after approximately 180 seconds. There is no
-`wait_for_workers` barrier, so work can begin with the first worker Slurm can
-start. Override `PZ_HATS_MIN_WORKERS`, `PZ_HATS_MAX_WORKERS`,
-`PZ_HATS_SCALE_DOWN_DELAY`, or the default 5 arcsecond margin through
-`PZ_HATS_MARGIN_ARCSEC` before submission when required.
+The FlexZBoost Dask cluster starts with one requested worker and scales
+adaptively up to 64. Each worker requests 2 CPUs, 40 GiB, and 3 hours; idle
+workers become eligible for scale-down after approximately 180 seconds. There
+is no `wait_for_workers` barrier, so work can begin with the first worker Slurm
+can start. The driver requests 2 CPUs, 12 GiB, and 6 hours. Override
+`PZ_HATS_MIN_WORKERS`, `PZ_HATS_MAX_WORKERS`, `PZ_HATS_WORKER_TIME`,
+`PZ_HATS_DRIVER_TIME`, `PZ_HATS_DRIVER_MEMORY`, `PZ_HATS_SCALE_DOWN_DELAY`, or
+the default 5 arcsecond margin through `PZ_HATS_MARGIN_ARCSEC` before
+submission when required.
 
 The single worker process therefore runs at most two concurrent tasks sharing
 the 40 GiB allocation. This limit protects the memory-intensive hats-import
-reduction from the OOM failures observed with eight concurrent threads.
+reduction from the OOM failures observed with eight concurrent threads. Do not
+reduce worker memory from 40 GiB: the v3 profile measured 37.99 GiB at p95 and
+38.00 GiB at maximum, or 95% of the allocation. The worker profile also
+measured 86.73% CPU efficiency, supporting the current two-CPU shape. The
+driver peaked at 7.60 GiB, or 94.98% of its former 8-GiB request, which is why
+the individual command now requests 12 GiB.
 
 Use the [Stage 3 terminal commands](inspect_runs.md#stage-3-hats-build) with
 `algorithm=fzboost` to follow the driver, inspect Dask worker logs, check its
@@ -88,7 +99,7 @@ doc/dp2_v3/scripts/collect-hats-worker-job-ids.sh \
   "$benchmark_dir" "$worker_logs"
 
 worker_count=$(wc -l < "$benchmark_dir/worker-job-ids.txt")
-worker_target=${PZ_HATS_MAX_WORKERS:-80}
+worker_target=${PZ_HATS_MAX_WORKERS:-64}
 test "$worker_count" -gt 0
 
 performance/slurm/slurm-profile \

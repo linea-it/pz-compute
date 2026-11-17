@@ -59,8 +59,8 @@ performance/slurm/slurm-profile \
 cat "$stage2/benchmark/pilot-$pilot_jobid/summary.log"
 ```
 
-Require five successful tasks, inspect `MaxRSS` against the 40 GiB request,
-and check `Elapsed` against the one-hour limit before proceeding.
+Require five successful tasks, inspect `MaxRSS` against the 38 GiB request,
+and check `Elapsed` against the 30-minute limit before proceeding.
 
 ## 3. Submit and profile the complete catalog
 
@@ -105,15 +105,19 @@ If retries are needed, retain every array ID. The generic
 [Slurm profiling guide](../../slurm_profile.md) explains how to combine all
 attempts with `--job-id-file` instead of profiling only the last array.
 
-The defaults are 82 concurrent tasks, 40 GiB, and one hour per task. The
-memory request is 37.5% above the 29.09 GiB peak from the five-largest-shard
-secondary-catalog pilot, and the throttle is 95% of the resulting discrete
-memory capacity on the former `apl01-25` topology. With `apl26` now included,
-the same throttle uses at most 82 of 92 discrete 40-GiB slots and intentionally
-leaves coexistence headroom. The evidence and original calculation are
-recorded in [`fzboost_runs.md`](../references/fzboost_runs.md). Override them with
+The defaults are 82 concurrent tasks, 38 GiB, and 30 minutes per task. The v3
+production peak was 31.50 GiB and its longest task took 18 min 08 s. The 38-GiB
+request also covers the 33.85-GiB historical maximum with 4.15 GiB of
+headroom. Unlike 40 GiB, 38 GiB permits three tasks to fit in the 119,984 MiB
+schedulable memory of an older node, although cluster load and fragmentation
+still control the concurrency actually achieved. Keep the throttle at 82: the
+production peak of 37 reflected shared-cluster availability rather than an
+array limit. The evidence and calculation are recorded in
+[`fzboost_runs.md`](../references/fzboost_runs.md). Override these defaults with
 `PZ_FZBOOST_MAX_CONCURRENT`, `PZ_FZBOOST_MEMORY`, and `PZ_FZBOOST_TIME` when a
-different partition or a new pilot requires it.
+different partition or a new pilot requires it. A future optimization may
+group shards into measured memory classes, but their boundaries must be based
+on retained input-size and `MaxRSS` data.
 
 ## 4. Output layout
 
