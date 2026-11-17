@@ -24,6 +24,21 @@ DEFAULT_INPUT = Path(
     "/data/cl/lsst/dp2/secondary/catalogs/object_collection/object/dataset"
 )
 EXPECTED_ANCILLARY = {"DNF_ZN"}
+DNF_PDF_QUALITY_METHOD = "logspace-truncated-gaussian-v1"
+DNF_PDF_ERROR_COUNTERS = (
+    "nonfinite_dnf_z_rows",
+    "nonfinite_photozerr_rows",
+    "nonpositive_photozerr_rows",
+    "pdf_nonfinite_rows",
+    "pdf_nonpositive_integral_rows",
+    "pdf_bad_normalization_rows",
+)
+DNF_PDF_DIAGNOSTIC_COUNTERS = (
+    "dnf_z_below_grid_rows",
+    "dnf_z_above_grid_rows",
+    "pdf_mode_at_lower_grid_rows",
+    "pdf_mode_at_upper_grid_rows",
+)
 
 sys.path.insert(0, str(REPOSITORY_ROOT / "rail_scripts"))
 from rail_scripts.integrity import (  # noqa: E402
@@ -109,6 +124,37 @@ def validate_pair(input_path: Path, output_path: Path, variant: str) -> int:
             raise ValueError("completion marker is false or absent")
         if int(marker.get("row_count", -1)) != expected_rows:
             raise ValueError("completion-marker row count differs from input")
+        if "dnf_pdf_quality" not in handle["pz_compute"]:
+            raise ValueError("DNF PDF quality counters are absent")
+        quality = handle["pz_compute/dnf_pdf_quality"].attrs
+        if quality.get("method", "") != DNF_PDF_QUALITY_METHOD:
+            raise ValueError("DNF PDF quality method differs from contract")
+        if int(quality.get("pdf_rows", -1)) != expected_rows:
+            raise ValueError("DNF PDF quality row count differs from input")
+        if float(quality.get("zmin", np.nan)) != 0.0:
+            raise ValueError("DNF PDF quality zmin differs from contract")
+        if float(quality.get("zmax", np.nan)) != 6.0:
+            raise ValueError("DNF PDF quality zmax differs from contract")
+        failures = {
+            name: int(quality.get(name, -1))
+            for name in DNF_PDF_ERROR_COUNTERS
+            if int(quality.get(name, -1)) != 0
+        }
+        if failures:
+            raise ValueError(f"DNF PDF quality failures: {failures}")
+        diagnostics = {
+            name: int(quality.get(name, -1))
+            for name in DNF_PDF_DIAGNOSTIC_COUNTERS
+        }
+        invalid_diagnostics = {
+            name: value
+            for name, value in diagnostics.items()
+            if value < 0 or value > expected_rows
+        }
+        if invalid_diagnostics:
+            raise ValueError(
+                f"invalid DNF PDF quality counters: {invalid_diagnostics}"
+            )
         if marker.get("row_id_column", "") != "objectId":
             raise ValueError("row identifier marker is not objectId")
         if marker.get("row_id_fingerprint_algorithm", "") != FINGERPRINT_ALGORITHM:
@@ -159,6 +205,7 @@ def ready_sources(root: Path, variant: str, manifest: Path) -> list[Path]:
         SFD_PATH,
         manifest,
         REPOSITORY_ROOT / "rail_scripts/rail-estimate",
+        REPOSITORY_ROOT / "rail_scripts/rail_scripts/dnf_pdf.py",
         PROJECT_DIR / "scripts/run-one-estimate.sbatch",
         Path(__file__).resolve(),
     ]

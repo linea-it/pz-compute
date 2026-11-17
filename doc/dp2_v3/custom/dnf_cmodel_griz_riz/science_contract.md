@@ -75,6 +75,19 @@ The upstream estimator constructs PDFs internally. They may be used to derive
 the requested scalar summaries, but they are not part of the delivered HATS
 schema.
 
+For this custom delivery, evaluate the pinned fitted Gaussian PDF with a
+per-row log-density shift before normalization. This is an approved numerical
+stability correction: it leaves `DNF_Z`, `photozerr`, `DNF_ZN`, the redshift
+grid, and the Gaussian definition unchanged. It must not clip fitted
+redshifts, replace either DNF estimate, impose an error floor, discard rows, or
+substitute a neighbor-based PDF. Non-finite fitted redshifts and non-finite or
+non-positive fitted errors are undefined and must fail estimation.
+
+Validate every generated PDF while its chunk remains in memory and record
+objective quality counters for fitted redshifts outside the grid, modes at
+either grid boundary, parameter failures, non-finite PDFs, and normalization
+failures. These diagnostics do not change the delivered HATS schema.
+
 ## Delivered HATS columns
 
 In addition to object identity and coordinates required by HATS, publish:

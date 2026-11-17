@@ -95,6 +95,7 @@ for variant in "${variants[@]}"; do
       --column-template='{band}_cModelMag_sfd' \
       --column-template-error='{band}_cModelMagErr_sfd' \
       --row-id-column=objectId \
+      --dnf-stable-pdf \
       --output-ancil-columns=DNF_ZN
 
     "$PZ_PY" "$scripts_dir/validate-stage2.py" \
@@ -104,6 +105,7 @@ for variant in "${variants[@]}"; do
       "$PZ_CUSTOM_ESTIMATE_CONFIG" \
       "$PZ_CUSTOM_SFD_CONFIG" \
       "$PZ_COMPUTE_DIR/rail_scripts/rail-estimate" \
+      "$PZ_COMPUTE_DIR/rail_scripts/rail_scripts/dnf_pdf.py" \
       "$scripts_dir/run-one-estimate.sbatch" \
       "$scripts_dir/validate-stage2.py" \
       > "$PZ_CUSTOM_STAGE2/smoke/READY"

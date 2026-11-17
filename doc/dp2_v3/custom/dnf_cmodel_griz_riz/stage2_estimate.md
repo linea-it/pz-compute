@@ -4,7 +4,11 @@ Stage 2 estimates the official DP2 Object manifest independently with the
 `griz` and `riz` models. Each estimator HDF5 retains the internal 601-bin PDFs
 needed to derive the requested Rubin-style scalars in Stage 3. The promoted
 ancillary schema contains exactly `DNF_ZN`; the other DNF diagnostics remain
-internal to the estimator HDF5.
+internal to the estimator HDF5. This workflow explicitly enables stable
+log-space evaluation of the same fitted DNF Gaussian. Every PDF is checked
+while its estimator chunk is still in memory, and objective quality counters
+are stored under `pz_compute/dnf_pdf_quality` without a full-file validation
+reread.
 
 This project reuses the algorithm-neutral manifests described in
 [`../../common/prepare_estimation_manifests.md`](../../common/prepare_estimation_manifests.md),
@@ -36,7 +40,8 @@ PZ_SMOKE_ROWS=10000 \
 
 The smoke path projects the first 10,000 rows, validates both Stage 1 models,
 runs both estimates, and verifies the source photometry, row fingerprint,
-selected SFD bands, normalized PDFs, and exact promotion of `DNF_ZN`. A
+selected SFD bands, reviewed PDF method, complete quality counters, sampled
+normalized PDFs, and exact promotion of `DNF_ZN`. A
 successful run writes a checksum contract to each variant's
 `stage2/smoke/READY`. Smoke outputs and markers are never overwritten
 silently.
@@ -109,7 +114,9 @@ doc/dp2_v3/custom/dnf_cmodel_griz_riz/scripts/validate-stage2.py \
 
 This reads the selected source photometry and object IDs from every pilot
 parquet, verifies that the SFD inputs can be materialized, and checks the
-promoted `DNF_ZN`. It also samples PDFs across every output and
+promoted `DNF_ZN`. It requires exact in-memory PDF counters covering every row
+and zero numerical failures, then samples PDFs across every output as a cheap
+written-artifact check. It
 refuses missing, invalid, duplicate-manifest, or unexpected HDF5 files. Only
 after both variants pass are checksum-based `pilot/READY` markers written.
 
@@ -208,6 +215,62 @@ Keep the terminal or persistent session open while the monitors run. This
 live record is optional for the scientific outputs, but it is required to
 retain transient pending reasons, step resource/I/O measurements, and
 filesystem headroom that cannot be reconstructed from final accounting.
+
+From another terminal, summarize every array task already visible in Slurm
+accounting. The command discovers the latest production IDs for both variants
+and exits nonzero after printing any terminal task that did not complete
+successfully:
+
+```bash
+jobids=$(
+  for variant in griz riz; do
+    ledger=$PZ_DP2_CUSTOM_ROOT/$variant/stage2/submitted-job-ids.tsv
+    awk -F '\t' \
+      '$2 == variant && $3 == "production" {id=$4} END {print id}' \
+      variant="$variant" "$ledger"
+  done | paste -sd, -
+)
+test -n "$jobids"
+
+sacct --jobs="$jobids" --parsable2 --noheader \
+  --format=JobIDRaw,State,ExitCode,Elapsed,MaxRSS |
+awk -F '|' '
+  $1 ~ /^[0-9]+_[0-9]+$/ {
+    split($1, parts, "_")
+    job = parts[1]
+    state = $2
+    sub(/ .*/, "", state)
+    sub(/\+.*/, "", state)
+
+    total[job]++
+    states[job, state]++
+
+    if (state !~ /^(COMPLETED|RUNNING|PENDING|CONFIGURING|COMPLETING)$/) {
+      bad++
+      print "terminal non-success task:", $0 > "/dev/stderr"
+    }
+  }
+
+  END {
+    for (job in total) {
+      print "\n=== Job array:", job, "==="
+      print "array tasks seen by sacct:", total[job]
+
+      for (key in states) {
+        split(key, parts, SUBSEP)
+        if (parts[1] == job)
+          print parts[2], states[key]
+      }
+    }
+
+    if (bad) exit 1
+  }
+'
+```
+
+An array that is still entirely pending may not yet have task records in
+`sacct`; use `squeue --jobs="$jobids"` alongside this summary. Do not run the
+production validator while any task is failed or still active.
 
 ## 6. Validate and seal production
 

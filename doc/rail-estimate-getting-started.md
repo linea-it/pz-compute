@@ -198,6 +198,22 @@ only reviewed one-dimensional fields with an explicit allow-list, for example:
 The selected fields are validated and copied to `ancillary/`; unrelated
 estimator diagnostics remain internal to the Stage 2 HDF5.
 
+DNF Gaussian PDF stability
+--------------------------
+
+DNF workflows that have explicitly reviewed the numerical policy can pass
+`--dnf-stable-pdf`. This opt-in keeps the fitted `DNF_Z`, `photozerr`,
+`DNF_ZN`, grid, and Gaussian definition unchanged, but evaluates and
+normalizes the Gaussian after a per-row log-density shift. The shift prevents
+an otherwise valid Gaussian from underflowing to zero over the complete grid.
+
+The estimator rejects non-finite `DNF_Z`, non-finite or non-positive
+`photozerr`, non-finite PDF values, and invalid normalizations while each PDF
+chunk is still in memory. Successful output records exact row counts,
+out-of-grid fits, boundary modes, and numerical-failure counters under
+`pz_compute/dnf_pdf_quality`. Omitting the option preserves the upstream DNF
+behavior and output metadata.
+
 If an input table has zero rows, `rail-estimate` does not invoke the estimator.
 It writes a complete zero-row output using the configured redshift grid, keeps
 the requested ancillary schema, and records the usual row fingerprint and

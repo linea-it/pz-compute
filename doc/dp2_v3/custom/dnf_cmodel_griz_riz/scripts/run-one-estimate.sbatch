@@ -69,6 +69,7 @@ echo "config=$PZ_CUSTOM_ESTIMATE_CONFIG"
   --column-template='{band}_cModelMag_sfd' \
   --column-template-error='{band}_cModelMagErr_sfd' \
   --row-id-column=objectId \
+  --dnf-stable-pdf \
   --output-ancil-columns=DNF_ZN
 
 "$PZ_PY" "$validator" pair "$PZ_CUSTOM_VARIANT" "$input_file" "$output_file"

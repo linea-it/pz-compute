@@ -38,6 +38,8 @@ Options:
                                into downstream ancillary output [default: ].
     --row-id-column=<name>     Input identifier column used to fingerprint row
                                identity and order [default: ].
+    --dnf-stable-pdf           Opt in to numerically stable DNF Gaussian PDFs,
+                               in-memory validation, and quality counters.
     --bpz-ref-data-path=<path> BPZ reference-data root containing SED, FILTER,
                                and writable AB directories. Valid only for BPZ.
 
@@ -45,6 +47,7 @@ Options:
 Available algorithms: bpz, dnf, fzboost, tpz, gpz, lephare"""
 
 from collections import namedtuple
+from contextlib import nullcontext
 from math import nan
 from os.path import exists, splitext
 
@@ -70,6 +73,7 @@ from rail_scripts.integrity import (
     INTEGRITY_GROUP,
     row_id_fingerprint,
 )
+from rail_scripts.dnf_pdf import stable_dnf_pdf_generation
 from rail_scripts.ancillary import load_estimator_ancillary
 from rail_scripts.photometry import (
     copy_columns,
@@ -106,6 +110,7 @@ Configuration = namedtuple(
         "output_columns",
         "output_ancil_columns",
         "row_id_column",
+        "dnf_stable_pdf",
         "extra_args",
     ),
 )
@@ -169,6 +174,10 @@ def parse_cmdline():
             abort()
         extra_args["bpz_ref_data_path"] = bpz_ref_data_path
 
+    if args["--dnf-stable-pdf"] and estimator != "dnf":
+        error("--dnf-stable-pdf is valid only with --algorithm=dnf")
+        abort()
+
     sfd_coefficients = normalize_sfd_coefficients(None)
     if sfd_coefficients_file:
         if not args["--sfd-deredden"]:
@@ -208,6 +217,7 @@ def parse_cmdline():
         % (", ".join(output_ancil_columns) or "(none)")
     )
     info('Row identifier column: "%s"' % args["--row-id-column"])
+    info("Stable DNF PDF generation: %s" % args["--dnf-stable-pdf"])
     info('Extra parameter file: "%s"' % param_file)
     if estimator == "bpz":
         reference_path = bpz_ref_data_path or "package default"
@@ -229,6 +239,7 @@ def parse_cmdline():
         output_columns=output_columns,
         output_ancil_columns=output_ancil_columns,
         row_id_column=args["--row-id-column"],
+        dnf_stable_pdf=args["--dnf-stable-pdf"],
         extra_args=extra_args,
     )
 
@@ -380,7 +391,7 @@ def write_empty_estimate_output(output_file, estimator, output_ancil_columns=())
 
 def finalize_output(
     output_file, columns, output_ancil_columns, row_id_column, fingerprint,
-    sfd_bands=(), sfd_coefficients=None
+    sfd_bands=(), sfd_coefficients=None, dnf_pdf_quality=None
 ):
     with h5py.File(output_file, "a") as handle:
         integrity = handle.require_group(INTEGRITY_GROUP)
@@ -414,6 +425,12 @@ def finalize_output(
             group.create_dataset(name, data=values)
 
         integrity.attrs["row_count"] = expected_rows
+        if dnf_pdf_quality is not None:
+            quality = integrity.require_group("dnf_pdf_quality")
+            for name in list(quality.attrs):
+                del quality.attrs[name]
+            for name, value in dnf_pdf_quality.items():
+                quality.attrs[name] = value
         for name in ("sfd_bands", "sfd_a_ebv"):
             if name in integrity.attrs:
                 del integrity.attrs[name]
@@ -506,24 +523,35 @@ def estimate(cfg, ctx):
     mark_existing_output_incomplete(cfg.output)
     info("Starting estimate.")
 
-    with parallel_config(backend='threading', n_jobs=1):
-        if table_row_count(ctx.input.data) == 0:
-            info("Input has zero rows; writing an empty estimate output.")
-            write_empty_estimate_output(
-                cfg.output, ctx.estimator, cfg.output_ancil_columns
-            )
-        else:
-            if cfg.estimator == "dnf":
-                config = ctx.estimator.config
-                counts = replace_nondetections(
-                    ctx.input.data,
-                    config.bands,
-                    config.err_bands,
-                    config.mag_limits,
-                    config.nondetect_val,
+    pdf_context = (
+        stable_dnf_pdf_generation(
+            ctx.estimator.config.zmin, ctx.estimator.config.zmax
+        )
+        if cfg.dnf_stable_pdf
+        else nullcontext(None)
+    )
+    with pdf_context as pdf_tracker:
+        with parallel_config(backend='threading', n_jobs=1):
+            if table_row_count(ctx.input.data) == 0:
+                info("Input has zero rows; writing an empty estimate output.")
+                write_empty_estimate_output(
+                    cfg.output, ctx.estimator, cfg.output_ancil_columns
                 )
-                info("DNF non-detections replaced: %s" % counts)
-            ctx.estimator.estimate(ctx.input)
+            else:
+                if cfg.estimator == "dnf":
+                    config = ctx.estimator.config
+                    counts = replace_nondetections(
+                        ctx.input.data,
+                        config.bands,
+                        config.err_bands,
+                        config.mag_limits,
+                        config.nondetect_val,
+                    )
+                    info("DNF non-detections replaced: %s" % counts)
+                ctx.estimator.estimate(ctx.input)
+        dnf_pdf_quality = pdf_tracker.summary() if pdf_tracker else None
+        if dnf_pdf_quality is not None:
+            info("DNF PDF quality: %s" % dnf_pdf_quality)
 
     finalize_output(
         cfg.output,
@@ -533,6 +561,7 @@ def estimate(cfg, ctx):
         ctx.row_id_fingerprint,
         cfg.bands if cfg.sfd_deredden else (),
         cfg.sfd_coefficients if cfg.sfd_deredden else None,
+        dnf_pdf_quality=dnf_pdf_quality,
     )
 
     info("Estimate done.")

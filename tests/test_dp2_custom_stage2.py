@@ -57,7 +57,26 @@ def write_pair(tmp_path: Path, variant: str = "riz"):
         internal.create_dataset("DNF_ZN", data=zn)
         ancillary = handle.create_group("ancillary")
         ancillary.create_dataset("DNF_ZN", data=zn)
-        marker = handle.create_group("pz_compute").attrs
+        integrity = handle.create_group("pz_compute")
+        quality = integrity.create_group("dnf_pdf_quality").attrs
+        quality["method"] = "logspace-truncated-gaussian-v1"
+        quality["pdf_rows"] = 3
+        quality["zmin"] = 0.0
+        quality["zmax"] = 6.0
+        for name in (
+            "nonfinite_dnf_z_rows",
+            "nonfinite_photozerr_rows",
+            "nonpositive_photozerr_rows",
+            "pdf_nonfinite_rows",
+            "pdf_nonpositive_integral_rows",
+            "pdf_bad_normalization_rows",
+            "dnf_z_below_grid_rows",
+            "dnf_z_above_grid_rows",
+            "pdf_mode_at_lower_grid_rows",
+            "pdf_mode_at_upper_grid_rows",
+        ):
+            quality[name] = 0
+        marker = integrity.attrs
         marker["complete"] = True
         marker["row_count"] = 3
         marker["row_id_column"] = "objectId"
@@ -89,8 +108,18 @@ def test_stage2_runner_uses_custom_columns_and_ancillary_allow_list():
     assert "--column-template='{band}_cModelMag_sfd'" in runner
     assert "--column-template-error='{band}_cModelMagErr_sfd'" in runner
     assert "--output-ancil-columns=DNF_ZN" in runner
+    assert "--dnf-stable-pdf" in runner
     assert "--output-columns" not in runner
     assert "PZ_DP2_ROOT" not in runner
+
+
+def test_pair_validator_rejects_pdf_quality_failure(tmp_path):
+    validator = load_validator()
+    input_path, output_path = write_pair(tmp_path)
+    with h5py.File(output_path, "a") as handle:
+        handle["pz_compute/dnf_pdf_quality"].attrs["pdf_nonfinite_rows"] = 1
+    with pytest.raises(ValueError, match="DNF PDF quality failures"):
+        validator.validate_pair(input_path, output_path, "riz")
 
 
 def test_stage2_submission_uses_measured_resource_defaults():

@@ -86,7 +86,26 @@ This restores the behavior declared by DNF 2.0.4 under pandas copy-on-write;
 it does not introduce a new imputation rule. Tests must demonstrate identical
 results to the upstream mutation where that mutation still works.
 
-### 3. Allow-listed estimator ancillary propagation
+### 3. Opt-in stable DNF Gaussian PDFs
+
+Add `rail-estimate --dnf-stable-pdf` as an explicit DNF-only capability. The
+custom launchers enable it; official and unrelated workflows retain their
+existing behavior by default.
+
+The stable implementation subtracts the maximum log density in each row
+before exponentiation and normalizes the same fitted Gaussian over the same
+configured grid. It does not modify `DNF_Z`, `photozerr`, `DNF_ZN`, or any
+neighbor selection. Non-finite `DNF_Z`, non-finite or non-positive
+`photozerr`, non-finite PDF values, and invalid integrals are hard failures.
+
+Each estimator chunk is checked while its PDFs are already resident in
+memory. Exact counters for processed rows, out-of-grid fits, boundary modes,
+and numerical failures are accumulated without rereading the HDF5 payload and
+stored under `pz_compute/dnf_pdf_quality`. The project validator requires the
+reviewed method, complete row count, configured `[0, 6]` grid, and zero
+numerical-failure counters.
+
+### 4. Allow-listed estimator ancillary propagation
 
 Add an explicit `rail-estimate` option for qp ancillary names. After estimation
 and before marking the file complete, copy only requested one-dimensional
@@ -96,7 +115,7 @@ official Stage 2 schemas.
 
 The custom launcher requests only `DNF_ZN`.
 
-### 4. Rubin-style scalar summary schema
+### 5. Rubin-style scalar summary schema
 
 Extend `pz-build-hats` with explicit options for a summary prefix and the 95%
 interval. With prefix `dnf`, the custom schema is:
@@ -165,6 +184,8 @@ The implemented local increments have established:
 - a four-feature `griz` DNF training/estimate smoke;
 - a three-feature `riz` DNF training/estimate smoke;
 - finite normalized PDFs for all 1,000 real-Object smoke rows in both variants;
+- opt-in log-space DNF Gaussian normalization with exact in-memory PDF checks
+  and persisted per-shard quality counters;
 - exact allow-listed `DNF_ZN` propagation;
 - exact Stage 2 row fingerprints and checksum-sealed manifest validation;
 - scalar-only Rubin-style HATS staging with finite, ordered intervals;

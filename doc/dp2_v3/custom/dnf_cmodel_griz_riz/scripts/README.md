@@ -34,8 +34,9 @@ submissions for the two custom variants.
   Stage 2 arrays, requiring smoke checksums and an accepted pilot before
   production.
 - `run-one-estimate.sbatch`: estimates one manifest shard with explicit cModel
-  columns, selected bands, internal PDFs, and promoted `DNF_ZN`; complete
-  outputs are validated and skipped on retry.
+  columns, selected bands, stable in-memory-validated PDFs, persisted quality
+  counters, and promoted `DNF_ZN`; complete outputs are validated and skipped
+  on retry.
 - `validate-stage2.py`: validates individual pairs or full manifests against
   their source parquet files and can seal successful pilot or production runs
   with checksum-based `READY` markers.
