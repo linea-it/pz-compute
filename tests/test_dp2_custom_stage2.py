@@ -91,3 +91,14 @@ def test_stage2_runner_uses_custom_columns_and_ancillary_allow_list():
     assert "--output-ancil-columns=DNF_ZN" in runner
     assert "--output-columns" not in runner
     assert "PZ_DP2_ROOT" not in runner
+
+
+def test_stage2_submission_uses_measured_resource_defaults():
+    variant_config = (PROJECT / "scripts/variant-config.sh").read_text()
+    launcher = (PROJECT / "scripts/submit-estimates.sh").read_text()
+    assert "PZ_CUSTOM_STAGE2_DEFAULT_MAX_CONCURRENT=102" in variant_config
+    assert "PZ_CUSTOM_STAGE2_DEFAULT_MEMORY=36G" in variant_config
+    assert "PZ_CUSTOM_STAGE2_DEFAULT_TIME=01:00:00" in variant_config
+    assert "PZ_CUSTOM_${upper}_MAX_CONCURRENT" in launcher
+    assert "PZ_CUSTOM_DNF_MAX_CONCURRENT" in launcher
+    assert '--cpus-per-task=1' in launcher

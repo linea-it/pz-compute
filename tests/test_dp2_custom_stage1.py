@@ -98,3 +98,10 @@ def test_stage1_runner_opts_into_custom_bands_and_columns():
     assert "--column-template-error='{band}_cModelMagErr'" in runner
     assert "$PZ_CUSTOM_PROJECT_DIR/scripts/wrap-model.py" in runner
     assert "PZ_DP2_ROOT" not in runner
+
+
+def test_stage1_submission_uses_measured_resource_defaults():
+    launcher = (SCRIPTS / "submit-training.sh").read_text()
+    assert "PZ_CUSTOM_TRAIN_MEMORY:-2G" in launcher
+    assert "PZ_CUSTOM_TRAIN_TIME:-00:15:00" in launcher
+    assert '--cpus-per-task=1' in launcher

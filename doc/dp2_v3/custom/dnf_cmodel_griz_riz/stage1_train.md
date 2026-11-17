@@ -1,7 +1,7 @@
 # Stage 1: train the cModel `griz` and `riz` models
 
 Stage 1 projects the reviewed cModel columns from the clipped RTN-124
-parquet without changing its rows, write separate `griz` and `riz` HDF5
+parquet without changing its rows, writes separate `griz` and `riz` HDF5
 training tables, train one DNF model per variant, and validate their feature
 counts and provenance.
 
@@ -50,8 +50,11 @@ doc/dp2_v3/custom/dnf_cmodel_griz_riz/scripts/submit-training.sh all
 ```
 
 Use `griz` or `riz` instead of `all` to submit only one variant. Each job asks
-for one logical CPU, 8 GiB, and one hour on `cpu_photoz`, matching the official
-DNF training shape. It explicitly selects the cModel columns and the requested
+for one logical CPU, 2 GiB, and 15 minutes on `cpu_photoz`. These values retain
+wide margins over the measured maxima documented in
+[`resource_measurements.md`](resource_measurements.md). Override them with
+`PZ_CUSTOM_TRAIN_MEMORY` and `PZ_CUSTOM_TRAIN_TIME` only when newer evidence
+requires it. The launcher explicitly selects the cModel columns and requested
 band list; it does not modify or invoke the official Stage 1 launcher.
 
 The canonical models are:
@@ -121,8 +124,8 @@ for variant in griz riz; do
 done
 ```
 
-Keep the requested one-CPU, 8-GiB, one-hour shape for reproducibility unless
-the measured profiles demonstrate that it is insufficient. Continue with
+The accepted one-CPU, 2-GiB, 15-minute shape is based on jobs `225065` and
+`225066`. Continue with
 [`stage2_estimate.md`](stage2_estimate.md) only after validation succeeds.
 
 Verified locally:
@@ -133,5 +136,5 @@ Verified locally:
 - `--bands=riz` trains a three-feature DNF model;
 - DNF non-detections are replaced without relying on pandas chained assignment.
 
-Apollo timing, peak-memory, and node-placement measurements are intentionally
-left as runtime evidence rather than predicted values.
+Apollo measurements and the resulting safety margins are recorded in
+[`resource_measurements.md`](resource_measurements.md).

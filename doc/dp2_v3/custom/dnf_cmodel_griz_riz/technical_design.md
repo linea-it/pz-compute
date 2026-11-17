@@ -160,7 +160,7 @@ with each generic behavior change.
 
 The implemented local increments have established:
 
-- 58 passing repository tests;
+- 60 passing repository tests;
 - full row-preserving training projections for both variants;
 - a four-feature `griz` DNF training/estimate smoke;
 - a three-feature `riz` DNF training/estimate smoke;

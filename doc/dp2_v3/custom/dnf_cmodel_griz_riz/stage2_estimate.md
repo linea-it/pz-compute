@@ -108,22 +108,23 @@ done
 
 Choose production memory, time, and concurrency from the observed maximum RSS,
 longest task, node topology, and desired safety margins. Record that rationale
-with the run notes; do not infer that `griz` and `riz` necessarily have equal
-costs.
+with the run notes. The accepted measurements and resource calculation for
+jobs `225091` and `225092` are recorded in
+[`resource_measurements.md`](resource_measurements.md).
 
 ## 5. Submit the complete catalog
 
-Production deliberately has no implicit resource defaults. Export the values
-accepted from the pilot, then submit one or both variants. If the measured
-profiles differ, submit each variant separately with its own values.
+The accepted defaults for both variants are one CPU, 36 GiB, one hour, and at
+most 102 concurrent tasks. Submit one or both variants directly:
 
 ```bash
-export PZ_CUSTOM_DNF_MAX_CONCURRENT=<accepted-concurrency>
-export PZ_CUSTOM_DNF_MEMORY=<accepted-memory>
-export PZ_CUSTOM_DNF_TIME=<accepted-walltime>
-
 doc/dp2_v3/custom/dnf_cmodel_griz_riz/scripts/submit-estimates.sh all production
 ```
+
+Generic overrides are `PZ_CUSTOM_DNF_MAX_CONCURRENT`,
+`PZ_CUSTOM_DNF_MEMORY`, and `PZ_CUSTOM_DNF_TIME`. Variant-specific
+`PZ_CUSTOM_GRIZ_*` or `PZ_CUSTOM_RIZ_*` values take precedence when later
+measurements justify different resources.
 
 The production launcher requires valid smoke and pilot checksum contracts.
 Complete pilot shards are validated and skipped when encountered by the full

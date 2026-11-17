@@ -27,27 +27,42 @@ PZ_DP2_ROOT="$PZ_DP2_ROOT" PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET" \
   "$PZ_COMPUTE_DIR/doc/dp2_v3/scripts/prepare-estimation-manifests.sh" all >/dev/null
 if [ "$scope" = pilot ]; then
     manifest=$PZ_DP2_ROOT/common/manifests/pilot-parquet-files.txt
-    concurrency=${PZ_CUSTOM_PILOT_MAX_CONCURRENT:-5}
-    memory=${PZ_CUSTOM_PILOT_MEMORY:-40G}
-    walltime=${PZ_CUSTOM_PILOT_TIME:-02:00:00}
 else
     manifest=$PZ_DP2_ROOT/common/manifests/input-parquet-files.txt
-    : "${PZ_CUSTOM_DNF_MAX_CONCURRENT:?set from accepted pilot evidence}"
-    : "${PZ_CUSTOM_DNF_MEMORY:?set from accepted pilot evidence}"
-    : "${PZ_CUSTOM_DNF_TIME:?set from accepted pilot evidence}"
-    concurrency=$PZ_CUSTOM_DNF_MAX_CONCURRENT
-    memory=$PZ_CUSTOM_DNF_MEMORY
-    walltime=$PZ_CUSTOM_DNF_TIME
 fi
 nfiles=$(wc -l < "$manifest")
 test "$nfiles" -gt 0
-case "$concurrency" in
-    ''|*[!0-9]*|0) echo "concurrency must be a positive integer: $concurrency" >&2; exit 2 ;;
-esac
+
+custom_stage2_resources() {
+    local variant=${1:?variant is required}
+    local upper concurrency_name memory_name time_name
+    if [ "$scope" = pilot ]; then
+        concurrency=${PZ_CUSTOM_PILOT_MAX_CONCURRENT:-5}
+        memory=${PZ_CUSTOM_PILOT_MEMORY:-40G}
+        walltime=${PZ_CUSTOM_PILOT_TIME:-02:00:00}
+    else
+        upper=${variant^^}
+        concurrency_name=PZ_CUSTOM_${upper}_MAX_CONCURRENT
+        memory_name=PZ_CUSTOM_${upper}_MEMORY
+        time_name=PZ_CUSTOM_${upper}_TIME
+        concurrency=${!concurrency_name:-${PZ_CUSTOM_DNF_MAX_CONCURRENT:-$PZ_CUSTOM_STAGE2_DEFAULT_MAX_CONCURRENT}}
+        memory=${!memory_name:-${PZ_CUSTOM_DNF_MEMORY:-$PZ_CUSTOM_STAGE2_DEFAULT_MEMORY}}
+        walltime=${!time_name:-${PZ_CUSTOM_DNF_TIME:-$PZ_CUSTOM_STAGE2_DEFAULT_TIME}}
+    fi
+    case "$concurrency" in
+        ''|*[!0-9]*|0)
+            echo "$variant concurrency must be a positive integer: $concurrency" >&2
+            return 2
+            ;;
+    esac
+    test -n "$memory" || { echo "$variant memory is empty" >&2; return 2; }
+    test -n "$walltime" || { echo "$variant walltime is empty" >&2; return 2; }
+}
 
 # Validate every selected variant before the first submission.
 for variant in "${variants[@]}"; do
     custom_dnf_variant_config "$variant"
+    custom_stage2_resources "$variant"
     for path in "$PZ_CUSTOM_MODEL" "$PZ_CUSTOM_ESTIMATE_CONFIG" "$PZ_CUSTOM_SFD_CONFIG"; do
         test -f "$path" || { echo "Missing required file: $path" >&2; exit 1; }
     done
@@ -75,6 +90,7 @@ done
 
 for variant in "${variants[@]}"; do
     custom_dnf_variant_config "$variant"
+    custom_stage2_resources "$variant"
     mkdir -p "$PZ_CUSTOM_STAGE2_OUTPUT" "$PZ_CUSTOM_STAGE2/log" \
       "$PZ_CUSTOM_STAGE2/benchmark"
     "$PZ_PY" -m pip freeze > "$PZ_CUSTOM_STAGE2/environment-freeze.txt"
@@ -92,5 +108,5 @@ for variant in "${variants[@]}"; do
     printf '%s\t%s\t%s\t%s\n' \
       "$(date --iso-8601=seconds)" "$variant" "$scope" "$job_id" \
       >> "$PZ_CUSTOM_STAGE2/submitted-job-ids.tsv"
-    echo "$variant: submitted $scope array $job_id ($nfiles files, max $concurrency concurrent)"
+    echo "$variant: submitted $scope array $job_id ($nfiles files, max $concurrency concurrent, $memory, $walltime)"
 done

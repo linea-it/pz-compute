@@ -16,13 +16,12 @@ The implementation boundary and backward-compatibility plan are recorded in
 The scientific request is defined. Generic band selection, copy-on-write-safe
 DNF non-detection handling, allow-listed `DNF_ZN` propagation, and Rubin-style
 scalar HATS summaries have local smoke coverage. Stage 1 has project-specific
-preparation, launchers, provenance wrappers, and validation. Its Apollo
-resource measurements must be recorded after the first production training
-jobs. Stage 2 has smoke, pilot and production launchers plus source-aware
-validation; its production resource settings must come from the first Apollo
-pilot. Stage 3 has independent scalar-only launchers, complete schema and
-value validation, PDF-product rejection, and publication records. Apollo
-resource measurements remain runtime evidence for all three stages.
+preparation, launchers, provenance wrappers, validation, and accepted Apollo
+resources. Stage 2 has smoke, pilot and production launchers plus source-aware
+validation; its production defaults are fixed from successful five-shard
+Apollo pilots. Stage 3 has independent scalar-only launchers, complete schema
+and value validation, PDF-product rejection, and publication records. Stage 3
+resource measurements remain to be collected from its first Apollo build.
 
 The complete local Stage 1 rehearsal trained and validated both 554,676-row
 models from the prepared tables. This confirms the four-feature `griz` and
@@ -46,6 +45,9 @@ estimates. Both passed full scalar scans, interval ordering, Stage 2/HATS
 3. [`stage3_build_hats.md`](stage3_build_hats.md): build scalar-only HATS
    products containing the Rubin-style summaries and `DNF_ZN`.
 
+The measured resource evidence and accepted defaults are recorded in
+[`resource_measurements.md`](resource_measurements.md).
+
 These guides reuse the official environment and operational patterns from
 [`../../individual/`](../../individual/README.md), but all project-specific
 commands and artifacts remain under this directory and its dedicated run
@@ -56,6 +58,7 @@ root.
 ```text
 dnf_cmodel_griz_riz/
 ├── README.md
+├── resource_measurements.md
 ├── science_contract.md
 ├── technical_design.md
 ├── stage1_train.md

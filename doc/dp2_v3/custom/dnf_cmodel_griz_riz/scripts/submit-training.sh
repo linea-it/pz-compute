@@ -21,6 +21,8 @@ scripts_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$scripts_dir/variant-config.sh"
 PZ_DP2_CUSTOM_ROOT=${PZ_DP2_CUSTOM_ROOT:-$PZ_RUN_ROOT/dp2-v3/custom/dnf-cmodel-griz-riz}
 export PZ_DP2_CUSTOM_ROOT
+train_memory=${PZ_CUSTOM_TRAIN_MEMORY:-2G}
+train_time=${PZ_CUSTOM_TRAIN_TIME:-00:15:00}
 
 # Preflight every selected variant before submitting the first job. This keeps
 # `all` atomic with respect to local validation and overwrite protection.
@@ -60,8 +62,8 @@ for variant in "${variants[@]}"; do
       --nodes=1 \
       --ntasks=1 \
       --cpus-per-task=1 \
-      --mem=8G \
-      --time=01:00:00 \
+      --mem="$train_memory" \
+      --time="$train_time" \
       --output="$log_dir/train-$variant-%j.out" \
       --error="$log_dir/train-$variant-%j.err" \
       --export=ALL,PZ_CUSTOM_VARIANT="$variant",PZ_CUSTOM_BANDS="$PZ_CUSTOM_BANDS",PZ_CUSTOM_TRAINING_DATA="$PZ_CUSTOM_TRAINING_DATA",PZ_CUSTOM_TRAIN_CONFIG="$PZ_CUSTOM_TRAIN_CONFIG",PZ_CUSTOM_RAW_MODEL="$raw_model",PZ_CUSTOM_MODEL="$model",PZ_CUSTOM_PROJECT_DIR="$PZ_CUSTOM_PROJECT_DIR" \
@@ -69,5 +71,5 @@ for variant in "${variants[@]}"; do
     job_id=${job_id%%;*}
     printf '%s\t%s\t%s\n' "$(date --iso-8601=seconds)" "$variant" "$job_id" \
       >> "$PZ_CUSTOM_STAGE1/submitted-job-ids.tsv"
-    echo "$variant: submitted custom DNF training job $job_id"
+    echo "$variant: submitted custom DNF training job $job_id (1 CPU, $train_memory, $train_time)"
 done
