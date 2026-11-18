@@ -8,7 +8,12 @@ internal to the estimator HDF5. This workflow explicitly enables stable
 log-space evaluation of the same fitted DNF Gaussian. Every PDF is checked
 while its estimator chunk is still in memory, and objective quality counters
 are stored under `pz_compute/dnf_pdf_quality` without a full-file validation
-reread.
+reread. Input availability before magnitude-limit replacement is recorded
+separately under `pz_compute/dnf_input_quality`, including per-band missing and
+unusable rows and complete selected-band non-detections.
+The same dictionaries appear in stdout as `DNF input photometry quality` and
+`DNF PDF quality`; a failed estimate emits `DNF PDF quality before failure` so
+work completed before the exception remains measurable.
 
 This project reuses the algorithm-neutral manifests described in
 [`../../common/prepare_estimation_manifests.md`](../../common/prepare_estimation_manifests.md),
@@ -115,7 +120,8 @@ doc/dp2_v3/custom/dnf_cmodel_griz_riz/scripts/validate-stage2.py \
 This reads the selected source photometry and object IDs from every pilot
 parquet, verifies that the SFD inputs can be materialized, and checks the
 promoted `DNF_ZN`. It requires exact in-memory PDF counters covering every row
-and zero numerical failures, then samples PDFs across every output as a cheap
+and zero numerical failures, recomputes the input-availability counters from
+each source parquet, then samples PDFs across every output as a cheap
 written-artifact check. It
 refuses missing, invalid, duplicate-manifest, or unexpected HDF5 files. Only
 after both variants pass are checksum-based `pilot/READY` markers written.

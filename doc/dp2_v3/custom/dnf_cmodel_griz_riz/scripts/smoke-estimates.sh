@@ -106,6 +106,7 @@ for variant in "${variants[@]}"; do
       "$PZ_CUSTOM_SFD_CONFIG" \
       "$PZ_COMPUTE_DIR/rail_scripts/rail-estimate" \
       "$PZ_COMPUTE_DIR/rail_scripts/rail_scripts/dnf_pdf.py" \
+      "$PZ_COMPUTE_DIR/rail_scripts/rail_scripts/photometry.py" \
       "$scripts_dir/run-one-estimate.sbatch" \
       "$scripts_dir/validate-stage2.py" \
       > "$PZ_CUSTOM_STAGE2/smoke/READY"

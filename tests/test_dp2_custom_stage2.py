@@ -72,10 +72,20 @@ def write_pair(tmp_path: Path, variant: str = "riz"):
             "pdf_bad_normalization_rows",
             "dnf_z_below_grid_rows",
             "dnf_z_above_grid_rows",
+            "legacy_gaussian_all_zero_rows",
             "pdf_mode_at_lower_grid_rows",
             "pdf_mode_at_upper_grid_rows",
         ):
             quality[name] = 0
+        input_quality = integrity.create_group("dnf_input_quality").attrs
+        input_quality["method"] = "selected-photometry-v1"
+        input_quality["rows"] = 3
+        input_quality["selected_bands"] = variant
+        for band in variant:
+            input_quality[f"missing_{band}_rows"] = 0
+            input_quality[f"unusable_{band}_rows"] = 0
+        input_quality["complete_selected_band_nondetection_rows"] = 0
+        input_quality["no_usable_selected_band_rows"] = 0
         marker = integrity.attrs
         marker["complete"] = True
         marker["row_count"] = 3
@@ -119,6 +129,15 @@ def test_pair_validator_rejects_pdf_quality_failure(tmp_path):
     with h5py.File(output_path, "a") as handle:
         handle["pz_compute/dnf_pdf_quality"].attrs["pdf_nonfinite_rows"] = 1
     with pytest.raises(ValueError, match="DNF PDF quality failures"):
+        validator.validate_pair(input_path, output_path, "riz")
+
+
+def test_pair_validator_rejects_input_quality_counter_mismatch(tmp_path):
+    validator = load_validator()
+    input_path, output_path = write_pair(tmp_path)
+    with h5py.File(output_path, "a") as handle:
+        handle["pz_compute/dnf_input_quality"].attrs["missing_r_rows"] = 1
+    with pytest.raises(ValueError, match="input photometry quality counters differ"):
         validator.validate_pair(input_path, output_path, "riz")
 
 

@@ -36,6 +36,7 @@ DNF_PDF_ERROR_COUNTERS = (
 DNF_PDF_DIAGNOSTIC_COUNTERS = (
     "dnf_z_below_grid_rows",
     "dnf_z_above_grid_rows",
+    "legacy_gaussian_all_zero_rows",
     "pdf_mode_at_lower_grid_rows",
     "pdf_mode_at_upper_grid_rows",
 )
@@ -46,8 +47,10 @@ from rail_scripts.integrity import (  # noqa: E402
     row_id_fingerprint,
 )
 from rail_scripts.photometry import (  # noqa: E402
+    INPUT_PHOTOMETRY_QUALITY_VERSION,
     materialize_sfd_columns,
     projected_input_columns,
+    selected_photometry_quality,
 )
 
 
@@ -87,6 +90,15 @@ def validate_pair(input_path: Path, output_path: Path, variant: str) -> int:
     coefficients = load_sfd()
     expected = expected_input_columns(input_path, bands, coefficients)
     expected_rows = len(expected)
+    magnitude_columns = [f"{band}_cModelMag_sfd" for band in bands]
+    error_columns = [f"{band}_cModelMagErr_sfd" for band in bands]
+    expected_input_quality = selected_photometry_quality(
+        expected,
+        bands,
+        magnitude_columns,
+        error_columns,
+        np.nan,
+    )
 
     with h5py.File(output_path, "r") as handle:
         yvals = handle["data/yvals"]
@@ -155,6 +167,30 @@ def validate_pair(input_path: Path, output_path: Path, variant: str) -> int:
             raise ValueError(
                 f"invalid DNF PDF quality counters: {invalid_diagnostics}"
             )
+        if "dnf_input_quality" not in handle["pz_compute"]:
+            raise ValueError("DNF input photometry quality counters are absent")
+        input_quality = handle["pz_compute/dnf_input_quality"].attrs
+        if input_quality.get("method", "") != INPUT_PHOTOMETRY_QUALITY_VERSION:
+            raise ValueError("DNF input photometry quality method differs")
+        mismatches = {}
+        for name, expected_value in expected_input_quality.items():
+            actual_value = input_quality.get(name)
+            if isinstance(expected_value, str):
+                matches = actual_value == expected_value
+            else:
+                matches = (
+                    actual_value is not None
+                    and int(actual_value) == expected_value
+                )
+            if not matches:
+                mismatches[name] = {
+                    "actual": actual_value,
+                    "expected": expected_value,
+                }
+        if mismatches:
+            raise ValueError(
+                f"DNF input photometry quality counters differ: {mismatches}"
+            )
         if marker.get("row_id_column", "") != "objectId":
             raise ValueError("row identifier marker is not objectId")
         if marker.get("row_id_fingerprint_algorithm", "") != FINGERPRINT_ALGORITHM:
@@ -206,6 +242,7 @@ def ready_sources(root: Path, variant: str, manifest: Path) -> list[Path]:
         manifest,
         REPOSITORY_ROOT / "rail_scripts/rail-estimate",
         REPOSITORY_ROOT / "rail_scripts/rail_scripts/dnf_pdf.py",
+        REPOSITORY_ROOT / "rail_scripts/rail_scripts/photometry.py",
         PROJECT_DIR / "scripts/run-one-estimate.sbatch",
         Path(__file__).resolve(),
     ]

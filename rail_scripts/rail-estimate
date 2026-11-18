@@ -82,6 +82,7 @@ from rail_scripts.photometry import (
     parse_column_list,
     projected_input_columns,
     replace_nondetections,
+    selected_photometry_quality,
     table_column_names,
     table_row_count,
 )
@@ -391,7 +392,8 @@ def write_empty_estimate_output(output_file, estimator, output_ancil_columns=())
 
 def finalize_output(
     output_file, columns, output_ancil_columns, row_id_column, fingerprint,
-    sfd_bands=(), sfd_coefficients=None, dnf_pdf_quality=None
+    sfd_bands=(), sfd_coefficients=None, dnf_pdf_quality=None,
+    dnf_input_quality=None
 ):
     with h5py.File(output_file, "a") as handle:
         integrity = handle.require_group(INTEGRITY_GROUP)
@@ -430,6 +432,12 @@ def finalize_output(
             for name in list(quality.attrs):
                 del quality.attrs[name]
             for name, value in dnf_pdf_quality.items():
+                quality.attrs[name] = value
+        if dnf_input_quality is not None:
+            quality = integrity.require_group("dnf_input_quality")
+            for name in list(quality.attrs):
+                del quality.attrs[name]
+            for name, value in dnf_input_quality.items():
                 quality.attrs[name] = value
         for name in ("sfd_bands", "sfd_a_ebv"):
             if name in integrity.attrs:
@@ -523,6 +531,19 @@ def estimate(cfg, ctx):
     mark_existing_output_incomplete(cfg.output)
     info("Starting estimate.")
 
+    dnf_input_quality = None
+    if cfg.estimator == "dnf":
+        config = ctx.estimator.config
+        if cfg.dnf_stable_pdf:
+            dnf_input_quality = selected_photometry_quality(
+                ctx.input.data,
+                cfg.bands,
+                config.bands,
+                config.err_bands,
+                config.nondetect_val,
+            )
+            info("DNF input photometry quality: %s" % dnf_input_quality)
+
     pdf_context = (
         stable_dnf_pdf_generation(
             ctx.estimator.config.zmin, ctx.estimator.config.zmax
@@ -531,24 +552,28 @@ def estimate(cfg, ctx):
         else nullcontext(None)
     )
     with pdf_context as pdf_tracker:
-        with parallel_config(backend='threading', n_jobs=1):
-            if table_row_count(ctx.input.data) == 0:
-                info("Input has zero rows; writing an empty estimate output.")
-                write_empty_estimate_output(
-                    cfg.output, ctx.estimator, cfg.output_ancil_columns
-                )
-            else:
-                if cfg.estimator == "dnf":
-                    config = ctx.estimator.config
-                    counts = replace_nondetections(
-                        ctx.input.data,
-                        config.bands,
-                        config.err_bands,
-                        config.mag_limits,
-                        config.nondetect_val,
+        try:
+            with parallel_config(backend='threading', n_jobs=1):
+                if table_row_count(ctx.input.data) == 0:
+                    info("Input has zero rows; writing an empty estimate output.")
+                    write_empty_estimate_output(
+                        cfg.output, ctx.estimator, cfg.output_ancil_columns
                     )
-                    info("DNF non-detections replaced: %s" % counts)
-                ctx.estimator.estimate(ctx.input)
+                else:
+                    if cfg.estimator == "dnf":
+                        counts = replace_nondetections(
+                            ctx.input.data,
+                            config.bands,
+                            config.err_bands,
+                            config.mag_limits,
+                            config.nondetect_val,
+                        )
+                        info("DNF non-detections replaced: %s" % counts)
+                    ctx.estimator.estimate(ctx.input)
+        except Exception:
+            if pdf_tracker is not None:
+                info("DNF PDF quality before failure: %s" % pdf_tracker.summary())
+            raise
         dnf_pdf_quality = pdf_tracker.summary() if pdf_tracker else None
         if dnf_pdf_quality is not None:
             info("DNF PDF quality: %s" % dnf_pdf_quality)
@@ -562,6 +587,7 @@ def estimate(cfg, ctx):
         cfg.bands if cfg.sfd_deredden else (),
         cfg.sfd_coefficients if cfg.sfd_deredden else None,
         dnf_pdf_quality=dnf_pdf_quality,
+        dnf_input_quality=dnf_input_quality,
     )
 
     info("Estimate done.")

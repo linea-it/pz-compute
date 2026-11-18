@@ -26,6 +26,7 @@ SFD_BANDS = tuple("ugrizy")
 SFD_SUFFIX = "_sfd"
 AB_NJY_ZEROPOINT = 31.4
 MAG_ERROR_FACTOR = 2.5 / log(10.0)
+INPUT_PHOTOMETRY_QUALITY_VERSION = "selected-photometry-v1"
 
 
 def parse_column_list(value: str | None) -> tuple[str, ...]:
@@ -233,6 +234,69 @@ def copy_columns(table, columns: Sequence[str]) -> dict[str, np.ndarray]:
     if missing:
         raise ValueError(f"output columns are unavailable: {missing}")
     return {name: np.array(_column(table, name), copy=True) for name in columns}
+
+
+def selected_photometry_quality(
+    table,
+    bands: Sequence[str],
+    magnitude_columns: Sequence[str],
+    error_columns: Sequence[str],
+    nondetect_value: float,
+) -> dict[str, str | int]:
+    """Summarize selected-band availability before non-detection replacement."""
+    if not (len(bands) == len(magnitude_columns) == len(error_columns)):
+        raise ValueError("band, magnitude, and error column counts must match")
+    if not bands:
+        raise ValueError("at least one selected band is required")
+    if len(set(bands)) != len(bands):
+        raise ValueError("selected bands must be unique")
+
+    names = table_column_names(table)
+    required = list(magnitude_columns) + list(error_columns)
+    missing_columns = [name for name in required if name not in names]
+    if missing_columns:
+        raise ValueError(
+            f"photometry quality columns are unavailable: {missing_columns}"
+        )
+
+    row_count = table_row_count(table)
+    use_nan = np.isnan(nondetect_value)
+    missing_masks = []
+    usable_masks = []
+    result: dict[str, str | int] = {
+        "method": INPUT_PHOTOMETRY_QUALITY_VERSION,
+        "rows": row_count,
+        "selected_bands": "".join(bands),
+    }
+
+    for band, magnitude_name, error_name in zip(
+        bands, magnitude_columns, error_columns
+    ):
+        if not band or not band.replace("_", "").isalnum():
+            raise ValueError(f"invalid band label for quality metadata: {band}")
+        magnitudes = np.asarray(_column(table, magnitude_name), dtype=np.float64)
+        errors = np.asarray(_column(table, error_name), dtype=np.float64)
+        if magnitudes.ndim != 1 or errors.ndim != 1:
+            raise ValueError("photometry quality columns must be one-dimensional")
+        if len(magnitudes) != row_count or len(errors) != row_count:
+            raise ValueError("photometry quality column row counts differ")
+
+        missing = np.isnan(magnitudes) if use_nan else np.isclose(
+            magnitudes, nondetect_value
+        )
+        usable = ~missing & np.isfinite(magnitudes) & np.isfinite(errors)
+        missing_masks.append(missing)
+        usable_masks.append(usable)
+        result[f"missing_{band}_rows"] = int(np.count_nonzero(missing))
+        result[f"unusable_{band}_rows"] = int(np.count_nonzero(~usable))
+
+    complete_nondetection = np.logical_and.reduce(missing_masks)
+    any_usable = np.logical_or.reduce(usable_masks)
+    result["complete_selected_band_nondetection_rows"] = int(
+        np.count_nonzero(complete_nondetection)
+    )
+    result["no_usable_selected_band_rows"] = int(np.count_nonzero(~any_usable))
+    return result
 
 
 def replace_nondetections(

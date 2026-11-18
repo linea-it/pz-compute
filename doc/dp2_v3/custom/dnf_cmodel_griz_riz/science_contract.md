@@ -124,6 +124,10 @@ where that formula is stable and cover the fitted scales observed in this
 shard. Every corrected PDF is checked for finite values, a positive integral,
 and unit normalization while it remains in memory. A non-finite `DNF_Z` or a
 non-finite or non-positive `photozerr` remains a hard failure.
+Each shard records `legacy_gaussian_all_zero_rows`, computed from the direct
+Gaussian exponent at its closest grid point, so the prevalence of the original
+all-zero underflow mechanism can be measured even though the stable result is
+finite.
 
 ## Complete selected-band non-detections
 
@@ -159,6 +163,9 @@ continue to fail rather than silently manufacture scalar summaries.
 Complete-band non-detections must be identified from input availability rather
 than inferred from `photozerr`: the preceding mixed chunk contains 5,328 such
 objects but did not trigger the same all-row zero-error failure.
+Each shard must therefore record missing and unusable counts for every
+selected band, the number of rows missing every selected magnitude, and the
+number with no usable selected magnitude/error pair before replacement.
 
 No scientific policy has yet been approved for complete selected-band
 non-detections. This observed condition is confirmed as absent cModel

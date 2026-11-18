@@ -100,10 +100,17 @@ neighbor selection. Non-finite `DNF_Z`, non-finite or non-positive
 
 Each estimator chunk is checked while its PDFs are already resident in
 memory. Exact counters for processed rows, out-of-grid fits, boundary modes,
-and numerical failures are accumulated without rereading the HDF5 payload and
-stored under `pz_compute/dnf_pdf_quality`. The project validator requires the
-reviewed method, complete row count, configured `[0, 6]` grid, and zero
-numerical-failure counters.
+legacy all-zero Gaussian underflow, and numerical failures are accumulated
+without rereading the HDF5 payload and stored under
+`pz_compute/dnf_pdf_quality`.
+
+Before magnitude-limit replacement, the launcher also counts missing and
+unusable rows per selected band, rows missing every selected magnitude, and
+rows with no usable selected magnitude/error pair. These values are logged and
+stored under `pz_compute/dnf_input_quality`. The project validator recomputes
+them from the source parquet and requires exact agreement. Failed jobs log the
+input summary and PDF counters accumulated before the exception; successful
+jobs persist both summaries.
 
 ### 4. Allow-listed estimator ancillary propagation
 

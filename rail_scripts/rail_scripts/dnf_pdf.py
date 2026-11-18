@@ -23,6 +23,7 @@ class DNFStablePdfTracker:
             "nonpositive_photozerr_rows": 0,
             "dnf_z_below_grid_rows": 0,
             "dnf_z_above_grid_rows": 0,
+            "legacy_gaussian_all_zero_rows": 0,
             "pdf_nonfinite_rows": 0,
             "pdf_nonpositive_integral_rows": 0,
             "pdf_bad_normalization_rows": 0,
@@ -57,6 +58,13 @@ class DNFStablePdfTracker:
         nonpositive_sigma = np.isfinite(sigma) & (sigma <= 0)
         invalid = nonfinite_z | nonfinite_sigma | nonpositive_sigma
         if invalid.any():
+            self.counters["nonfinite_dnf_z_rows"] += int(nonfinite_z.sum())
+            self.counters["nonfinite_photozerr_rows"] += int(
+                nonfinite_sigma.sum()
+            )
+            self.counters["nonpositive_photozerr_rows"] += int(
+                nonpositive_sigma.sum()
+            )
             raise ValueError(
                 "undefined DNF Gaussian parameters: "
                 f"rows={int(invalid.sum())}, "
@@ -80,6 +88,17 @@ class DNFStablePdfTracker:
         peak_index = np.where(use_left, left, right)
         peak = grid[peak_index]
 
+        # Reconstruct the precise all-zero underflow mechanism in the pinned
+        # direct implementation without evaluating another rows-by-grid array.
+        # If exp(exponent) is zero even at the closest grid point, it is zero
+        # at every grid point and the legacy numerical integral is zero.
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+            legacy_peak_exponent = -0.5 * ((peak - z) / sigma) ** 2
+            legacy_peak = np.exp(legacy_peak_exponent)
+        self.counters["legacy_gaussian_all_zero_rows"] += int(
+            np.count_nonzero(legacy_peak == 0)
+        )
+
         with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
             log_pdf = (grid[None, :] - peak[:, None]) / sigma[:, None]
             second = (
@@ -93,6 +112,7 @@ class DNFStablePdfTracker:
         row_max = np.max(log_pdf, axis=1)
         invalid_log = ~np.isfinite(row_max)
         if invalid_log.any():
+            self.counters["pdf_nonfinite_rows"] += int(invalid_log.sum())
             raise ValueError(
                 "stable DNF log-PDF is undefined for "
                 f"{int(invalid_log.sum())} rows"
@@ -104,6 +124,7 @@ class DNFStablePdfTracker:
         pdf = log_pdf
         nonfinite_pdf = ~np.isfinite(pdf).all(axis=1)
         if nonfinite_pdf.any():
+            self.counters["pdf_nonfinite_rows"] += int(nonfinite_pdf.sum())
             raise ValueError(
                 "stable DNF PDF contains non-finite values in "
                 f"{int(nonfinite_pdf.sum())} rows"
@@ -112,6 +133,9 @@ class DNFStablePdfTracker:
         integrals = np.trapezoid(pdf, grid, axis=1)
         invalid_integral = ~np.isfinite(integrals) | (integrals <= 0)
         if invalid_integral.any():
+            self.counters["pdf_nonpositive_integral_rows"] += int(
+                invalid_integral.sum()
+            )
             raise ValueError(
                 "stable DNF PDF has a non-positive or non-finite integral in "
                 f"{int(invalid_integral.sum())} rows"
@@ -123,6 +147,9 @@ class DNFStablePdfTracker:
             normalized, 1.0, rtol=1e-10, atol=1e-12
         )
         if bad_normalization.any():
+            self.counters["pdf_bad_normalization_rows"] += int(
+                bad_normalization.sum()
+            )
             raise ValueError(
                 "stable DNF PDF normalization failed for "
                 f"{int(bad_normalization.sum())} rows"

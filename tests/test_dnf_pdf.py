@@ -38,6 +38,7 @@ def test_stable_pdf_matches_direct_gaussian_where_direct_formula_is_stable():
         "nonpositive_photozerr_rows": 0,
         "dnf_z_below_grid_rows": 0,
         "dnf_z_above_grid_rows": 0,
+        "legacy_gaussian_all_zero_rows": 0,
         "pdf_nonfinite_rows": 0,
         "pdf_nonpositive_integral_rows": 0,
         "pdf_bad_normalization_rows": 0,
@@ -59,6 +60,7 @@ def test_stable_pdf_normalizes_gaussian_that_underflows_in_direct_formula():
     assert np.argmax(pdf[0]) == 0
     summary = tracker.summary()
     assert summary["dnf_z_below_grid_rows"] == 1
+    assert summary["legacy_gaussian_all_zero_rows"] == 1
     assert summary["pdf_mode_at_lower_grid_rows"] == 1
 
 
@@ -71,6 +73,19 @@ def test_stable_pdf_handles_observed_extreme_fit_scales():
 
     assert np.isfinite(pdf).all()
     np.testing.assert_allclose(np.trapezoid(pdf, grid, axis=1), 1.0)
+
+
+def test_legacy_underflow_counter_handles_narrow_fit_between_grid_points():
+    grid = np.linspace(0.0, 6.0, 601)
+    photoz = np.array([0.21461758])
+    photozerr = np.array([9.35e-5])
+    tracker = DNFStablePdfTracker()
+
+    pdf = tracker.compute(photoz, photozerr, grid)
+
+    assert np.isfinite(pdf).all()
+    assert tracker.summary()["legacy_gaussian_all_zero_rows"] == 1
+    assert np.exp(-0.5 * ((grid - photoz[0]) / photozerr[0]) ** 2).max() == 0
 
 
 @pytest.mark.parametrize(
@@ -87,6 +102,15 @@ def test_stable_pdf_rejects_undefined_parameters(photoz, photozerr, message):
 
     with pytest.raises(ValueError, match=message):
         tracker.compute(photoz, photozerr, np.linspace(0.0, 6.0, 601))
+
+    assert sum(
+        tracker.summary()[name]
+        for name in (
+            "nonfinite_dnf_z_rows",
+            "nonfinite_photozerr_rows",
+            "nonpositive_photozerr_rows",
+        )
+    ) == 1
 
 
 def test_stable_pdf_accumulates_quality_across_chunks():

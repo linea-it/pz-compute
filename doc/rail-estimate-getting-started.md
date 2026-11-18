@@ -210,9 +210,16 @@ an otherwise valid Gaussian from underflowing to zero over the complete grid.
 The estimator rejects non-finite `DNF_Z`, non-finite or non-positive
 `photozerr`, non-finite PDF values, and invalid normalizations while each PDF
 chunk is still in memory. Successful output records exact row counts,
-out-of-grid fits, boundary modes, and numerical-failure counters under
-`pz_compute/dnf_pdf_quality`. Omitting the option preserves the upstream DNF
-behavior and output metadata.
+out-of-grid fits, boundary modes, the number of rows whose Gaussian would have
+underflowed to zero everywhere in the direct implementation, and
+numerical-failure counters under `pz_compute/dnf_pdf_quality`.
+
+Before non-detection replacement, the same option records per-band missing
+and unusable counts, complete selected-band non-detections, and rows with no
+usable selected band under `pz_compute/dnf_input_quality`. Both summaries are
+also logged; if estimation fails, the input summary and all PDF counters
+accumulated before the failure remain in stdout. Omitting the option preserves
+the upstream DNF behavior and output metadata.
 
 If an input table has zero rows, `rail-estimate` does not invoke the estimator.
 It writes a complete zero-row output using the configured redshift grid, keeps

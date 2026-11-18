@@ -7,6 +7,7 @@ from rail_scripts.photometry import (
     parse_column_list,
     projected_input_columns,
     replace_nondetections,
+    selected_photometry_quality,
     table_row_count,
 )
 from rail_scripts import (
@@ -177,3 +178,34 @@ def test_replace_nondetections_is_copy_on_write_safe_and_exact():
     assert table.loc[1, "r_err"] == 1.0
     assert table.loc[0, "i_err"] == 1.0
     assert np.isnan(table.loc[2, "r_err"])
+
+
+def test_selected_photometry_quality_distinguishes_missing_and_unusable_rows():
+    table = pd.DataFrame(
+        {
+            "r_mag": [20.0, np.nan, 22.0, np.nan, 21.0],
+            "r_err": [0.1, np.nan, np.nan, np.nan, np.nan],
+            "i_mag": [np.nan, np.nan, 23.0, np.nan, np.nan],
+            "i_err": [np.nan, np.nan, 0.2, np.nan, np.nan],
+        }
+    )
+
+    quality = selected_photometry_quality(
+        table,
+        ("r", "i"),
+        ("r_mag", "i_mag"),
+        ("r_err", "i_err"),
+        np.nan,
+    )
+
+    assert quality == {
+        "method": "selected-photometry-v1",
+        "rows": 5,
+        "selected_bands": "ri",
+        "missing_r_rows": 2,
+        "unusable_r_rows": 4,
+        "missing_i_rows": 4,
+        "unusable_i_rows": 4,
+        "complete_selected_band_nondetection_rows": 2,
+        "no_usable_selected_band_rows": 3,
+    }

@@ -35,8 +35,8 @@ submissions for the two custom variants.
   production.
 - `run-one-estimate.sbatch`: estimates one manifest shard with explicit cModel
   columns, selected bands, stable in-memory-validated PDFs, persisted quality
-  counters, and promoted `DNF_ZN`; complete outputs are validated and skipped
-  on retry.
+  counters for input availability and legacy Gaussian underflow, and promoted
+  `DNF_ZN`; complete outputs are validated and skipped on retry.
 - `validate-stage2.py`: validates individual pairs or full manifests against
   their source parquet files and can seal successful pilot or production runs
   with checksum-based `READY` markers.
