@@ -96,6 +96,7 @@ for variant in "${variants[@]}"; do
       --column-template-error='{band}_cModelMagErr_sfd' \
       --row-id-column=objectId \
       --dnf-stable-pdf \
+      --dnf-no-photometry-policy=nan \
       --output-ancil-columns=DNF_ZN
 
     "$PZ_PY" "$scripts_dir/validate-stage2.py" \

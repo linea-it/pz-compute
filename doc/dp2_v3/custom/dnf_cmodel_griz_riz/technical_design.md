@@ -112,7 +112,26 @@ them from the source parquet and requires exact agreement. Failed jobs log the
 input summary and PDF counters accumulated before the exception; successful
 jobs persist both summaries.
 
-### 4. Allow-listed estimator ancillary propagation
+### 4. Explicit no-photometry `NaN` policy
+
+The custom launchers pass `--dnf-no-photometry-policy=nan`. Before replacement,
+the shared photometry layer constructs a row mask for objects with no selected
+band containing both a usable magnitude and magnitude error. The stable PDF
+adapter permits undefined fitted parameters only on that mask and returns an
+all-`NaN` internal PDF row after validating every ordinary estimate.
+
+Before ancillary propagation, `rail-estimate` also masks internal `DNF_ZN` for
+the same rows. This produces `NaN` for all seven Stage 3 PDF-derived summaries
+and for delivered `DNF_ZN`, while retaining object identity, coordinates, row
+count, and order. No flag column is added. The default shared behavior remains
+`error`; the `nan` policy is explicit and requires stable DNF PDF generation.
+
+Stage 2 recomputes the mask from the source parquet and checks sampled PDFs,
+the complete `DNF_ZN` mask, and persisted counters. Stage 3 requires all eight
+science fields to be `NaN` together for exactly the recorded no-estimate count
+and rejects partial nulls, infinities, or unapproved non-finite values.
+
+### 5. Allow-listed estimator ancillary propagation
 
 Add an explicit `rail-estimate` option for qp ancillary names. After estimation
 and before marking the file complete, copy only requested one-dimensional
@@ -122,7 +141,7 @@ official Stage 2 schemas.
 
 The custom launcher requests only `DNF_ZN`.
 
-### 5. Rubin-style scalar summary schema
+### 6. Rubin-style scalar summary schema
 
 Extend `pz-build-hats` with explicit options for a summary prefix and the 95%
 interval. With prefix `dnf`, the custom schema is:
@@ -173,8 +192,8 @@ Every generic implementation increment must pass:
 | official command without `--bands` | still selects `ugrizy` |
 | official Stage 2 output | unchanged ancillary and SFD marker schema |
 | official Stage 3 command | unchanged scalar names and nested PDF column |
-| custom `griz` smoke | four model features; finite normalized PDFs |
-| custom `riz` smoke | three model features; finite normalized PDFs |
+| custom `griz` smoke | four model features; normalized PDFs or approved all-`NaN` rows |
+| custom `riz` smoke | three model features; normalized PDFs or approved all-`NaN` rows |
 | ancillary allow-list empty | no estimator diagnostics promoted |
 | ancillary allow-list `DNF_ZN` | exactly one DNF diagnostic promoted |
 | scalar-only HATS build | requested scalars present; no PDF product |
@@ -190,12 +209,13 @@ The implemented local increments have established:
 - full row-preserving training projections for both variants;
 - a four-feature `griz` DNF training/estimate smoke;
 - a three-feature `riz` DNF training/estimate smoke;
-- finite normalized PDFs for all 1,000 real-Object smoke rows in both variants;
+- normalized PDFs for estimated smoke rows and exact all-`NaN` policy rows;
 - opt-in log-space DNF Gaussian normalization with exact in-memory PDF checks
   and persisted per-shard quality counters;
-- exact allow-listed `DNF_ZN` propagation;
+- exact allow-listed `DNF_ZN` propagation, including the approved `NaN` mask;
 - exact Stage 2 row fingerprints and checksum-sealed manifest validation;
-- scalar-only Rubin-style HATS staging with finite, ordered intervals;
+- scalar-only Rubin-style HATS staging with finite, ordered estimated values
+  and complete all-`NaN` no-estimate rows;
 - complete 11-column HATS builds with `float64` science values, no PDF
   artifacts, Stage 2/HATS `DNF_ZN` aggregate agreement, and sealed publication
   validation records;

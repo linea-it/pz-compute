@@ -36,7 +36,9 @@ submissions for the two custom variants.
 - `run-one-estimate.sbatch`: estimates one manifest shard with explicit cModel
   columns, selected bands, stable in-memory-validated PDFs, persisted quality
   counters for input availability and legacy Gaussian underflow, and promoted
-  `DNF_ZN`; complete outputs are validated and skipped on retry.
+  `DNF_ZN`; rows with no usable selected band retain identity but receive
+  policy `NaN`s in PDFs and `DNF_ZN`. Complete outputs are validated and
+  skipped on retry.
 - `validate-stage2.py`: validates individual pairs or full manifests against
   their source parquet files and can seal successful pilot or production runs
   with checksum-based `READY` markers.
@@ -45,5 +47,6 @@ submissions for the two custom variants.
 - `run-one-hats.sbatch`: builds one HATS collection with no nested or companion
   PDF product, records driver/worker context, and invokes final validation.
 - `validate-hats.py`: enforces the exact 11-column schema and `float64` science
-  policy, scans every scalar row, compares `DNF_ZN` aggregates with Stage 2,
-  rejects PDF artifacts, and writes publication validation records.
+  policy, scans every scalar row, requires the exact all-`NaN` no-estimate
+  pattern, compares finite `DNF_ZN` aggregates with Stage 2, rejects PDF
+  artifacts, and writes publication validation records.

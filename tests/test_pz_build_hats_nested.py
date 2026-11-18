@@ -94,3 +94,17 @@ def test_rubin_summary_schema_adds_named_68_and_95_percentiles():
     assert summary["dnf_z_err95_low"][0] == 0.02
     assert summary["dnf_z_err95_high"][0] == 0.98
 
+
+def test_rubin_summary_preserves_nan_for_rows_without_estimates():
+    builder = load_builder()
+    xvals = np.linspace(0.0, 1.0, 101)
+    yvals = np.vstack([np.ones(len(xvals)), np.full(len(xvals), np.nan)])
+
+    summary = builder.summarize_pdf(
+        xvals, yvals, prefix="dnf", include_95_interval=True
+    )
+
+    for values in summary.values():
+        assert np.isfinite(values[0])
+        assert np.isnan(values[1])
+

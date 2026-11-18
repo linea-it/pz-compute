@@ -38,6 +38,7 @@ def test_stable_pdf_matches_direct_gaussian_where_direct_formula_is_stable():
         "nonpositive_photozerr_rows": 0,
         "dnf_z_below_grid_rows": 0,
         "dnf_z_above_grid_rows": 0,
+        "no_estimate_rows": 0,
         "legacy_gaussian_all_zero_rows": 0,
         "pdf_nonfinite_rows": 0,
         "pdf_nonpositive_integral_rows": 0,
@@ -141,3 +142,23 @@ def test_stable_pdf_context_is_scoped_and_restores_pinned_function():
         assert np.isfinite(pdf).all()
 
     assert dnf_module.compute_pdfs_fit is original
+
+
+def test_no_estimate_mask_allows_undefined_fit_and_returns_nan_pdf():
+    grid = np.linspace(0.0, 6.0, 601)
+    tracker = DNFStablePdfTracker(
+        no_estimate_mask=np.array([False, True, True])
+    )
+
+    pdf = tracker.compute(
+        np.array([0.5, np.nan, 0.2]),
+        np.array([0.1, 0.0, -1.0]),
+        grid,
+    )
+    tracker.assert_mask_consumed()
+
+    assert np.isfinite(pdf[0]).all()
+    assert np.isnan(pdf[1:]).all()
+    assert tracker.summary()["no_estimate_rows"] == 2
+    assert tracker.summary()["pdf_rows"] == 3
+    assert tracker.summary()["nonpositive_photozerr_rows"] == 0

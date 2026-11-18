@@ -15,13 +15,16 @@ The implementation boundary and backward-compatibility plan are recorded in
 
 The scientific request is defined. Generic band selection, copy-on-write-safe
 DNF non-detection handling, allow-listed `DNF_ZN` propagation, and Rubin-style
-scalar HATS summaries have local smoke coverage. Stage 1 has project-specific
-preparation, launchers, provenance wrappers, validation, and accepted Apollo
-resources. Stage 2 has smoke, pilot and production launchers plus source-aware
-validation; its production defaults are fixed from successful five-shard
-Apollo pilots. Stage 3 has independent scalar-only launchers, complete schema
-and value validation, PDF-product rejection, and publication records. Stage 3
-resource measurements remain to be collected from its first Apollo build.
+scalar HATS summaries have local smoke coverage. The reviewed no-photometry
+policy preserves every row and writes `NaN` to all eight science fields when
+no selected band is usable, without adding a flag column. Stage 1 has
+project-specific preparation, launchers, provenance wrappers, validation, and
+accepted Apollo resources. Stage 2 has smoke, pilot and production launchers
+plus source-aware validation; its production defaults are fixed from
+successful five-shard Apollo pilots. Stage 3 has independent scalar-only
+launchers, complete schema and value validation, PDF-product rejection, and
+publication records. Stage 3 resource measurements remain to be collected
+from its first Apollo build.
 
 The complete local Stage 1 rehearsal trained and validated both 554,676-row
 models from the prepared tables. This confirms the four-feature `griz` and

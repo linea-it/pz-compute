@@ -236,14 +236,14 @@ def copy_columns(table, columns: Sequence[str]) -> dict[str, np.ndarray]:
     return {name: np.array(_column(table, name), copy=True) for name in columns}
 
 
-def selected_photometry_quality(
+def selected_photometry_quality_and_mask(
     table,
     bands: Sequence[str],
     magnitude_columns: Sequence[str],
     error_columns: Sequence[str],
     nondetect_value: float,
-) -> dict[str, str | int]:
-    """Summarize selected-band availability before non-detection replacement."""
+) -> tuple[dict[str, str | int], np.ndarray]:
+    """Summarize selected-band availability and return its no-estimate mask."""
     if not (len(bands) == len(magnitude_columns) == len(error_columns)):
         raise ValueError("band, magnitude, and error column counts must match")
     if not bands:
@@ -295,8 +295,27 @@ def selected_photometry_quality(
     result["complete_selected_band_nondetection_rows"] = int(
         np.count_nonzero(complete_nondetection)
     )
-    result["no_usable_selected_band_rows"] = int(np.count_nonzero(~any_usable))
-    return result
+    no_usable = ~any_usable
+    result["no_usable_selected_band_rows"] = int(np.count_nonzero(no_usable))
+    return result, no_usable
+
+
+def selected_photometry_quality(
+    table,
+    bands: Sequence[str],
+    magnitude_columns: Sequence[str],
+    error_columns: Sequence[str],
+    nondetect_value: float,
+) -> dict[str, str | int]:
+    """Summarize selected-band availability before non-detection replacement."""
+    quality, _ = selected_photometry_quality_and_mask(
+        table,
+        bands,
+        magnitude_columns,
+        error_columns,
+        nondetect_value,
+    )
+    return quality
 
 
 def replace_nondetections(

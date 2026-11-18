@@ -70,6 +70,7 @@ echo "config=$PZ_CUSTOM_ESTIMATE_CONFIG"
   --column-template-error='{band}_cModelMagErr_sfd' \
   --row-id-column=objectId \
   --dnf-stable-pdf \
+  --dnf-no-photometry-policy=nan \
   --output-ancil-columns=DNF_ZN
 
 "$PZ_PY" "$validator" pair "$PZ_CUSTOM_VARIANT" "$input_file" "$output_file"

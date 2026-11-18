@@ -36,6 +36,7 @@ DNF_PDF_ERROR_COUNTERS = (
 DNF_PDF_DIAGNOSTIC_COUNTERS = (
     "dnf_z_below_grid_rows",
     "dnf_z_above_grid_rows",
+    "no_estimate_rows",
     "legacy_gaussian_all_zero_rows",
     "pdf_mode_at_lower_grid_rows",
     "pdf_mode_at_upper_grid_rows",
@@ -50,7 +51,7 @@ from rail_scripts.photometry import (  # noqa: E402
     INPUT_PHOTOMETRY_QUALITY_VERSION,
     materialize_sfd_columns,
     projected_input_columns,
-    selected_photometry_quality,
+    selected_photometry_quality_and_mask,
 )
 
 
@@ -92,7 +93,7 @@ def validate_pair(input_path: Path, output_path: Path, variant: str) -> int:
     expected_rows = len(expected)
     magnitude_columns = [f"{band}_cModelMag_sfd" for band in bands]
     error_columns = [f"{band}_cModelMagErr_sfd" for band in bands]
-    expected_input_quality = selected_photometry_quality(
+    expected_input_quality, no_estimate_mask = selected_photometry_quality_and_mask(
         expected,
         bands,
         magnitude_columns,
@@ -128,8 +129,10 @@ def validate_pair(input_path: Path, output_path: Path, variant: str) -> int:
         promoted_zn = handle["ancillary/DNF_ZN"][...]
         internal_zn = handle["ancil/DNF_ZN"][...]
         np.testing.assert_array_equal(promoted_zn, internal_zn)
-        if not np.isfinite(promoted_zn).all():
-            raise ValueError("DNF_ZN contains non-finite values")
+        if not np.array_equal(np.isnan(promoted_zn), no_estimate_mask):
+            raise ValueError("DNF_ZN NaN mask differs from no-photometry input mask")
+        if not np.isfinite(promoted_zn[~no_estimate_mask]).all():
+            raise ValueError("estimated DNF_ZN contains non-finite values")
 
         marker = handle["pz_compute"].attrs
         if not bool(marker.get("complete", False)):
@@ -167,11 +170,15 @@ def validate_pair(input_path: Path, output_path: Path, variant: str) -> int:
             raise ValueError(
                 f"invalid DNF PDF quality counters: {invalid_diagnostics}"
             )
+        if int(quality["no_estimate_rows"]) != int(no_estimate_mask.sum()):
+            raise ValueError("DNF PDF no-estimate count differs from input mask")
         if "dnf_input_quality" not in handle["pz_compute"]:
             raise ValueError("DNF input photometry quality counters are absent")
         input_quality = handle["pz_compute/dnf_input_quality"].attrs
         if input_quality.get("method", "") != INPUT_PHOTOMETRY_QUALITY_VERSION:
             raise ValueError("DNF input photometry quality method differs")
+        if input_quality.get("no_photometry_policy", "") != "nan":
+            raise ValueError("DNF no-photometry policy differs from contract")
         mismatches = {}
         for name, expected_value in expected_input_quality.items():
             actual_value = input_quality.get(name)
@@ -204,14 +211,27 @@ def validate_pair(input_path: Path, output_path: Path, variant: str) -> int:
             marker.get("sfd_a_ebv", []), [coefficients[band] for band in bands]
         )
 
-        indices = sampled_pdf_indices(expected_rows)
+        policy_samples = []
+        for mask in (no_estimate_mask, ~no_estimate_mask):
+            policy_samples.extend(np.flatnonzero(mask)[:3])
+        indices = np.unique(
+            np.concatenate(
+                [sampled_pdf_indices(expected_rows), np.asarray(policy_samples)]
+            ).astype(np.int64)
+        )
         if len(indices):
             sample = np.asarray(yvals[indices, :])
-            if not np.isfinite(sample).all():
-                raise ValueError("sampled PDFs contain non-finite values")
-            if np.any(sample < -1e-12):
+            sample_no_estimate = no_estimate_mask[indices]
+            if sample_no_estimate.any() and not np.isnan(
+                sample[sample_no_estimate]
+            ).all():
+                raise ValueError("no-estimate sampled PDFs are not all NaN")
+            estimated_sample = sample[~sample_no_estimate]
+            if not np.isfinite(estimated_sample).all():
+                raise ValueError("estimated sampled PDFs contain non-finite values")
+            if np.any(estimated_sample < -1e-12):
                 raise ValueError("sampled PDFs contain negative density")
-            integrals = np.trapezoid(sample, xvals[0], axis=1)
+            integrals = np.trapezoid(estimated_sample, xvals[0], axis=1)
             np.testing.assert_allclose(integrals, 1.0, rtol=1e-6, atol=1e-6)
     return expected_rows
 

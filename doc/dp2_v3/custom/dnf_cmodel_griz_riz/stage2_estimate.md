@@ -14,6 +14,9 @@ unusable rows and complete selected-band non-detections.
 The same dictionaries appear in stdout as `DNF input photometry quality` and
 `DNF PDF quality`; a failed estimate emits `DNF PDF quality before failure` so
 work completed before the exception remains measurable.
+Rows with no usable selected band are retained under the reviewed
+`--dnf-no-photometry-policy=nan`: their internal PDF and promoted `DNF_ZN` are
+all `NaN`, while every estimated row must remain finite and normalized.
 
 This project reuses the algorithm-neutral manifests described in
 [`../../common/prepare_estimation_manifests.md`](../../common/prepare_estimation_manifests.md),
@@ -46,7 +49,8 @@ PZ_SMOKE_ROWS=10000 \
 The smoke path projects the first 10,000 rows, validates both Stage 1 models,
 runs both estimates, and verifies the source photometry, row fingerprint,
 selected SFD bands, reviewed PDF method, complete quality counters, sampled
-normalized PDFs, and exact promotion of `DNF_ZN`. A
+normalized or policy-`NaN` PDFs, and exact promotion of `DNF_ZN` including its
+approved `NaN` mask. A
 successful run writes a checksum contract to each variant's
 `stage2/smoke/READY`. Smoke outputs and markers are never overwritten
 silently.
@@ -121,8 +125,8 @@ This reads the selected source photometry and object IDs from every pilot
 parquet, verifies that the SFD inputs can be materialized, and checks the
 promoted `DNF_ZN`. It requires exact in-memory PDF counters covering every row
 and zero numerical failures, recomputes the input-availability counters from
-each source parquet, then samples PDFs across every output as a cheap
-written-artifact check. It
+each source parquet, checks the complete `DNF_ZN` mask, then samples ordinary
+and no-estimate PDFs across every output as a cheap written-artifact check. It
 refuses missing, invalid, duplicate-manifest, or unexpected HDF5 files. Only
 after both variants pass are checksum-based `pilot/READY` markers written.
 

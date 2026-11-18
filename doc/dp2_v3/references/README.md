@@ -13,6 +13,7 @@ notes here explain every choice made in those files. The guides under
 | [`bpz_reference_data.md`](bpz_reference_data.md) | official BPZ 136-SED deployment contract |
 | [`dnf_science.md`](dnf_science.md) | official DNF scientific configuration, trusted-pickle inspection, and provenance |
 | [`dnf_runs.md`](dnf_runs.md) | validated DNF pilot history and Stage 2 resource rationale |
+| [`dnf_validation_plan.md`](dnf_validation_plan.md) | deferred recommendations for DNF diagnostics and efficient official production validation |
 | [`bpz_test_science.md`](bpz_test_science.md) | standalone, non-production COSMOS31 workflow and risk statement |
 | [`bpz_test_runs.md`](bpz_test_runs.md) | validated BPZ test run history and Stage 2 resource rationale |
 

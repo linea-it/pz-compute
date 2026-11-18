@@ -221,6 +221,14 @@ also logged; if estimation fails, the input summary and all PDF counters
 accumulated before the failure remain in stdout. Omitting the option preserves
 the upstream DNF behavior and output metadata.
 
+An explicitly reviewed workflow may additionally pass
+`--dnf-no-photometry-policy=nan`. A row with no selected band containing both
+a usable magnitude and error is then retained, but its internal PDF and
+promoted `DNF_ZN` are written as `NaN`. Downstream scalar summaries derived
+from that PDF are consequently `NaN`. Undefined fitted parameters remain hard
+failures for every row outside this input-derived mask. The default policy is
+`error`, and the `nan` policy requires `--dnf-stable-pdf`.
+
 If an input table has zero rows, `rail-estimate` does not invoke the estimator.
 It writes a complete zero-row output using the configured redshift grid, keeps
 the requested ancillary schema, and records the usual row fingerprint and

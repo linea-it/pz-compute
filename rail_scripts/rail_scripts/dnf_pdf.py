@@ -23,6 +23,7 @@ class DNFStablePdfTracker:
             "nonpositive_photozerr_rows": 0,
             "dnf_z_below_grid_rows": 0,
             "dnf_z_above_grid_rows": 0,
+            "no_estimate_rows": 0,
             "legacy_gaussian_all_zero_rows": 0,
             "pdf_nonfinite_rows": 0,
             "pdf_nonpositive_integral_rows": 0,
@@ -33,6 +34,16 @@ class DNFStablePdfTracker:
     )
     zmin: float | None = None
     zmax: float | None = None
+    no_estimate_mask: np.ndarray | None = None
+    _mask_offset: int = 0
+
+    def __post_init__(self) -> None:
+        if self.no_estimate_mask is None:
+            return
+        mask = np.asarray(self.no_estimate_mask, dtype=bool)
+        if mask.ndim != 1:
+            raise ValueError("DNF no-estimate mask must be one-dimensional")
+        self.no_estimate_mask = np.array(mask, copy=True)
 
     def compute(self, photoz, photozerr, zgrid) -> np.ndarray:
         """Return the pinned DNF Gaussian on its grid using stable arithmetic.
@@ -53,9 +64,13 @@ class DNFStablePdfTracker:
         if not np.isfinite(grid).all() or not np.all(np.diff(grid) > 0):
             raise ValueError("DNF PDF grid must be finite and strictly increasing")
 
-        nonfinite_z = ~np.isfinite(z)
-        nonfinite_sigma = ~np.isfinite(sigma)
-        nonpositive_sigma = np.isfinite(sigma) & (sigma <= 0)
+        self._set_or_check_grid(float(grid[0]), float(grid[-1]))
+        no_estimate = self._consume_no_estimate_mask(len(z))
+        estimated = ~no_estimate
+
+        nonfinite_z = ~np.isfinite(z) & estimated
+        nonfinite_sigma = ~np.isfinite(sigma) & estimated
+        nonpositive_sigma = np.isfinite(sigma) & (sigma <= 0) & estimated
         invalid = nonfinite_z | nonfinite_sigma | nonpositive_sigma
         if invalid.any():
             self.counters["nonfinite_dnf_z_rows"] += int(nonfinite_z.sum())
@@ -73,9 +88,18 @@ class DNFStablePdfTracker:
                 f"nonpositive_photozerr={int(nonpositive_sigma.sum())}"
             )
 
-        self._set_or_check_grid(float(grid[0]), float(grid[-1]))
         if len(z) == 0:
             return np.empty((0, len(grid)), dtype=np.float64)
+
+        # The estimator can produce undefined fitted parameters for rows whose
+        # input has no usable selected band. They receive a temporary Gaussian
+        # only to let the upstream qp container complete; the returned PDF is
+        # replaced by NaN below and is never interpreted as an estimate.
+        if no_estimate.any():
+            z = np.array(z, copy=True)
+            sigma = np.array(sigma, copy=True)
+            z[no_estimate] = grid[len(grid) // 2]
+            sigma[no_estimate] = 1.0
 
         # The closest grid point has maximum Gaussian density. Express every
         # exponent relative to it using the difference-of-squares identity;
@@ -96,7 +120,7 @@ class DNFStablePdfTracker:
             legacy_peak_exponent = -0.5 * ((peak - z) / sigma) ** 2
             legacy_peak = np.exp(legacy_peak_exponent)
         self.counters["legacy_gaussian_all_zero_rows"] += int(
-            np.count_nonzero(legacy_peak == 0)
+            np.count_nonzero((legacy_peak == 0) & estimated)
         )
 
         with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
@@ -157,13 +181,41 @@ class DNFStablePdfTracker:
 
         modes = np.argmax(pdf, axis=1)
         self.counters["pdf_rows"] += len(z)
-        self.counters["dnf_z_below_grid_rows"] += int((z < grid[0]).sum())
-        self.counters["dnf_z_above_grid_rows"] += int((z > grid[-1]).sum())
-        self.counters["pdf_mode_at_lower_grid_rows"] += int((modes == 0).sum())
-        self.counters["pdf_mode_at_upper_grid_rows"] += int(
-            (modes == len(grid) - 1).sum()
+        self.counters["dnf_z_below_grid_rows"] += int(
+            ((z < grid[0]) & estimated).sum()
         )
+        self.counters["dnf_z_above_grid_rows"] += int(
+            ((z > grid[-1]) & estimated).sum()
+        )
+        self.counters["pdf_mode_at_lower_grid_rows"] += int(
+            ((modes == 0) & estimated).sum()
+        )
+        self.counters["pdf_mode_at_upper_grid_rows"] += int(
+            ((modes == len(grid) - 1) & estimated).sum()
+        )
+        pdf[no_estimate, :] = np.nan
         return pdf
+
+    def _consume_no_estimate_mask(self, rows: int) -> np.ndarray:
+        if self.no_estimate_mask is None:
+            return np.zeros(rows, dtype=bool)
+        stop = self._mask_offset + rows
+        if stop > len(self.no_estimate_mask):
+            raise ValueError("DNF estimator produced more rows than its input mask")
+        result = self.no_estimate_mask[self._mask_offset:stop]
+        self._mask_offset = stop
+        self.counters["no_estimate_rows"] += int(np.count_nonzero(result))
+        return result
+
+    def assert_mask_consumed(self) -> None:
+        if (
+            self.no_estimate_mask is not None
+            and self._mask_offset != len(self.no_estimate_mask)
+        ):
+            raise ValueError(
+                "DNF estimator PDF rows differ from the no-estimate input mask: "
+                f"processed={self._mask_offset}, expected={len(self.no_estimate_mask)}"
+            )
 
     def _set_or_check_grid(self, zmin: float, zmax: float) -> None:
         if self.zmin is None:
@@ -184,7 +236,11 @@ class DNFStablePdfTracker:
 
 
 @contextmanager
-def stable_dnf_pdf_generation(zmin: float | None = None, zmax: float | None = None):
+def stable_dnf_pdf_generation(
+    zmin: float | None = None,
+    zmax: float | None = None,
+    no_estimate_mask: np.ndarray | None = None,
+):
     """Temporarily install stable PDF generation in the pinned DNF module."""
     import rail.estimation.algos.dnf as dnf_module
 
@@ -193,10 +249,12 @@ def stable_dnf_pdf_generation(zmin: float | None = None, zmax: float | None = No
     tracker = DNFStablePdfTracker(
         zmin=None if zmin is None else float(zmin),
         zmax=None if zmax is None else float(zmax),
+        no_estimate_mask=no_estimate_mask,
     )
     original = dnf_module.compute_pdfs_fit
     dnf_module.compute_pdfs_fit = tracker.compute
     try:
         yield tracker
+        tracker.assert_mask_consumed()
     finally:
         dnf_module.compute_pdfs_fit = original

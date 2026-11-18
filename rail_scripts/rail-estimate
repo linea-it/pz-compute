@@ -40,6 +40,9 @@ Options:
                                identity and order [default: ].
     --dnf-stable-pdf           Opt in to numerically stable DNF Gaussian PDFs,
                                in-memory validation, and quality counters.
+    --dnf-no-photometry-policy=<policy>  DNF policy for rows with no usable
+                               selected band. Choices: error, nan
+                               [default: error].
     --bpz-ref-data-path=<path> BPZ reference-data root containing SED, FILTER,
                                and writable AB directories. Valid only for BPZ.
 
@@ -82,7 +85,7 @@ from rail_scripts.photometry import (
     parse_column_list,
     projected_input_columns,
     replace_nondetections,
-    selected_photometry_quality,
+    selected_photometry_quality_and_mask,
     table_column_names,
     table_row_count,
 )
@@ -112,6 +115,7 @@ Configuration = namedtuple(
         "output_ancil_columns",
         "row_id_column",
         "dnf_stable_pdf",
+        "dnf_no_photometry_policy",
         "extra_args",
     ),
 )
@@ -178,6 +182,16 @@ def parse_cmdline():
     if args["--dnf-stable-pdf"] and estimator != "dnf":
         error("--dnf-stable-pdf is valid only with --algorithm=dnf")
         abort()
+    dnf_no_photometry_policy = args["--dnf-no-photometry-policy"]
+    if dnf_no_photometry_policy not in ("error", "nan"):
+        error("--dnf-no-photometry-policy must be 'error' or 'nan'")
+        abort()
+    if dnf_no_photometry_policy != "error" and estimator != "dnf":
+        error("--dnf-no-photometry-policy is valid only with --algorithm=dnf")
+        abort()
+    if dnf_no_photometry_policy == "nan" and not args["--dnf-stable-pdf"]:
+        error("--dnf-no-photometry-policy=nan requires --dnf-stable-pdf")
+        abort()
 
     sfd_coefficients = normalize_sfd_coefficients(None)
     if sfd_coefficients_file:
@@ -219,6 +233,7 @@ def parse_cmdline():
     )
     info('Row identifier column: "%s"' % args["--row-id-column"])
     info("Stable DNF PDF generation: %s" % args["--dnf-stable-pdf"])
+    info("DNF no-photometry policy: %s" % dnf_no_photometry_policy)
     info('Extra parameter file: "%s"' % param_file)
     if estimator == "bpz":
         reference_path = bpz_ref_data_path or "package default"
@@ -241,6 +256,7 @@ def parse_cmdline():
         output_ancil_columns=output_ancil_columns,
         row_id_column=args["--row-id-column"],
         dnf_stable_pdf=args["--dnf-stable-pdf"],
+        dnf_no_photometry_policy=dnf_no_photometry_policy,
         extra_args=extra_args,
     )
 
@@ -393,7 +409,7 @@ def write_empty_estimate_output(output_file, estimator, output_ancil_columns=())
 def finalize_output(
     output_file, columns, output_ancil_columns, row_id_column, fingerprint,
     sfd_bands=(), sfd_coefficients=None, dnf_pdf_quality=None,
-    dnf_input_quality=None
+    dnf_input_quality=None, dnf_no_estimate_mask=None
 ):
     with h5py.File(output_file, "a") as handle:
         integrity = handle.require_group(INTEGRITY_GROUP)
@@ -401,6 +417,18 @@ def finalize_output(
         if "data/yvals" not in handle:
             raise ValueError("estimator output is missing data/yvals")
         expected_rows = handle["data/yvals"].shape[0]
+        if dnf_no_estimate_mask is not None:
+            mask = np.asarray(dnf_no_estimate_mask, dtype=bool)
+            if mask.shape != (expected_rows,):
+                raise ValueError("DNF no-estimate mask row count differs from output")
+            if "ancil/DNF_ZN" not in handle:
+                raise ValueError("DNF no-estimate policy requires ancil/DNF_ZN")
+            dnf_zn = handle["ancil/DNF_ZN"]
+            if not np.issubdtype(dnf_zn.dtype, np.floating):
+                raise ValueError("ancil/DNF_ZN cannot represent NaN")
+            values = np.asarray(dnf_zn, dtype=np.float64)
+            values[mask] = np.nan
+            dnf_zn[...] = values
         estimator_ancillary = load_estimator_ancillary(
             handle, output_ancil_columns, expected_rows
         )
@@ -532,21 +560,31 @@ def estimate(cfg, ctx):
     info("Starting estimate.")
 
     dnf_input_quality = None
+    dnf_no_estimate_mask = None
     if cfg.estimator == "dnf":
         config = ctx.estimator.config
         if cfg.dnf_stable_pdf:
-            dnf_input_quality = selected_photometry_quality(
-                ctx.input.data,
-                cfg.bands,
-                config.bands,
-                config.err_bands,
-                config.nondetect_val,
+            dnf_input_quality, no_usable_mask = (
+                selected_photometry_quality_and_mask(
+                    ctx.input.data,
+                    cfg.bands,
+                    config.bands,
+                    config.err_bands,
+                    config.nondetect_val,
+                )
             )
+            dnf_input_quality["no_photometry_policy"] = (
+                cfg.dnf_no_photometry_policy
+            )
+            if cfg.dnf_no_photometry_policy == "nan":
+                dnf_no_estimate_mask = no_usable_mask
             info("DNF input photometry quality: %s" % dnf_input_quality)
 
     pdf_context = (
         stable_dnf_pdf_generation(
-            ctx.estimator.config.zmin, ctx.estimator.config.zmax
+            ctx.estimator.config.zmin,
+            ctx.estimator.config.zmax,
+            no_estimate_mask=dnf_no_estimate_mask,
         )
         if cfg.dnf_stable_pdf
         else nullcontext(None)
@@ -588,6 +626,7 @@ def estimate(cfg, ctx):
         cfg.sfd_coefficients if cfg.sfd_deredden else None,
         dnf_pdf_quality=dnf_pdf_quality,
         dnf_input_quality=dnf_input_quality,
+        dnf_no_estimate_mask=dnf_no_estimate_mask,
     )
 
     info("Estimate done.")

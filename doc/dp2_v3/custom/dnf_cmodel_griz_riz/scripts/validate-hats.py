@@ -67,6 +67,8 @@ def _empty_stats() -> dict:
         "coord_invalid": 0,
         "interval_invalid": 0,
         "grid_outside": 0,
+        "no_estimate_rows": 0,
+        "partial_nonfinite_rows": 0,
         "nonfinite": {name: 0 for name in SCIENCE_COLUMNS},
         "zn_sum": 0.0,
         "zn_sumsq": 0.0,
@@ -98,6 +100,13 @@ def partition_stats(frame, sample_ids=()) -> dict:
     values = {
         name: frame[name].to_numpy(dtype=np.float64) for name in SCIENCE_COLUMNS
     }
+    science = np.column_stack([values[name] for name in SCIENCE_COLUMNS])
+    no_estimate = np.isnan(science).all(axis=1)
+    any_nonfinite = (~np.isfinite(science)).any(axis=1)
+    result["no_estimate_rows"] = int(np.count_nonzero(no_estimate))
+    result["partial_nonfinite_rows"] = int(
+        np.count_nonzero(any_nonfinite & ~no_estimate)
+    )
     for name, array in values.items():
         result["nonfinite"][name] = int(np.count_nonzero(~np.isfinite(array)))
 
@@ -112,7 +121,7 @@ def partition_stats(frame, sample_ids=()) -> dict:
         & (median <= high68)
         & (high68 <= high95)
     )
-    result["interval_invalid"] = int(np.count_nonzero(~ordered))
+    result["interval_invalid"] = int(np.count_nonzero(~ordered & ~no_estimate))
 
     grid_values = np.column_stack([values[name] for name in GRID_COLUMNS])
     result["grid_outside"] = int(
@@ -143,6 +152,12 @@ def reduce_stats(parts: list[dict]) -> dict:
         part["interval_invalid"] for part in parts
     )
     result["grid_outside"] = sum(part["grid_outside"] for part in parts)
+    result["no_estimate_rows"] = sum(
+        part["no_estimate_rows"] for part in parts
+    )
+    result["partial_nonfinite_rows"] = sum(
+        part["partial_nonfinite_rows"] for part in parts
+    )
     for name in SCIENCE_COLUMNS:
         result["nonfinite"][name] = sum(
             part["nonfinite"][name] for part in parts
@@ -193,15 +208,28 @@ def stage2_stats(
             if dataset.shape != (rows,):
                 raise ValueError(f"DNF_ZN row count differs in {output_path}")
             result["rows"] += rows
+            quality = handle["pz_compute/dnf_input_quality"].attrs
+            if quality.get("no_photometry_policy", "") != "nan":
+                raise ValueError(f"unexpected no-photometry policy: {output_path}")
+            expected_nan = int(quality["no_usable_selected_band_rows"])
+            pdf_quality = handle["pz_compute/dnf_pdf_quality"].attrs
+            if int(pdf_quality["no_estimate_rows"]) != expected_nan:
+                raise ValueError(f"Stage 2 no-estimate counters differ: {output_path}")
+            result["no_estimate_rows"] += expected_nan
+            actual_nan = 0
             for start in range(0, rows, 1_000_000):
                 values = np.asarray(dataset[start : start + 1_000_000], dtype=np.float64)
-                if not np.isfinite(values).all():
-                    raise ValueError(f"non-finite Stage 2 DNF_ZN: {output_path}")
-                sums.append(float(np.sum(values, dtype=np.float64)))
-                sumsqs.append(float(np.sum(np.square(values), dtype=np.float64)))
-                if len(values):
-                    minima.append(float(values.min()))
-                    maxima.append(float(values.max()))
+                finite = values[np.isfinite(values)]
+                actual_nan += int(np.count_nonzero(np.isnan(values)))
+                if np.isinf(values).any():
+                    raise ValueError(f"infinite Stage 2 DNF_ZN: {output_path}")
+                sums.append(float(np.sum(finite, dtype=np.float64)))
+                sumsqs.append(float(np.sum(np.square(finite), dtype=np.float64)))
+                if len(finite):
+                    minima.append(float(finite.min()))
+                    maxima.append(float(finite.max()))
+            if actual_nan != expected_nan:
+                raise ValueError(f"Stage 2 DNF_ZN NaN count differs: {output_path}")
     result["zn_sum"] = math.fsum(sums)
     result["zn_sumsq"] = math.fsum(sumsqs)
     if minima:
@@ -213,12 +241,13 @@ def stage2_stats(
 def weighted_quantile(xvals: np.ndarray, yvals: np.ndarray, q: float) -> np.ndarray:
     totals = yvals.sum(axis=1)
     cumulative = np.cumsum(yvals, axis=1)
-    return np.asarray(
-        [
-            xvals[min(np.searchsorted(row, q * total), len(xvals) - 1)]
-            for row, total in zip(cumulative, totals)
-        ]
-    )
+    result = np.full(len(yvals), np.nan, dtype=np.float64)
+    for index in np.flatnonzero(np.isfinite(totals) & (totals > 0)):
+        position = np.searchsorted(
+            cumulative[index], q * totals[index], side="left"
+        )
+        result[index] = xvals[min(position, len(xvals) - 1)]
+    return result
 
 
 def stage2_scalar_sample(
@@ -244,10 +273,17 @@ def stage2_scalar_sample(
             .to_numpy(zero_copy_only=False)[indices]
         )
         totals = yvals.sum(axis=1)
+        valid = np.isfinite(totals) & (totals > 0)
+        modes = np.full(len(yvals), np.nan, dtype=np.float64)
+        modes[valid] = xvals[np.argmax(yvals[valid], axis=1)]
+        means = np.full(len(yvals), np.nan, dtype=np.float64)
+        means[valid] = (
+            (yvals[valid] * xvals).sum(axis=1) / totals[valid]
+        )
         values = {
-            "dnf_z_mean": (yvals * xvals).sum(axis=1) / totals,
+            "dnf_z_mean": means,
             "dnf_z_median": weighted_quantile(xvals, yvals, 0.50),
-            "dnf_z_mode": xvals[np.argmax(yvals, axis=1)],
+            "dnf_z_mode": modes,
             "dnf_z_err68_low": weighted_quantile(xvals, yvals, 0.16),
             "dnf_z_err68_high": weighted_quantile(xvals, yvals, 0.84),
             "dnf_z_err95_low": weighted_quantile(xvals, yvals, 0.025),
@@ -277,7 +313,9 @@ def validate_scalar_sample(
     for identifier, expected_values in expected.items():
         for name, expected_value in expected_values.items():
             actual_value = float(actual[identifier][name])
-            if not np.isclose(actual_value, expected_value, rtol=0, atol=1e-12):
+            if not np.isclose(
+                actual_value, expected_value, rtol=0, atol=1e-12, equal_nan=True
+            ):
                 raise ValueError(
                     f"{variant}: {name} differs for objectId={identifier}: "
                     f"{actual_value} != {expected_value}"
@@ -361,11 +399,27 @@ def validate_variant(
         )
     if final["coord_invalid"]:
         raise ValueError(f"{variant}: {final['coord_invalid']} invalid coordinates")
+    if final["partial_nonfinite_rows"]:
+        raise ValueError(
+            f"{variant}: {final['partial_nonfinite_rows']} rows have partial or "
+            "non-NaN non-finite science values"
+        )
+    if final["no_estimate_rows"] != source["no_estimate_rows"]:
+        raise ValueError(
+            f"{variant}: no-estimate rows differ: "
+            f"stage2={source['no_estimate_rows']}, "
+            f"HATS={final['no_estimate_rows']}"
+        )
     bad_nonfinite = {
-        name: count for name, count in final["nonfinite"].items() if count
+        name: count
+        for name, count in final["nonfinite"].items()
+        if count != final["no_estimate_rows"]
     }
     if bad_nonfinite:
-        raise ValueError(f"{variant}: non-finite science values: {bad_nonfinite}")
+        raise ValueError(
+            f"{variant}: science NaN counts differ from the no-estimate policy: "
+            f"{bad_nonfinite}"
+        )
     if final["interval_invalid"]:
         raise ValueError(
             f"{variant}: {final['interval_invalid']} rows have unordered intervals"
@@ -384,11 +438,13 @@ def validate_variant(
     print(
         f"{variant}: valid scalar-only HATS "
         f"(rows={catalog_rows}, columns={len(SUMMARY_COLUMNS)}, "
+        f"no_estimate_rows={final['no_estimate_rows']}, "
         f"margin_arcsec={actual_margin:g})"
     )
     return {
         "rows": catalog_rows,
         "columns": len(SUMMARY_COLUMNS),
+        "no_estimate_rows": final["no_estimate_rows"],
         "margin_arcsec": float(actual_margin),
     }
 
@@ -418,7 +474,7 @@ def write_validation_record(root: Path, variant: str, result: dict) -> Path:
     if destination.exists() or temporary.exists():
         raise FileExistsError(f"refusing to overwrite validation record: {destination}")
     document = {
-        "schema_version": 1,
+        "schema_version": 2,
         "project": "dp2_v3p1_custom",
         "variant": variant,
         "collection": hats_dir(root, variant).name,
@@ -427,6 +483,8 @@ def write_validation_record(root: Path, variant: str, result: dict) -> Path:
         "columns": list(SUMMARY_COLUMNS),
         "science_dtype": "float64",
         "pdf_layout": "none",
+        "no_photometry_policy": "nan",
+        "no_estimate_rows": result["no_estimate_rows"],
         "default_margin_arcsec": result["margin_arcsec"],
         "stage2_ready": str(
             (root / variant / "stage2/production/READY").resolve()

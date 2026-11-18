@@ -56,7 +56,21 @@ def test_partition_stats_detects_nonfinite_and_unordered_intervals():
     frame.loc[1, "dnf_z_err95_low"] = 2.0
     stats = validator.partition_stats(frame)
     assert stats["nonfinite"]["dnf_z_mean"] == 1
+    assert stats["partial_nonfinite_rows"] == 1
     assert stats["interval_invalid"] == 1
+
+
+def test_partition_stats_accepts_all_nan_no_estimate_row():
+    validator = load_validator()
+    frame = valid_frame()
+    frame.loc[0, list(validator.SCIENCE_COLUMNS)] = np.nan
+
+    stats = validator.partition_stats(frame)
+
+    assert stats["no_estimate_rows"] == 1
+    assert stats["partial_nonfinite_rows"] == 0
+    assert stats["interval_invalid"] == 0
+    assert all(count == 1 for count in stats["nonfinite"].values())
 
 
 def test_pdf_named_product_is_rejected(tmp_path):
@@ -81,7 +95,14 @@ def test_stage3_runner_is_explicitly_scalar_only():
 def test_validation_record_captures_publication_contract(tmp_path):
     validator = load_validator()
     path = validator.write_validation_record(
-        tmp_path, "griz", {"rows": 12, "columns": 11, "margin_arcsec": 5.0}
+        tmp_path,
+        "griz",
+        {
+            "rows": 12,
+            "columns": 11,
+            "no_estimate_rows": 3,
+            "margin_arcsec": 5.0,
+        },
     )
     document = json.loads(path.read_text())
     assert document["project"] == "dp2_v3p1_custom"
@@ -90,3 +111,5 @@ def test_validation_record_captures_publication_contract(tmp_path):
     assert document["columns"] == list(validator.SUMMARY_COLUMNS)
     assert document["science_dtype"] == "float64"
     assert document["pdf_layout"] == "none"
+    assert document["no_photometry_policy"] == "nan"
+    assert document["no_estimate_rows"] == 3

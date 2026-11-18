@@ -80,7 +80,8 @@ per-row log-density shift before normalization. This is an approved numerical
 stability correction: it leaves `DNF_Z`, `photozerr`, `DNF_ZN`, the redshift
 grid, and the Gaussian definition unchanged. It must not clip fitted
 redshifts, replace either DNF estimate, impose an error floor, discard rows, or
-substitute a neighbor-based PDF. Non-finite fitted redshifts and non-finite or
+substitute a neighbor-based PDF. Outside the explicitly approved
+no-photometry mask below, non-finite fitted redshifts and non-finite or
 non-positive fitted errors are undefined and must fail estimation.
 
 Validate every generated PDF while its chunk remains in memory and record
@@ -122,8 +123,9 @@ does not clip a redshift, impose an error floor, or substitute another point
 estimate or PDF. Regression tests require agreement with the direct formula
 where that formula is stable and cover the fitted scales observed in this
 shard. Every corrected PDF is checked for finite values, a positive integral,
-and unit normalization while it remains in memory. A non-finite `DNF_Z` or a
-non-finite or non-positive `photozerr` remains a hard failure.
+and unit normalization while it remains in memory. Outside the approved
+no-photometry mask, a non-finite `DNF_Z` or a non-finite or non-positive
+`photozerr` remains a hard failure.
 Each shard records `legacy_gaussian_all_zero_rows`, computed from the direct
 Gaussian exponent at its closest grid point, so the prevalence of the original
 all-zero underflow mechanism can be measured even though the stable result is
@@ -158,8 +160,8 @@ preceding 10,000-row chunk contains 5,328 objects with the same condition.
 
 For the first fully degenerate chunk, the pinned neighborhood fit returned a
 finite fitted redshift but `photozerr == 0` for all 10,000 rows. A zero-width
-Gaussian is undefined in the reviewed PDF implementation, so estimation must
-continue to fail rather than silently manufacture scalar summaries.
+Gaussian is undefined in the reviewed PDF implementation and must not be
+interpreted as an estimate.
 Complete-band non-detections must be identified from input availability rather
 than inferred from `photozerr`: the preceding mixed chunk contains 5,328 such
 objects but did not trigger the same all-row zero-error failure.
@@ -167,29 +169,26 @@ Each shard must therefore record missing and unusable counts for every
 selected band, the number of rows missing every selected magnitude, and the
 number with no usable selected magnitude/error pair before replacement.
 
-No scientific policy has yet been approved for complete selected-band
-non-detections. This observed condition is confirmed as absent cModel
-information rather than a magnitude materialization defect. Its catalog-wide
-prevalence must be quantified before production resumes.
+The approved policy is to preserve every object and represent absence of an
+estimate with `NaN`. A row enters this policy only when, before non-detection
+replacement, none of its selected bands has both a usable magnitude and a
+usable magnitude error. For exactly those rows:
 
-Candidate policies requiring explicit scientific review are:
+- the internal PDF row is all `NaN` rather than a fabricated distribution;
+- all seven PDF-derived delivered summaries are `NaN`;
+- delivered `DNF_ZN` is `NaN`, because its neighbor was selected from an
+  identical imputed limit vector with no object-specific photometric content;
+- coordinates and object identity remain present and unchanged;
+- no additional validity flag is added to the delivered schema.
 
-1. retain every catalog row but publish null photo-z summaries and a reviewed
-   validity/reason flag for objects with no selected-band information;
-2. exclude those objects from the published photo-z collection, changing the
-   complete-catalog and row-preservation contract;
-3. assign an explicitly selected and documented population-prior PDF, which
-   would no longer be an object-specific DNF estimate;
-4. select another photometric representation and retrain/re-estimate, changing
-   the reviewed cModel observable and requiring a new comparability review;
-5. define a reviewed DNF-specific fallback distribution for these rows, with
-   separate provenance and validation from the ordinary estimator output.
-
-No candidate is currently selected. Do not impose an arbitrary error floor,
-create a delta PDF, substitute `DNF_ZN`, discard rows, or emit non-finite
-delivered values as an implementation shortcut. Any adopted policy must state
-whether `DNF_ZN` is also null or otherwise marked for objects whose nearest
-neighbor was selected from the identical imputed limit vector.
+All science columns must be finite for every row outside this mask. The Stage
+2 validator derives the mask independently from the source parquet and
+requires exact agreement with the complete `DNF_ZN` mask and PDF counters. It
+also checks both no-estimate and ordinary PDF rows in its bounded payload
+sample. Stage 3 requires all eight science values to be `NaN` together for the
+recorded number of no-estimate rows and rejects partial nulls, infinities, or
+additional `NaN`s. Do not impose an error floor, create a delta PDF, substitute
+a prior, or remove these objects.
 
 ## Delivered HATS columns
 

@@ -138,12 +138,14 @@ The validator:
 
 - requires the exact ordered 11-column schema and no nested columns;
 - requires `float64` for all eight scientific values;
-- scans every HATS row for finite values and valid coordinates;
+- scans every HATS row for valid coordinates and either eight finite science
+  values or the approved all-`NaN` no-estimate pattern;
 - requires `0 <= z <= 6` for all seven PDF-derived summaries;
 - requires `z95_low <= z68_low <= median <= z68_high <= z95_high`;
 - independently recomputes a bounded cross-check of all seven summaries from
   the Stage 2 PDFs and matches them by `objectId`;
-- compares row counts and full `DNF_ZN` aggregates with Stage 2;
+- compares row counts, no-estimate counts, and finite `DNF_ZN` aggregates with
+  Stage 2;
 - revalidates the Stage 2 production checksum contract;
 - rejects leftover staging and any PDF-named sibling product;
 - verifies the configured default margin catalog.
