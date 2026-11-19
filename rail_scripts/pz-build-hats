@@ -611,7 +611,11 @@ def summarize_pdf(
     zmode[~valid] = np.nan
 
     zmean = np.full(yvals.shape[0], np.nan, dtype=np.float64)
-    zmean[valid] = (yvals[valid] * xvals).sum(axis=1) / totals[valid]
+    zmean[valid] = np.clip(
+        (yvals[valid] * xvals).sum(axis=1) / totals[valid],
+        xvals[0],
+        xvals[-1],
+    )
 
     zmedian = weighted_quantile(xvals, yvals, 0.50)
     zlow68 = weighted_quantile(xvals, yvals, 0.16)

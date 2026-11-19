@@ -250,6 +250,18 @@ def weighted_quantile(xvals: np.ndarray, yvals: np.ndarray, q: float) -> np.ndar
     return result
 
 
+def bounded_pdf_mean(xvals: np.ndarray, yvals: np.ndarray) -> np.ndarray:
+    totals = yvals.sum(axis=1)
+    valid = np.isfinite(totals) & (totals > 0)
+    result = np.full(len(yvals), np.nan, dtype=np.float64)
+    result[valid] = np.clip(
+        (yvals[valid] * xvals).sum(axis=1) / totals[valid],
+        xvals[0],
+        xvals[-1],
+    )
+    return result
+
+
 def stage2_scalar_sample(
     input_root: Path, output_root: Path, inputs: list[Path], size: int = 8
 ) -> dict[int, dict[str, float]]:
@@ -276,12 +288,8 @@ def stage2_scalar_sample(
         valid = np.isfinite(totals) & (totals > 0)
         modes = np.full(len(yvals), np.nan, dtype=np.float64)
         modes[valid] = xvals[np.argmax(yvals[valid], axis=1)]
-        means = np.full(len(yvals), np.nan, dtype=np.float64)
-        means[valid] = (
-            (yvals[valid] * xvals).sum(axis=1) / totals[valid]
-        )
         values = {
-            "dnf_z_mean": means,
+            "dnf_z_mean": bounded_pdf_mean(xvals, yvals),
             "dnf_z_median": weighted_quantile(xvals, yvals, 0.50),
             "dnf_z_mode": modes,
             "dnf_z_err68_low": weighted_quantile(xvals, yvals, 0.16),

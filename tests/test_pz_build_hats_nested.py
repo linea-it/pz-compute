@@ -108,3 +108,19 @@ def test_rubin_summary_preserves_nan_for_rows_without_estimates():
         assert np.isfinite(values[0])
         assert np.isnan(values[1])
 
+
+def test_pdf_mean_is_bounded_to_grid_after_upper_edge_roundoff():
+    builder = load_builder()
+    xvals = np.linspace(0.0, 6.0, 601)
+    yvals = np.exp(((xvals - 6.0) / 0.00026949024815046144))[None, :]
+
+    unbounded = (yvals * xvals).sum(axis=1) / yvals.sum(axis=1)
+    assert unbounded[0] == np.nextafter(6.0, np.inf)
+
+    summary = builder.summarize_pdf(
+        xvals, yvals, prefix="dnf", include_95_interval=True
+    )
+
+    assert summary["dnf_z_mean"][0] == 6.0
+    assert all(values[0] <= 6.0 for values in summary.values())
+

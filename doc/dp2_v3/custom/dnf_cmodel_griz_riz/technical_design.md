@@ -162,6 +162,11 @@ and 2.5th/97.5th percentiles for 95%. The custom build also passes
 `--pdf-layout=none`, so PDFs are read from Stage 2 to derive scalars but are not
 published in nested or companion form.
 
+Bound the computed weighted mean to the closed PDF-grid support after its
+floating-point division. This removes only roundoff such as the next
+representable `float64` above the upper grid boundary; the strict Stage 3
+support validator remains unchanged.
+
 Without these new options, `pz-build-hats` continues to emit the existing
 `zmode`, `zmean`, `zmedian`, `z_p16`, and `z_p84` columns and retains its
 current PDF-layout default.

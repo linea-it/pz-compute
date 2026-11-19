@@ -207,6 +207,14 @@ Do not embed a nested PDF column and do not create a companion PDF product.
 `DNF_ZN` is the nearest-neighbor point estimate produced by DNF; it is not a
 summary derived from the PDF.
 
+Every PDF-derived scalar must remain within the PDF grid `[0, 6]`. The
+floating-point calculation of the weighted mean is therefore bounded to the
+first and last grid values after division. This only corrects roundoff at the
+closed support boundary: the observed failure was `6.000000000000001`, the
+single next representable `float64` above `6.0`, for 34 `griz` and 15 `riz`
+objects whose other summaries were exactly `6.0`. It does not clip a fitted
+DNF point estimate or change the PDF.
+
 ## Change control
 
 Any change to the training rows, band order, photometric observable,

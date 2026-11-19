@@ -73,6 +73,16 @@ def test_partition_stats_accepts_all_nan_no_estimate_row():
     assert all(count == 1 for count in stats["nonfinite"].values())
 
 
+def test_stage2_cross_check_bounds_pdf_mean_after_upper_edge_roundoff():
+    validator = load_validator()
+    xvals = np.linspace(0.0, 6.0, 601)
+    yvals = np.exp(((xvals - 6.0) / 0.00026949024815046144))[None, :]
+
+    mean = validator.bounded_pdf_mean(xvals, yvals)
+
+    assert mean[0] == 6.0
+
+
 def test_pdf_named_product_is_rejected(tmp_path):
     validator = load_validator()
     hats = tmp_path / "scalar-hats"
