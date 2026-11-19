@@ -49,9 +49,9 @@ sample and belong to a separate analysis. The notebook stops with an error if
 the final schema, null pattern, interval ordering, grid support, row counts,
 or persisted numerical-failure counters violate the documented contract.
 
-Default Dask settings match the established DP2 QA profile: one initial
-adaptive worker, up to eight workers, two cores, one process, 40 GiB, and one
-hour in `cpu_photoz`. They can be overridden before rendering:
+The default SLURM profile starts 48 adaptive workers and can scale to 96, with
+two cores, one process, 40 GiB, and one hour per worker in `cpu_photoz`. These
+settings can be overridden before rendering:
 
 ```text
 PZ_QA_DASK_CLUSTER=slurm|local

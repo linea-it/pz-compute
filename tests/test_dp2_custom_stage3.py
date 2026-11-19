@@ -116,6 +116,10 @@ def test_delivery_qa_notebook_and_renderer_preserve_auditable_outputs():
     assert "legacy_gaussian_all_zero_rows" in rendered_text
     assert "no_usable_selected_band_rows" in rendered_text
     assert "PZ_QA_DASK_CLUSTER" in rendered_text
+    assert 'PZ_QA_DASK_MINIMUM_JOBS\", \"48' in rendered_text
+    assert 'PZ_QA_DASK_MAXIMUM_JOBS\", \"96' in rendered_text
+    assert 'PZ_QA_DASK_CORES\", \"2' in rendered_text
+    assert 'PZ_QA_DASK_MEMORY\", \"40GiB' in rendered_text
     assert "start_cluster" in rendered_text
     assert "identifier multiset fingerprints" in rendered_text
     assert "global scan" in rendered_text

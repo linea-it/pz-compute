@@ -78,8 +78,8 @@ thresholds:
 
 cluster:
   type: slurm
-  minimum_jobs: 1
-  maximum_jobs: 40
+  minimum_jobs: 48
+  maximum_jobs: 96
   cores: 2
   memory: 40GiB
   processes: 1

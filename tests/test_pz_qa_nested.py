@@ -53,6 +53,11 @@ def test_all_shipped_selections_include_report_context():
     for config_path in (ROOT / "doc" / "notebooks" / "config").glob("*.yaml"):
         config = pz_qa.load_config(config_path)
         assert all(selection.get("description") for selection in config["selections"])
+        assert config["cluster"]["minimum_jobs"] == 48
+        assert config["cluster"]["maximum_jobs"] == 96
+        assert config["cluster"]["cores"] == 2
+        assert config["cluster"]["memory"] == "40GiB"
+        assert config["cluster"]["processes"] == 1
 
 
 def test_main_catalog_row_count_comes_from_loaded_catalog_metadata():
@@ -271,7 +276,8 @@ def test_dp2_v3_qa_configs_use_full_nested_layout():
         assert config["pdf"]["layout"] == "nested"
         assert config["metrics"]["max_pdf_partitions"] == 4
         assert "pdf_dir" not in config["paths"]
-        assert config["cluster"]["minimum_jobs"] == 1
+        assert config["cluster"]["minimum_jobs"] == 48
+        assert config["cluster"]["maximum_jobs"] == 96
         assert config["cluster"]["cores"] == 2
         assert config["cluster"]["memory"] == "40GiB"
         galaxy = next(item for item in config["selections"] if item["name"] == "galaxies")

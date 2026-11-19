@@ -40,10 +40,9 @@ PDF-derived results quantify technical integrity over the explicitly reported
 coverage. The Nested coverage consists of the first configured HATS partitions
 for reproducibility and therefore has a spatial interpretation. Global
 scientific N(z) measurements use the complete scalar HATS catalog.
-The current Nested SLURM profiles start with one adaptive worker and allow the
-scan to begin under cluster contention. Each worker uses one process, two
-threads, and 40 GiB so at most two memory-intensive Nested-PDF partition tasks
-share that allocation.
+The supplied SLURM profiles start 48 adaptive workers and can scale to 96.
+Each worker uses one process, two threads, and 40 GiB, so at most two
+memory-intensive PDF partition tasks share that allocation.
 
 From the repository root, start Jupyter with the selected configuration:
 
