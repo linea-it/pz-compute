@@ -136,7 +136,7 @@ def start_cluster(config: dict):
             cores=settings.get("cores", 8),
             memory=settings.get("memory", "16GB"),
             processes=settings.get("processes", 1),
-            interface=settings.get("interface", "ib0"),
+            interface=settings.get("interface"),
             walltime=settings.get("walltime", "01:00:00"),
             job_extra_directives=settings.get("job_extra_directives", ["--propagate"]),
         )

@@ -43,6 +43,9 @@ scientific N(z) measurements use the complete scalar HATS catalog.
 The supplied SLURM profiles start 48 adaptive workers and can scale to 96.
 Each worker uses one process, two threads, and 40 GiB, so at most two
 memory-intensive PDF partition tasks share that allocation.
+Network interface selection is delegated to Dask and the operating system so
+the scheduler and workers can use the routable interface available on their
+respective nodes.
 
 From the repository root, start Jupyter with the selected configuration:
 

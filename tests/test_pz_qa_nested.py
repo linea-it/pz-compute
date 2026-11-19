@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -58,6 +59,15 @@ def test_all_shipped_selections_include_report_context():
         assert config["cluster"]["cores"] == 2
         assert config["cluster"]["memory"] == "40GiB"
         assert config["cluster"]["processes"] == 1
+        assert config["cluster"]["interface"] is None
+
+
+def test_general_qa_notebook_cells_have_stable_ids():
+    notebook_path = ROOT / "doc" / "notebooks" / "pz_compute_qa.ipynb"
+    notebook = json.loads(notebook_path.read_text())
+    ids = [cell.get("id") for cell in notebook["cells"]]
+    assert all(ids)
+    assert len(ids) == len(set(ids))
 
 
 def test_main_catalog_row_count_comes_from_loaded_catalog_metadata():

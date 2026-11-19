@@ -120,6 +120,8 @@ def test_delivery_qa_notebook_and_renderer_preserve_auditable_outputs():
     assert 'PZ_QA_DASK_MAXIMUM_JOBS\", \"96' in rendered_text
     assert 'PZ_QA_DASK_CORES\", \"2' in rendered_text
     assert 'PZ_QA_DASK_MEMORY\", \"40GiB' in rendered_text
+    assert 'os.environ.get(\"PZ_QA_DASK_INTERFACE\") or None' in rendered_text
+    assert all(cell.get("id") for cell in notebook["cells"])
     assert "start_cluster" in rendered_text
     assert "identifier multiset fingerprints" in rendered_text
     assert "global scan" in rendered_text

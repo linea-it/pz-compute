@@ -66,5 +66,9 @@ PZ_QA_DASK_WALLTIME
 PZ_QA_DASK_WAIT_TIMEOUT
 ```
 
+The scheduler and workers use the system-selected routable interface by
+default. Set `PZ_QA_DASK_INTERFACE` only when the same named interface is
+available on both the notebook host and SLURM worker nodes.
+
 Local mode exists for small development fixtures. It is not the recommended
 mode for scanning the full Apollo products.

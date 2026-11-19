@@ -85,7 +85,7 @@ cluster:
   processes: 1
   queue: cpu_photoz
   account: hpc-photoz
-  interface: ib0
+  interface: null
   walltime: "02:00:00"
   wait_timeout: 600
   job_extra_directives:
