@@ -228,7 +228,7 @@ def _empty_point_stats(n_bins: int) -> dict:
         "width_count": 0,
         "width_sum": 0.0,
         "width_sumsq": 0.0,
-        "width_values": [],
+        "width_hist": np.zeros(n_bins, dtype=np.int64),
         "points": {
             name: {
                 "finite": 0, "inside": 0, "outside": 0, "lower_edge": 0,
@@ -259,34 +259,47 @@ def _summary_partition(
             ["objectId", *POINT_COLUMNS, "z_p16", "z_p84"],
         ].copy(),
     }
+    ids = frame["objectId"]
+    numeric = {
+        name: pd.to_numeric(frame[name], errors="coerce").to_numpy(
+            dtype=np.float64, na_value=np.nan
+        )
+        for name in ("coord_ra", "coord_dec", "z_p16", "z_p84", *POINT_COLUMNS)
+    }
     for selection in selections:
-        selected = frame.loc[selection_masks[selection["name"]]]
+        mask = selection_masks[selection["name"]]
         stats = _empty_point_stats(len(grid))
-        stats["id"] = _id_digest(selected["objectId"])
-        stats["rows"] = len(selected)
-        ra = pd.to_numeric(selected["coord_ra"], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan)
-        dec = pd.to_numeric(selected["coord_dec"], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan)
+        stats["id"] = _id_digest(ids.loc[mask])
+        stats["rows"] = int(mask.sum())
+        ra = numeric["coord_ra"][mask]
+        dec = numeric["coord_dec"][mask]
         stats["coord_invalid"] = int(
             (~np.isfinite(ra) | ~np.isfinite(dec) | (ra < 0) | (ra >= 360) | (dec < -90) | (dec > 90)).sum()
         )
-        p16 = pd.to_numeric(selected["z_p16"], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan)
-        median = pd.to_numeric(selected["zmedian"], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan)
-        p84 = pd.to_numeric(selected["z_p84"], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan)
+        p16 = numeric["z_p16"][mask]
+        median = numeric["zmedian"][mask]
+        p84 = numeric["z_p84"][mask]
         ordered_finite = np.isfinite(p16) & np.isfinite(median) & np.isfinite(p84)
         stats["interval_nonfinite"] = int((~ordered_finite).sum())
         stats["interval_invalid"] = int((ordered_finite & ((p16 > median) | (median > p84))).sum())
         stats["interval_outside"] = int((ordered_finite & ((p16 < grid[0]) | (p84 > grid[-1]))).sum())
-        widths = (p84 - p16)[ordered_finite & (p84 >= p16)]
+        valid_width = (
+            ordered_finite
+            & (p84 >= p16)
+            & (p16 >= grid[0])
+            & (p84 <= grid[-1])
+        )
+        widths = (p84 - p16)[valid_width]
         stats["width_count"] = len(widths)
         stats["width_sum"] = float(widths.sum())
         stats["width_sumsq"] = float(np.square(widths).sum())
-        # A deterministic bounded sample is enough for robust width quantiles.
         if len(widths):
-            width_ids = selected.loc[ordered_finite & (p84 >= p16), "objectId"]
-            stats["width_values"] = widths[_sample_mask(width_ids, sample_probability)].tolist()
+            stats["width_hist"] = np.histogram(
+                widths, bins=edges - grid[0]
+            )[0]
 
         for name in POINT_COLUMNS:
-            values = pd.to_numeric(selected[name], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan)
+            values = numeric[name][mask]
             finite_values = values[np.isfinite(values)]
             in_grid = (finite_values >= grid[0]) & (finite_values <= grid[-1])
             hist = np.histogram(finite_values[in_grid], bins=edges)[0]
@@ -329,7 +342,7 @@ def _reduce_summary(parts, selections, n_bins):
                 dst[key] += src[key]
             for key in ("width_sum", "width_sumsq"):
                 dst[key] += src[key]
-            dst["width_values"].extend(src["width_values"])
+            dst["width_hist"] += src["width_hist"]
             for column in POINT_COLUMNS:
                 for key in (
                     "finite", "inside", "outside", "lower_edge", "upper_edge",
@@ -350,7 +363,7 @@ def _empty_pdf_stats(n_bins: int) -> dict:
         "nonfinite": 0, "negative": 0, "nonpositive_sum": 0,
         "invalid_xvals": 0, "invalid_yvals_dtype": 0,
         "sum_count": 0, "sum_total": 0.0, "sum_sumsq": 0.0,
-        "sum_min": np.inf, "sum_max": -np.inf, "sum_samples": [],
+        "sum_min": np.inf, "sum_max": -np.inf,
         "edge_mass_total": 0.0,
         "stack": np.zeros(n_bins, dtype=np.float64),
     }
@@ -420,7 +433,8 @@ def _pdf_partition(
                     except (TypeError, ValueError):
                         right_length[index] = False
         finite = right_length & np.isfinite(matrix).all(axis=1)
-        nonnegative = finite & (matrix >= 0).all(axis=1)
+        values_nonnegative = (matrix >= 0).all(axis=1)
+        nonnegative = finite & values_nonnegative
         sums = matrix.sum(axis=1)
         valid_structure = (
             xvals_valid[start:stop] & yvals_dtype_valid[start:stop]
@@ -436,7 +450,7 @@ def _pdf_partition(
             stats["invalid"] += int((selected & ~positive).sum())
             stats["wrong_length"] += int((selected & ~right_length).sum())
             stats["nonfinite"] += int((selected & right_length & ~finite).sum())
-            stats["negative"] += int((selected & finite & ~(matrix >= 0).all(axis=1)).sum())
+            stats["negative"] += int((selected & finite & ~values_nonnegative).sum())
             stats["nonpositive_sum"] += int((selected & nonnegative & ~(sums > 0)).sum())
             stats["invalid_xvals"] += int(
                 (selected & ~xvals_valid[start:stop]).sum()
@@ -456,8 +470,6 @@ def _pdf_partition(
                 stats["sum_sumsq"] += float(np.square(valid_sums).sum())
                 stats["sum_min"] = min(stats["sum_min"], float(valid_sums.min()))
                 stats["sum_max"] = max(stats["sum_max"], float(valid_sums.max()))
-                sampled_valid = valid & sample_rows[start:stop]
-                stats["sum_samples"].extend(sums[sampled_valid].tolist())
 
         sampled_valid = positive & sample_rows[start:stop]
         if sampled_valid.any():
@@ -587,7 +599,6 @@ def _reduce_pdfs(parts, selections, n_bins):
                 dst[key] += src[key]
             dst["sum_min"] = min(dst["sum_min"], src["sum_min"])
             dst["sum_max"] = max(dst["sum_max"], src["sum_max"])
-            dst["sum_samples"].extend(src["sum_samples"])
             dst["stack"] += src["stack"]
     result["sample"] = pd.concat(result["sample"], ignore_index=True) if result["sample"] else pd.DataFrame()
     return result
@@ -928,8 +939,6 @@ def run_qa(config: dict) -> QAResult:
                         "wasserstein_z": float((np.abs(np.cumsum(normalized_point) - np.cumsum(normalized_pdf)) * dz).sum()),
                     })
         sum_mean, sum_std = _moments(pdf_stats["sum_count"], pdf_stats["sum_total"], pdf_stats["sum_sumsq"])
-        sampled_sums = np.asarray(pdf_stats["sum_samples"])
-        widths = np.asarray(point_stats["width_values"])
         health_rows.append({
             "selection": label,
             "HATS rows": point_stats["rows"],
@@ -946,10 +955,9 @@ def run_qa(config: dict) -> QAResult:
             "PDF sum std": sum_std,
             "PDF sum min": pdf_stats["sum_min"] if pdf_stats["sum_count"] else np.nan,
             "PDF sum max": pdf_stats["sum_max"] if pdf_stats["sum_count"] else np.nan,
-            "PDF sum p01 (sample)": np.quantile(sampled_sums, 0.01) if len(sampled_sums) else np.nan,
-            "PDF sum median (sample)": np.median(sampled_sums) if len(sampled_sums) else np.nan,
-            "PDF sum p99 (sample)": np.quantile(sampled_sums, 0.99) if len(sampled_sums) else np.nan,
-            "interval width median (sample)": np.median(widths) if len(widths) else np.nan,
+            "interval width median (global grid-binned)": _hist_quantile(
+                point_stats["width_hist"], grid - grid[0], 0.5
+            ),
             "invalid coordinates": point_stats["coord_invalid"],
             "invalid intervals": point_stats["interval_invalid"],
             "non-finite intervals": point_stats["interval_nonfinite"],

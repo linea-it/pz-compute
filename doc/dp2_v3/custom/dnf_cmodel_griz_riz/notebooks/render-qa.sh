@@ -16,8 +16,8 @@ test -f "$source_notebook"
 mkdir -p "$output_dir"
 export PZ_QA_OUTPUT_DIR=$output_dir
 
-"$PZ_PY" -c 'import nbclient, nbconvert, nbformat' 2>/dev/null || {
-    echo "The selected PZ_PY environment needs nbclient, nbconvert, and nbformat to render QA." >&2
+"$PZ_PY" -c 'import nbclient, nbconvert, nbformat, distributed, dask_jobqueue' 2>/dev/null || {
+    echo "The selected PZ_PY environment needs nbclient, nbconvert, nbformat, distributed, and dask-jobqueue to render QA." >&2
     exit 1
 }
 

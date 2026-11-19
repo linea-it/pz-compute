@@ -31,9 +31,9 @@ selections:
   - name: galaxies
     label: "Extended sources (galaxy proxy)"
     description: >-
-      Reference-band extended sources used as a practical galaxy proxy. This is
-      not a truth-level classification and implies no perfect completeness,
-      purity, or stellar rejection; null classifications are excluded.
+      Reference-band extended sources used as a practical galaxy proxy, with
+      null classifications excluded. Completeness, purity, and stellar
+      contamination can be characterized separately with suitable reference data.
     filters:
       - column: refExtendedness
         minimum: 1.0
@@ -55,7 +55,7 @@ selections:
 
 metrics:
   # Scalar science metrics scan the complete catalog. Nested-PDF integrity QA
-  # uses the first partitions only: reproducible, but not representative science.
+  # uses the first partitions as reproducible spatial coverage for technical QA.
   max_pdf_partitions: 4
   pdf_batch_rows: 10000
   pdf_edge_bins: 1

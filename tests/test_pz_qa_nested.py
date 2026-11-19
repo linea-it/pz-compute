@@ -173,6 +173,13 @@ def test_nested_bundle_reduces_scalars_and_pdfs_from_the_same_partition():
     assert summary["selections"]["all"]["rows"] == 2
     assert pdf["selections"]["all"]["rows"] == 2
     assert summary["selections"]["all"]["points"]["zmode"]["low_z"] == 1
+    assert summary["selections"]["all"]["width_hist"].sum() == 2
+    assert "width_values" not in summary["selections"]["all"]
+    assert "sum_samples" not in pdf["selections"]["all"]
+
+    reduced = pz_qa._reduce_summary([summary, summary], selections, len(grid))
+    assert reduced["selections"]["all"]["width_count"] == 4
+    assert reduced["selections"]["all"]["width_hist"].sum() == 4
     assert summary["selections"]["all"]["points"]["zmean"]["low_z"] == 0
     assert summary["selections"]["galaxies_i_lt_26"]["rows"] == 1
     assert pdf["selections"]["galaxies_i_lt_26"]["rows"] == 1

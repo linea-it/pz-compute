@@ -36,10 +36,10 @@ HATS columns used by scientific redshift distributions and selections. A
 Nested configuration can bound PDF integrity checks with
 `metrics.max_pdf_partitions`, because reading repeated `xvals` and `yvals`
 arrays for every object is much more expensive.
-PDF-derived results are explicitly technical subset diagnostics, never global
-scientific N(z) measurements. The Nested subset consists of the first
-configured HATS partitions for reproducibility; because HATS partitions are
-spatial, it is not claimed to be statistically representative.
+PDF-derived results quantify technical integrity over the explicitly reported
+coverage. The Nested coverage consists of the first configured HATS partitions
+for reproducibility and therefore has a spatial interpretation. Global
+scientific N(z) measurements use the complete scalar HATS catalog.
 The current Nested SLURM profiles start with one adaptive worker and allow the
 scan to begin under cluster contention. Each worker uses one process, two
 threads, and 40 GiB so at most two memory-intensive Nested-PDF partition tasks
@@ -52,7 +52,7 @@ PZ_QA_CONFIG=doc/notebooks/config/dp1-v2-fzboost.yaml jupyter lab
 ```
 
 Open `doc/notebooks/pz_compute_qa.ipynb` and run all cells. `PZ_QA_CONFIG` is
-required deliberately: the notebook will not silently select a product.
+required so each report is explicitly bound to a product.
 Relative configuration paths are resolved relative to the YAML file;
 environment variables such as `${PZ_RUN_ROOT}` are expanded.
 
@@ -133,9 +133,11 @@ The notebook reports:
 - commutative `objectId` fingerprints between the scalar and PDF projections;
 - global moments and histogram percentiles for scalar point estimates;
 - an adaptive `zmean` comparison for every configured science sample;
-- PDF raw-sum diagnostics before per-object normalization;
+- PDF raw-sum moments and extrema before per-object normalization across every
+  row in the reported PDF-QA coverage;
 - complete-catalog interval-validity and redshift-edge diagnostics, with the
-  interval-width median explicitly identified as a deterministic sample;
+  interval-width median computed from a global grid-binned histogram of valid
+  in-grid intervals;
 - total-variation and Wasserstein distances between point estimates and PDFs
   on identical PDF-QA rows, emitted only when the selected identifier
   fingerprints match and all PDFs and scalar values are valid on the common
@@ -145,16 +147,16 @@ The notebook reports:
 
 The fingerprints make cross-product comparison scalable without a catalog-wide
 shuffle. They test equality of the identifier multisets with three independent
-64-bit aggregates; they are not a formal proof of uniqueness. Set
+64-bit aggregates. Set
 `metrics.exact_id_uniqueness: true` to add exact `nunique` checks when the
-distributed shuffle is acceptable. The sampled summary reconstruction is an
-integration check, not a truth-redshift metric.
+distributed shuffle is acceptable. The sampled summary reconstruction checks
+the integration between PDF vectors and stored scalar summaries.
 
-Set `paths.report_dir` to save the compact result tables as CSV/JSON. No full
-object catalog or PDF matrix is collected into notebook memory. The only
-collected objects are fixed-size reductions and the configured deterministic
-cross-check sample. Scalar science metrics scan every HATS partition; heavy
-Nested-PDF diagnostics use the explicitly configured coverage.
+Set `paths.report_dir` to save the compact result tables as CSV/JSON. Workers
+reduce catalog partitions to fixed-size summaries and the configured
+deterministic cross-check sample before results reach notebook memory. Scalar
+science metrics scan every HATS partition; heavy Nested-PDF diagnostics use the
+explicitly configured coverage.
 
 Required packages are `lsdb`, `nested-pandas`, `dask`, `distributed`,
 `dask-jobqueue` for SLURM, `pandas`, `numpy`, `pyarrow`, `matplotlib`, and

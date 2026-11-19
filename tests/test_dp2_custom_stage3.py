@@ -112,12 +112,18 @@ def test_delivery_qa_notebook_and_renderer_preserve_auditable_outputs():
     renderer = QA_RENDERER.read_text(encoding="utf-8")
 
     assert notebook["nbformat"] == 4
-    assert "No claims about bias" in rendered_text
+    assert "representative external reference sample" in rendered_text
     assert "legacy_gaussian_all_zero_rows" in rendered_text
     assert "no_usable_selected_band_rows" in rendered_text
+    assert "PZ_QA_DASK_CLUSTER" in rendered_text
+    assert "start_cluster" in rendered_text
+    assert "identifier multiset fingerprints" in rendered_text
+    assert "global scan" in rendered_text
+    assert "to_dask_dataframe" in rendered_text
     assert "qa_summary.json" in rendered_text
     assert "--execute" in renderer
     assert "--no-input" in renderer
+    assert "dask_jobqueue" in renderer
     assert "SHA256SUMS" in renderer
 
 
