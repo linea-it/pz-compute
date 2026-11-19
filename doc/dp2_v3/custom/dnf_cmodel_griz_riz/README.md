@@ -76,6 +76,10 @@ dnf_cmodel_griz_riz/
 │   ├── dnf-griz-estimate.yaml
 │   ├── dnf-riz-train.yaml
 │   └── dnf-riz-estimate.yaml
+├── notebooks/
+│   ├── README.md
+│   ├── dnf_cmodel_griz_riz_qa.ipynb
+│   └── render-qa.sh
 └── scripts/
     ├── README.md
     ├── prepare-training-catalog.py

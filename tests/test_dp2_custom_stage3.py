@@ -10,6 +10,8 @@ import pytest
 ROOT = Path(__file__).parents[1]
 PROJECT = ROOT / "doc/dp2_v3/custom/dnf_cmodel_griz_riz"
 SCRIPT = PROJECT / "scripts/validate-hats.py"
+QA_NOTEBOOK = PROJECT / "notebooks/dnf_cmodel_griz_riz_qa.ipynb"
+QA_RENDERER = PROJECT / "notebooks/render-qa.sh"
 
 
 def load_validator():
@@ -100,6 +102,23 @@ def test_stage3_runner_is_explicitly_scalar_only():
     assert "--require-complete-marker" in runner
     assert "--overwrite" not in runner
     assert "--delete-hdf5-outputs" not in runner
+
+
+def test_delivery_qa_notebook_and_renderer_preserve_auditable_outputs():
+    notebook = json.loads(QA_NOTEBOOK.read_text(encoding="utf-8"))
+    rendered_text = "\n".join(
+        "".join(cell["source"]) for cell in notebook["cells"]
+    )
+    renderer = QA_RENDERER.read_text(encoding="utf-8")
+
+    assert notebook["nbformat"] == 4
+    assert "No claims about bias" in rendered_text
+    assert "legacy_gaussian_all_zero_rows" in rendered_text
+    assert "no_usable_selected_band_rows" in rendered_text
+    assert "qa_summary.json" in rendered_text
+    assert "--execute" in renderer
+    assert "--no-input" in renderer
+    assert "SHA256SUMS" in renderer
 
 
 def test_validation_record_captures_publication_contract(tmp_path):
