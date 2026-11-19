@@ -125,6 +125,9 @@ def test_delivery_qa_notebook_and_renderer_preserve_auditable_outputs():
     assert "start_cluster" in rendered_text
     assert "identifier multiset fingerprints" in rendered_text
     assert "global scan" in rendered_text
+    assert "PDF-grid midpoint concentration" in rendered_text
+    assert "midpoint_width68_sum" in rendered_text
+    assert "DNF_ZN also near 3 fraction" in rendered_text
     assert "to_dask_dataframe" in rendered_text
     assert "qa_summary.json" in rendered_text
     assert "--execute" in renderer

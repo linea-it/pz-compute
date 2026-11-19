@@ -8,7 +8,10 @@ quality counters. It does not modify any run artifact.
 The report deliberately distinguishes exact catalog-wide results from the
 deterministic hash sample used only for the object-by-object `griz`/`riz`
 comparison. Histograms, extrema, integrity counts, missing-photometry counts,
-DNF diagnostic counters, and identifier fingerprints are global.
+DNF diagnostic counters, identifier fingerprints, and the compact PDF-grid
+midpoint diagnostic are global. The latter reports the concentration of
+`dnf_z_mean` near 3 together with its mean 68%/95% interval widths and the
+corresponding `DNF_ZN` concentration.
 
 The HATS scan starts a Dask `SLURMCluster` by default. Each catalog is opened
 with `lsdb.open_catalog()`, projected to the 11 required columns, and scanned
