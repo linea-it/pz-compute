@@ -4,7 +4,12 @@
 
 echo 'PRODUCTION - setting environment'
 
-cd $SCRATCH
+export SCRIPTS="${SCRIPTS:-/scripts/$(whoami)}"
+export SCRATCH="${SCRATCH:-/scratch/users/$(whoami)}"
+export PZ_INSTALL_ROOT="${PZ_INSTALL_ROOT:-/scripts/$(whoami)/ondemand}"
+export PZ_RUN_ROOT="${PZ_RUN_ROOT:-$SCRATCH/pz-compute-runs}"
+mkdir -p "$PZ_RUN_ROOT"
+cd "$PZ_RUN_ROOT"
 
 # raise NPROC
 ulimit -u 65536 2> /dev/null

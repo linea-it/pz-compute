@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Build inexpensive array-task metadata from a line-oriented file manifest."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import tempfile
+from pathlib import Path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Map zero-based Slurm array task ids to manifest paths, file sizes, "
+            "timestamps, and optionally Parquet row counts."
+        )
+    )
+    parser.add_argument("manifest", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument(
+        "--parquet-rows",
+        action="store_true",
+        help="Read only each Parquet footer to include input_rows (requires pyarrow).",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    parquet = None
+    if args.parquet_rows:
+        try:
+            import pyarrow.parquet as parquet
+        except ImportError as error:
+            raise SystemExit("--parquet-rows requires pyarrow") from error
+
+    paths = [
+        Path(line.strip())
+        for line in args.manifest.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    previous = {}
+    if args.output.is_file():
+        with args.output.open(encoding="utf-8", newline="") as stream:
+            for row in csv.DictReader(stream, delimiter="\t"):
+                previous[row.get("input_path", "")] = row
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    fields = [
+        "array_task_id",
+        "input_path",
+        "input_bytes",
+        "input_mtime_ns",
+        "input_rows",
+    ]
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        newline="",
+        prefix=args.output.name + ".tmp.",
+        dir=args.output.parent,
+        delete=False,
+    ) as stream:
+        temporary = Path(stream.name)
+        writer = csv.DictWriter(stream, fieldnames=fields, delimiter="\t")
+        writer.writeheader()
+        for task_id, path in enumerate(paths):
+            stats = path.stat()
+            old = previous.get(str(path), {})
+            unchanged = (
+                old.get("input_bytes") == str(stats.st_size)
+                and old.get("input_mtime_ns") == str(stats.st_mtime_ns)
+            )
+            if parquet and unchanged and old.get("input_rows", ""):
+                rows = old["input_rows"]
+            else:
+                rows = parquet.ParquetFile(path).metadata.num_rows if parquet else ""
+            writer.writerow(
+                {
+                    "array_task_id": task_id,
+                    "input_path": str(path),
+                    "input_bytes": stats.st_size,
+                    "input_mtime_ns": stats.st_mtime_ns,
+                    "input_rows": rows,
+                }
+            )
+    temporary.replace(args.output)
+    print(f"task metadata: {args.output} ({len(paths)} rows)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -39,8 +39,25 @@ def map_bands(template, bands):
     return [template.format(band=band) for band in bands]
 
 
-def create_column_mapping_dict(column_template, column_template_error, def_maglimits):
-    bands = DEFAULT_BANDS
+def parse_bands(value):
+    """Parse an ordered, unique subset of LSST bands."""
+    text = (value or "").strip()
+    raw_bands = text.split(",") if "," in text else list(text)
+    bands = tuple(band.strip() for band in raw_bands if band.strip())
+    if not bands:
+        raise ValueError("at least one LSST band is required")
+    invalid = [band for band in bands if band not in DEFAULT_BANDS]
+    if invalid:
+        raise ValueError(f"unsupported LSST bands: {invalid}")
+    if len(set(bands)) != len(bands):
+        raise ValueError(f"duplicate LSST bands are not allowed: {bands}")
+    return bands
+
+
+def create_column_mapping_dict(
+    column_template, column_template_error, def_maglimits, bands=DEFAULT_BANDS
+):
+    bands = tuple(bands)
 
     band_names = map_bands(column_template, bands)
     band_err_names = map_bands(column_template_error, bands)
@@ -65,6 +82,16 @@ def create_column_mapping_dict(column_template, column_template_error, def_magli
         "err_dict": band_to_error_dict,
         "test_err_dict": band_to_error_dict,
     }
+
+
+def validate_column_mapping_overrides(extra_args, mapping):
+    """Reject parameter-file band mappings that conflict with CLI selection."""
+    for name in ("bands", "err_bands"):
+        if name in extra_args and tuple(extra_args[name]) != tuple(mapping[name]):
+            raise ValueError(
+                f"parameter-file {name} conflicts with selected bands: "
+                f"expected {mapping[name]}, received {extra_args[name]}"
+            )
 
 
 def load_user_params(estimator, estimator_name):
