@@ -9,19 +9,18 @@ import h5py
 import lsdb
 import numpy as np
 import qp
+from scipy.integrate import simpson
+from scipy.optimize import minimize_scalar
 
 
 OFFICIAL_ALGORITHMS = ("fzboost", "bpz", "dnf")
 ALGORITHMS = (*OFFICIAL_ALGORITHMS, "bpz_test")
-SUMMARY_COLUMNS = [
+IDENTITY_COLUMNS = [
     "objectId",
     "coord_ra",
     "coord_dec",
-    "zmode",
-    "zmean",
-    "zmedian",
-    "z_p16",
-    "z_p84",
+]
+EXTRA_COLUMNS = [
     "i_gaap1p0Mag_sfd",
     "refExtendedness",
 ]
@@ -41,22 +40,64 @@ def stage2_rows(input_root: Path, output_root: Path) -> int:
     return total
 
 
-def weighted_quantile(xvals: np.ndarray, yvals: np.ndarray, q: float) -> np.ndarray:
-    totals = yvals.sum(axis=1)
-    cdf = np.cumsum(yvals, axis=1)
-    return np.asarray(
-        [xvals[min(np.searchsorted(row, q * total), len(xvals) - 1)]
-         for row, total in zip(cdf, totals)]
-    )
+def science_columns(algorithm: str) -> list[str]:
+    return [
+        f"{algorithm}_z_mode",
+        f"{algorithm}_z_mean",
+        f"{algorithm}_z_median",
+        f"{algorithm}_z_best",
+        f"{algorithm}_z_err68_low",
+        f"{algorithm}_z_err68_high",
+        f"{algorithm}_z_err95_low",
+        f"{algorithm}_z_err95_high",
+    ]
+
+
+def trapezoid_weights(xvals: np.ndarray) -> np.ndarray:
+    delta = np.diff(xvals)
+    weights = np.empty_like(xvals)
+    weights[0] = delta[0] / 2
+    weights[-1] = delta[-1] / 2
+    weights[1:-1] = (delta[:-1] + delta[1:]) / 2
+    return weights
+
+
+def interpolated_quantile(
+    xvals: np.ndarray, yvals: np.ndarray, quantile: float
+) -> np.ndarray:
+    widths = np.diff(xvals)
+    areas = 0.5 * (yvals[:, :-1] + yvals[:, 1:]) * widths[None, :]
+    cdf = np.cumsum(areas, axis=1)
+    totals = cdf[:, -1]
+    result = np.empty(len(yvals), dtype=np.float64)
+    for row, (density, cumulative, total) in enumerate(zip(yvals, cdf, totals)):
+        target = quantile * total
+        index = min(np.searchsorted(cumulative, target), len(widths) - 1)
+        previous = 0.0 if index == 0 else cumulative[index - 1]
+        scaled_area = max(target - previous, 0.0) / widths[index]
+        y0 = density[index]
+        slope = density[index + 1] - y0
+        if abs(slope) <= 1e-14 * max(1.0, abs(y0)):
+            fraction = scaled_area / y0 if y0 > 0 else 0.0
+        else:
+            discriminant = max(y0 * y0 + 2 * slope * scaled_area, 0.0)
+            fraction = (-y0 + np.sqrt(discriminant)) / slope
+        result[row] = xvals[index] + np.clip(fraction, 0.0, 1.0) * widths[index]
+    return result
 
 
 def validate_nested_sample(catalog, algorithm: str) -> int:
     pdf_column = f"{algorithm}_ens_interp"
-    expected_columns = [*SUMMARY_COLUMNS, pdf_column]
+    expected_columns = [
+        *IDENTITY_COLUMNS,
+        *science_columns(algorithm),
+        *EXTRA_COLUMNS,
+        pdf_column,
+    ]
     assert list(catalog.columns) == expected_columns, algorithm
     assert pdf_column in catalog.nested_columns, (algorithm, catalog.nested_columns)
 
-    columns = ["objectId", "zmode", "zmean", "zmedian", "z_p16", "z_p84", pdf_column]
+    columns = ["objectId", *science_columns(algorithm), pdf_column]
     sample = catalog[columns].head(SAMPLE_ROWS)
     assert len(sample) > 0, f"{algorithm}: empty HATS sample"
     nested = sample[pdf_column]
@@ -82,16 +123,38 @@ def validate_nested_sample(catalog, algorithm: str) -> int:
     )
     assert ensemble.shape == matrix.shape, algorithm
 
+    weights = trapezoid_weights(grid)
+    integral = matrix @ weights
+    prefix = f"{algorithm}_z_"
     reconstructed = {
-        "zmode": grid[np.argmax(matrix, axis=1)],
-        "zmean": (matrix * grid).sum(axis=1) / totals,
-        "zmedian": weighted_quantile(grid, matrix, 0.50),
-        "z_p16": weighted_quantile(grid, matrix, 0.16),
-        "z_p84": weighted_quantile(grid, matrix, 0.84),
+        f"{prefix}mode": grid[np.argmax(matrix, axis=1)],
+        f"{prefix}mean": ((matrix * grid) @ weights) / integral,
+        f"{prefix}median": interpolated_quantile(grid, matrix, 0.50),
+        f"{prefix}err68_low": interpolated_quantile(grid, matrix, 0.16),
+        f"{prefix}err68_high": interpolated_quantile(grid, matrix, 0.84),
+        f"{prefix}err95_low": interpolated_quantile(grid, matrix, 0.025),
+        f"{prefix}err95_high": interpolated_quantile(grid, matrix, 0.975),
     }
     for name, values in reconstructed.items():
         stored = sample[name].to_numpy(dtype=float)
         assert np.allclose(stored, values, rtol=0, atol=1e-5), (algorithm, name)
+
+    best = sample[f"{prefix}best"].to_numpy(dtype=float)
+    assert np.isfinite(best).all() and np.all((grid[0] <= best) & (best <= grid[-1]))
+    expected_best = []
+    for density in matrix:
+
+        def risk(candidate):
+            residual = (candidate - grid) / (0.15 * (1 + grid))
+            loss = 1 - 1 / (1 + residual * residual)
+            return simpson(density * loss, x=grid)
+
+        expected_best.append(
+            minimize_scalar(
+                risk, bounds=(grid[0], grid[-1]), method="bounded"
+            ).x
+        )
+    assert np.allclose(best, expected_best, rtol=0, atol=2e-5), algorithm
     return len(sample)
 
 

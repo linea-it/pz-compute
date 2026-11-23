@@ -188,6 +188,44 @@ older sibling `<hats_dir>.pdf/` dataset. Temporary Parquet staging is removed
 after a successful build; Stage 2 HDF5 remains available for the external
 validation step and first-run investigation.
 
+The official DP2 v3 Stage 3 route selects the `rubin-dp2` summary contract.
+Each algorithm remains in its own HATS collection; only the scalar names and
+definitions follow the public Rubin DP2 photo-z convention. For an algorithm
+named `<algorithm>`, the ordered top-level schema is:
+
+```text
+objectId
+coord_ra
+coord_dec
+<algorithm>_z_mode
+<algorithm>_z_mean
+<algorithm>_z_median
+<algorithm>_z_best
+<algorithm>_z_err68_low
+<algorithm>_z_err68_high
+<algorithm>_z_err95_low
+<algorithm>_z_err95_high
+i_gaap1p0Mag_sfd
+refExtendedness
+<algorithm>_ens_interp
+```
+
+The coordinates deliberately retain the DP2 Object input names
+`coord_ra`/`coord_dec`; the public combined photo-z catalog calls the same
+quantities `ra`/`dec`. The eight photo-z summaries are written as `float32`,
+matching the public catalog representation, after `float64` calculation.
+`mode` is the maximum sampled PDF value; `mean` and the 68%/95% bounds use
+trapezoidal integration of the piecewise-linear PDF, with the CDF inverted
+inside the selected grid interval. `best` is the RAIL risk-based point
+estimate: it minimizes the Tanaka et al. loss with `gamma=0.15` over the PDF
+grid bounds, using Simpson integration. Stage 3 performs the bounded Brent
+minimization in vectorized, fixed-size batches; this preserves the scientific
+definition while bounding temporary memory and avoiding one Python optimizer
+invocation per object.
+Invalid PDFs (non-finite, negative, or zero integral) receive `NaN` in all
+eight summary fields. The nested PDF values themselves are not normalized or
+otherwise changed by these calculations.
+
 Each collection also contains a default margin catalog with a 5 arcsecond
 boundary. LSDB attaches it as `catalog.margin` when the collection root is
 opened, enabling complete partition-local crossmatches up to that radius.

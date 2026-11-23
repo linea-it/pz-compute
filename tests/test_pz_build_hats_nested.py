@@ -45,6 +45,8 @@ def test_dp2_stage3_runner_builds_nested_only_algorithm_column():
     source = RUNNER.read_text(encoding="utf-8")
     assert "--pdf-layout=nested" in source
     assert '--pdf-column="${PZ_ALGORITHM}_ens_interp"' in source
+    assert "--summary-schema=rubin-dp2" in source
+    assert '--summary-prefix="$PZ_ALGORITHM"' in source
     assert "--delete-hdf5-outputs" not in source
     assert '--slurm-job-name="$worker_job_name"' in source
     assert '--margin-threshold="$PZ_HATS_MARGIN_ARCSEC"' in source
@@ -93,6 +95,116 @@ def test_rubin_summary_schema_adds_named_68_and_95_percentiles():
     assert summary["dnf_z_err68_high"][0] == 0.84
     assert summary["dnf_z_err95_low"][0] == 0.02
     assert summary["dnf_z_err95_high"][0] == 0.98
+
+
+def test_rubin_dp2_schema_has_continuous_summaries_and_float32_output():
+    builder = load_builder()
+    xvals = np.linspace(0.0, 1.0, 101)
+    yvals = np.ones((1, len(xvals)))
+
+    summary = builder.summarize_pdf(
+        xvals,
+        yvals,
+        prefix="fzboost",
+        summary_schema="rubin-dp2",
+    )
+
+    assert list(summary) == [
+        "fzboost_z_mode",
+        "fzboost_z_mean",
+        "fzboost_z_median",
+        "fzboost_z_best",
+        "fzboost_z_err68_low",
+        "fzboost_z_err68_high",
+        "fzboost_z_err95_low",
+        "fzboost_z_err95_high",
+    ]
+    assert builder.summary_column_names(
+        "fzboost", summary_schema="rubin-dp2"
+    ) == tuple(summary)
+    assert all(values.dtype == np.float32 for values in summary.values())
+    assert summary["fzboost_z_mode"][0] == 0.0
+    assert np.isclose(summary["fzboost_z_mean"][0], 0.5)
+    assert np.isclose(summary["fzboost_z_median"][0], 0.5)
+    assert np.isclose(summary["fzboost_z_err68_low"][0], 0.16)
+    assert np.isclose(summary["fzboost_z_err68_high"][0], 0.84)
+    assert np.isclose(summary["fzboost_z_err95_low"][0], 0.025)
+    assert np.isclose(summary["fzboost_z_err95_high"][0], 0.975)
+    assert 0.0 <= summary["fzboost_z_best"][0] <= 1.0
+
+
+def test_rubin_dp2_best_tracks_a_narrow_pdf_peak():
+    builder = load_builder()
+    xvals = np.linspace(0.0, 2.0, 201)
+    yvals = np.exp(-0.5 * ((xvals - 0.73) / 0.04) ** 2)[None, :]
+
+    summary = builder.summarize_pdf(
+        xvals,
+        yvals,
+        prefix="fzboost",
+        summary_schema="rubin-dp2",
+    )
+
+    assert abs(float(summary["fzboost_z_mode"][0]) - 0.73) <= 0.01
+    assert abs(float(summary["fzboost_z_mean"][0]) - 0.73) < 1e-4
+    assert abs(float(summary["fzboost_z_median"][0]) - 0.73) < 1e-4
+    assert abs(float(summary["fzboost_z_best"][0]) - 0.73) < 0.01
+
+
+def test_rubin_dp2_best_matches_rail_bounded_risk_definition():
+    from scipy.integrate import simpson
+    from scipy.optimize import minimize_scalar
+
+    builder = load_builder()
+    xvals = np.linspace(0.0, 3.0, 301)
+    yvals = np.vstack(
+        [
+            np.exp(-0.5 * ((xvals - 0.4) / 0.08) ** 2),
+            0.35 * np.exp(-0.5 * ((xvals - 0.5) / 0.12) ** 2)
+            + np.exp(-0.5 * ((xvals - 1.8) / 0.25) ** 2),
+            0.2 + np.exp(-0.5 * ((xvals - 2.5) / 0.4) ** 2),
+        ]
+    )
+
+    actual = builder.risk_based_point_estimate(
+        xvals, yvals, np.ones(len(yvals), dtype=bool), chunk_size=2
+    )
+    expected = []
+    for density in yvals:
+
+        def risk(candidate):
+            residual = (candidate - xvals) / (0.15 * (1 + xvals))
+            loss = 1 - 1 / (1 + residual * residual)
+            return simpson(density * loss, x=xvals)
+
+        expected.append(
+            minimize_scalar(
+                risk, bounds=(xvals[0], xvals[-1]), method="bounded"
+            ).x
+        )
+
+    assert np.allclose(actual, expected, rtol=0, atol=2e-5)
+
+
+def test_rubin_dp2_invalid_pdf_yields_all_nan_summaries():
+    builder = load_builder()
+    xvals = np.linspace(0.0, 1.0, 101)
+    yvals = np.vstack(
+        [
+            np.full(len(xvals), np.nan),
+            np.zeros(len(xvals)),
+            np.r_[np.ones(len(xvals) - 1), -1.0],
+        ]
+    )
+
+    summary = builder.summarize_pdf(
+        xvals,
+        yvals,
+        prefix="fzboost",
+        summary_schema="rubin-dp2",
+    )
+
+    assert all(np.isnan(values).all() for values in summary.values())
 
 
 def test_rubin_summary_preserves_nan_for_rows_without_estimates():

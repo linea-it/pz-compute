@@ -30,6 +30,8 @@ Options:
     --no-pdf-product       Deprecated alias for --pdf-layout=none.
     --summary-prefix=<name> Emit Rubin-style <name>_z_* scalar columns instead
                             of the legacy unprefixed names [default: ].
+    --summary-schema=<name> Scalar-summary calculation and naming contract.
+                            Choices: legacy, rubin-dp2 [default: legacy].
     --include-95-interval  Add the 2.5th and 97.5th percentile scalar columns.
     --batch-size=<rows>    Number of rows converted per batch [default: 50000].
     --fast-path-size-mb=<mb>  Max staged parquet size to build with LSDB
@@ -113,6 +115,7 @@ DEC_CANDIDATES = ("coord_dec", "dec")
 SUMMARY_STAGING_BYTES_PER_ROW_ESTIMATE = 96
 INPUT_FILE_EXTENSIONS = (".hdf5", ".h5", ".parquet", ".parq", ".pq")
 PARQUET_COMPRESSION = "zstd"
+_SIMPSON_WEIGHT_CACHE = {}
 
 
 @dataclass
@@ -132,6 +135,7 @@ class Configuration:
     write_companion_pdf: bool
     embed_pdf: bool
     summary_prefix: str
+    summary_schema: str
     include_95_interval: bool
     batch_size: int
     fast_path_size_mb: float
@@ -232,9 +236,23 @@ def parse_cmdline() -> Configuration:
             "Error: --summary-prefix must start with a letter and contain only "
             "letters, digits, or underscores."
         )
+    summary_schema = args["--summary-schema"]
+    if summary_schema not in ("legacy", "rubin-dp2"):
+        raise SystemExit(
+            "Error: --summary-schema must be either 'legacy' or 'rubin-dp2'."
+        )
+    if summary_schema == "rubin-dp2" and not summary_prefix:
+        raise SystemExit(
+            "Error: --summary-schema=rubin-dp2 requires --summary-prefix."
+        )
+    include_95_interval = (
+        args["--include-95-interval"] or summary_schema == "rubin-dp2"
+    )
     reserved_pdf_columns = {
         "objectId", "coord_ra", "coord_dec", "pdf",
-        *summary_column_names(summary_prefix, args["--include-95-interval"]),
+        *summary_column_names(
+            summary_prefix, include_95_interval, summary_schema
+        ),
     }
     if pdf_column in reserved_pdf_columns:
         raise SystemExit(f"Error: --pdf-column is reserved: {pdf_column}")
@@ -291,7 +309,8 @@ def parse_cmdline() -> Configuration:
         write_companion_pdf=write_companion_pdf,
         embed_pdf=embed_pdf,
         summary_prefix=summary_prefix,
-        include_95_interval=args["--include-95-interval"],
+        summary_schema=summary_schema,
+        include_95_interval=include_95_interval,
         batch_size=batch_size,
         fast_path_size_mb=fast_path_size_mb,
         catalog_name=args["--catalog-name"],
@@ -575,8 +594,24 @@ def weighted_quantile(xvals: np.ndarray, yvals: np.ndarray, q: float) -> np.ndar
     return out
 
 
-def summary_column_names(prefix: str = "", include_95_interval: bool = False):
+def summary_column_names(
+    prefix: str = "",
+    include_95_interval: bool = False,
+    summary_schema: str = "legacy",
+):
     """Return scalar product columns for the legacy or Rubin-style schema."""
+    if summary_schema == "rubin-dp2":
+        return (
+            f"{prefix}_z_mode",
+            f"{prefix}_z_mean",
+            f"{prefix}_z_median",
+            f"{prefix}_z_best",
+            f"{prefix}_z_err68_low",
+            f"{prefix}_z_err68_high",
+            f"{prefix}_z_err95_low",
+            f"{prefix}_z_err95_high",
+        )
+
     if prefix:
         names = [
             f"{prefix}_z_mean",
@@ -597,12 +632,308 @@ def summary_column_names(prefix: str = "", include_95_interval: bool = False):
     return tuple(names)
 
 
+def trapezoid_weights(xvals: np.ndarray) -> np.ndarray:
+    """Return integration weights for samples on an increasing grid."""
+    xvals = np.asarray(xvals, dtype=np.float64)
+    if xvals.ndim != 1 or len(xvals) < 2 or not np.all(np.diff(xvals) > 0):
+        raise ValueError("PDF grid must contain at least two increasing values")
+    delta = np.diff(xvals)
+    weights = np.empty_like(xvals)
+    weights[0] = delta[0] / 2
+    weights[-1] = delta[-1] / 2
+    weights[1:-1] = (delta[:-1] + delta[1:]) / 2
+    return weights
+
+
+def interpolated_quantile(
+    xvals: np.ndarray,
+    yvals: np.ndarray,
+    cdf: np.ndarray,
+    totals: np.ndarray,
+    valid: np.ndarray,
+    quantile: float,
+) -> np.ndarray:
+    """Invert the CDF of the piecewise-linear PDF representation."""
+    segment_widths = np.diff(xvals)
+    target = quantile * totals
+    reached = cdf >= target[:, None]
+    indices = np.argmax(reached, axis=1)
+    rows = np.arange(len(yvals))
+    previous = np.where(indices == 0, 0.0, cdf[rows, np.maximum(indices - 1, 0)])
+    local_area = np.maximum(target - previous, 0.0)
+
+    y0 = yvals[rows, indices]
+    y1 = yvals[rows, indices + 1]
+    width = segment_widths[indices]
+    slope = y1 - y0
+    scaled_area = local_area / width
+
+    fraction = np.zeros(len(yvals), dtype=np.float64)
+    nearly_flat = np.abs(slope) <= 1e-14 * np.maximum(1.0, np.abs(y0))
+    flat_nonzero = nearly_flat & (y0 > 0)
+    fraction[flat_nonzero] = scaled_area[flat_nonzero] / y0[flat_nonzero]
+
+    curved = ~nearly_flat
+    discriminant = np.maximum(
+        y0[curved] * y0[curved] + 2 * slope[curved] * scaled_area[curved],
+        0.0,
+    )
+    fraction[curved] = (
+        -y0[curved] + np.sqrt(discriminant)
+    ) / slope[curved]
+    fraction = np.clip(fraction, 0.0, 1.0)
+
+    result = xvals[indices] + fraction * width
+    result[~valid] = np.nan
+    return result
+
+
+def simpson_weights(xvals: np.ndarray) -> np.ndarray:
+    """Return weights equivalent to scipy.integrate.simpson on this grid."""
+    cache_key = (xvals.dtype.str, xvals.shape, xvals.tobytes())
+    weights = _SIMPSON_WEIGHT_CACHE.get(cache_key)
+    if weights is None:
+        from scipy.integrate import simpson
+
+        # Simpson integration is linear. Integrating the identity matrix once
+        # gives reusable weights and avoids calling scipy for every object.
+        weights = simpson(np.eye(len(xvals)), x=xvals, axis=1)
+        if len(_SIMPSON_WEIGHT_CACHE) >= 4:
+            _SIMPSON_WEIGHT_CACHE.pop(next(iter(_SIMPSON_WEIGHT_CACHE)))
+        _SIMPSON_WEIGHT_CACHE[cache_key] = weights
+    return weights
+
+
+def _risk_at_candidates(
+    candidates: np.ndarray,
+    xvals: np.ndarray,
+    weighted_yvals: np.ndarray,
+    gamma: float,
+) -> np.ndarray:
+    scaled_residual = (
+        candidates[:, None] - xvals[None, :]
+    ) / (gamma * (1.0 + xvals[None, :]))
+    loss = 1.0 - 1.0 / (1.0 + scaled_residual * scaled_residual)
+    return np.einsum("ij,ij->i", weighted_yvals, loss, optimize=True)
+
+
+def risk_based_point_estimate(
+    xvals: np.ndarray,
+    yvals: np.ndarray,
+    valid: np.ndarray,
+    gamma: float = 0.15,
+    tolerance: float = 1e-5,
+    chunk_size: int = 2048,
+) -> np.ndarray:
+    """Calculate RAIL's Tanaka risk-based point estimate in bounded batches.
+
+    RAIL minimizes this loss with bounded scalar minimization and Simpson
+    integration. This is a row-vectorized implementation of scipy's bounded
+    Brent algorithm, while fixed-size chunks cap temporary memory and remove
+    one Python/scipy optimizer call per object.
+    """
+    result = np.full(len(yvals), np.nan, dtype=np.float64)
+    valid_rows = np.flatnonzero(valid)
+    if not len(valid_rows):
+        return result
+
+    integration_weights = simpson_weights(xvals)
+    sqrt_eps = np.sqrt(2.2e-16)
+    golden_mean = 0.5 * (3.0 - np.sqrt(5.0))
+    max_iterations = 500
+
+    for offset in range(0, len(valid_rows), chunk_size):
+        rows = valid_rows[offset:offset + chunk_size]
+        weighted = yvals[rows] * integration_weights[None, :]
+        a = np.full(len(rows), xvals[0], dtype=np.float64)
+        b = np.full(len(rows), xvals[-1], dtype=np.float64)
+        xf = a + golden_mean * (b - a)
+        nfc = xf.copy()
+        fulc = xf.copy()
+        rat = np.zeros(len(rows), dtype=np.float64)
+        e = np.zeros(len(rows), dtype=np.float64)
+        fx = _risk_at_candidates(xf, xvals, weighted, gamma)
+        fnfc = fx.copy()
+        ffulc = fx.copy()
+
+        for _ in range(max_iterations - 1):
+            xm = 0.5 * (a + b)
+            tol1 = sqrt_eps * np.abs(xf) + tolerance / 3.0
+            tol2 = 2.0 * tol1
+            active = np.abs(xf - xm) > (tol2 - 0.5 * (b - a))
+            if not np.any(active):
+                break
+
+            idx = np.flatnonzero(active)
+            ai = a[idx]
+            bi = b[idx]
+            xfi = xf[idx]
+            nfi = nfc[idx]
+            fui = fulc[idx]
+            fxi = fx[idx]
+            fnfi = fnfc[idx]
+            ffui = ffulc[idx]
+            rati = rat[idx]
+            ei = e[idx]
+            xmi = xm[idx]
+            tol1i = tol1[idx]
+            tol2i = tol2[idx]
+
+            use_parabola = np.abs(ei) > tol1i
+            r = (xfi - nfi) * (fxi - ffui)
+            q = (xfi - fui) * (fxi - fnfi)
+            p = (xfi - fui) * q - (xfi - nfi) * r
+            q = 2.0 * (q - r)
+            p = np.where(q > 0.0, -p, p)
+            q = np.abs(q)
+            previous_e = ei.copy()
+            ei = np.where(use_parabola, rati, ei)
+            accept_parabola = (
+                use_parabola
+                & (q > 0.0)
+                & (np.abs(p) < np.abs(0.5 * q * previous_e))
+                & (p > q * (ai - xfi))
+                & (p < q * (bi - xfi))
+            )
+
+            parabolic_rat = np.divide(
+                p,
+                q,
+                out=np.zeros_like(p),
+                where=q > 0.0,
+            )
+            parabolic_x = xfi + parabolic_rat
+            near_boundary = (
+                (parabolic_x - ai < tol2i)
+                | (bi - parabolic_x < tol2i)
+            )
+            direction_to_midpoint = np.sign(xmi - xfi) + (xmi == xfi)
+            parabolic_rat = np.where(
+                near_boundary,
+                tol1i * direction_to_midpoint,
+                parabolic_rat,
+            )
+
+            golden_e = np.where(xfi >= xmi, ai - xfi, bi - xfi)
+            ei = np.where(accept_parabola, ei, golden_e)
+            rati = np.where(
+                accept_parabola,
+                parabolic_rat,
+                golden_mean * golden_e,
+            )
+            direction = np.sign(rati) + (rati == 0.0)
+            candidate = xfi + direction * np.maximum(np.abs(rati), tol1i)
+            candidate_risk = _risk_at_candidates(
+                candidate, xvals, weighted[idx], gamma
+            )
+
+            improves = candidate_risk <= fxi
+            candidate_right = candidate >= xfi
+            new_a = np.where(
+                improves & candidate_right,
+                xfi,
+                np.where(~improves & (candidate < xfi), candidate, ai),
+            )
+            new_b = np.where(
+                improves & ~candidate_right,
+                xfi,
+                np.where(~improves & (candidate >= xfi), candidate, bi),
+            )
+
+            first_backup = ~improves & (
+                (candidate_risk <= fnfi) | (nfi == xfi)
+            )
+            second_backup = ~improves & ~first_backup & (
+                (candidate_risk <= ffui) | (fui == xfi) | (fui == nfi)
+            )
+            new_fulc = np.where(improves, nfi, fui)
+            new_ffulc = np.where(improves, fnfi, ffui)
+            new_fulc = np.where(first_backup, nfi, new_fulc)
+            new_ffulc = np.where(first_backup, fnfi, new_ffulc)
+            new_fulc = np.where(second_backup, candidate, new_fulc)
+            new_ffulc = np.where(second_backup, candidate_risk, new_ffulc)
+            new_nfc = np.where(improves, xfi, nfi)
+            new_fnfc = np.where(improves, fxi, fnfi)
+            new_nfc = np.where(first_backup, candidate, new_nfc)
+            new_fnfc = np.where(first_backup, candidate_risk, new_fnfc)
+
+            a[idx] = new_a
+            b[idx] = new_b
+            fulc[idx] = new_fulc
+            ffulc[idx] = new_ffulc
+            nfc[idx] = new_nfc
+            fnfc[idx] = new_fnfc
+            xf[idx] = np.where(improves, candidate, xfi)
+            fx[idx] = np.where(improves, candidate_risk, fxi)
+            rat[idx] = rati
+            e[idx] = ei
+
+        result[rows] = xf
+    return result
+
+
+def summarize_rubin_dp2_pdf(
+    xvals: np.ndarray,
+    yvals: np.ndarray,
+    prefix: str,
+) -> dict[str, np.ndarray]:
+    """Calculate the per-algorithm Rubin DP2 scalar photo-z contract."""
+    xvals = np.asarray(xvals, dtype=np.float64)
+    yvals = np.asarray(yvals, dtype=np.float64)
+    weights = trapezoid_weights(xvals)
+    finite_nonnegative = np.isfinite(yvals).all(axis=1) & (yvals >= 0).all(axis=1)
+    totals = yvals @ weights
+    valid = finite_nonnegative & np.isfinite(totals) & (totals > 0)
+
+    safe_yvals = np.where(valid[:, None], yvals, 0.0)
+    safe_totals = np.where(valid, totals, 1.0)
+    segment_areas = 0.5 * (
+        safe_yvals[:, :-1] + safe_yvals[:, 1:]
+    ) * np.diff(xvals)[None, :]
+    cdf = np.cumsum(segment_areas, axis=1)
+    mode = xvals[np.argmax(safe_yvals, axis=1)].astype(np.float64)
+    mean = ((safe_yvals * xvals[None, :]) @ weights) / safe_totals
+    median = interpolated_quantile(
+        xvals, safe_yvals, cdf, safe_totals, valid, 0.50
+    )
+    low68 = interpolated_quantile(
+        xvals, safe_yvals, cdf, safe_totals, valid, 0.16
+    )
+    high68 = interpolated_quantile(
+        xvals, safe_yvals, cdf, safe_totals, valid, 0.84
+    )
+    low95 = interpolated_quantile(
+        xvals, safe_yvals, cdf, safe_totals, valid, 0.025
+    )
+    high95 = interpolated_quantile(
+        xvals, safe_yvals, cdf, safe_totals, valid, 0.975
+    )
+    best = risk_based_point_estimate(xvals, safe_yvals, valid)
+
+    mode[~valid] = np.nan
+    mean[~valid] = np.nan
+    return {
+        f"{prefix}_z_mode": mode.astype(np.float32),
+        f"{prefix}_z_mean": mean.astype(np.float32),
+        f"{prefix}_z_median": median.astype(np.float32),
+        f"{prefix}_z_best": best.astype(np.float32),
+        f"{prefix}_z_err68_low": low68.astype(np.float32),
+        f"{prefix}_z_err68_high": high68.astype(np.float32),
+        f"{prefix}_z_err95_low": low95.astype(np.float32),
+        f"{prefix}_z_err95_high": high95.astype(np.float32),
+    }
+
+
 def summarize_pdf(
     xvals: np.ndarray,
     yvals: np.ndarray,
     prefix: str = "",
     include_95_interval: bool = False,
+    summary_schema: str = "legacy",
 ) -> dict[str, np.ndarray]:
+    if summary_schema == "rubin-dp2":
+        return summarize_rubin_dp2_pdf(xvals, yvals, prefix)
+
     yvals = np.asarray(yvals, dtype=np.float64)
     totals = yvals.sum(axis=1)
     valid = totals > 0
@@ -820,7 +1151,9 @@ def write_summary_parts(
             reserved = {
                 "objectId", "coord_ra", "coord_dec", "pdf",
                 *summary_column_names(
-                    cfg.summary_prefix, cfg.include_95_interval
+                    cfg.summary_prefix,
+                    cfg.include_95_interval,
+                    cfg.summary_schema,
                 ),
             }
             if cfg.embed_pdf:
@@ -862,6 +1195,7 @@ def write_summary_parts(
                 batch_yvals,
                 cfg.summary_prefix,
                 cfg.include_95_interval,
+                cfg.summary_schema,
             )
             propagated = {
                 name: dataset[start:stop]

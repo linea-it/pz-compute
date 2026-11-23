@@ -32,9 +32,13 @@ After the driver completes, validate this product with:
 doc/dp2_v3/scripts/validate-hats.py bpz
 ```
 
-The final `pz_summary` HATS catalog contains the scalar columns and the
-DP1-inspired nested column `bpz_ens_interp`, whose `xvals` and `yvals` fields
-each contain 601 `float32` values. The validator uses LSDB and `qp` on a small,
+The final `pz_summary` HATS catalog uses the public Rubin DP2 scalar contract
+(`bpz_z_mode`, `bpz_z_mean`, `bpz_z_median`, `bpz_z_best`, and the named
+68%/95% bounds), retains `coord_ra`, `coord_dec`, `i_gaap1p0Mag_sfd`, and
+`refExtendedness`, and includes the DP1-inspired nested column
+`bpz_ens_interp`. Its `xvals` and `yvals` fields each contain 601 `float32`
+values. Definitions and column ordering are documented in the
+[DP2 v3 overview](../README.md). The validator uses LSDB and `qp` on a small,
 bounded sample, checks PDF health and reconstructed summaries, and compares
 the catalog row count with Stage 2 without scanning every PDF.
 

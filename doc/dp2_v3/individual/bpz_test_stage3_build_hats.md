@@ -37,8 +37,12 @@ After the driver and Dask workers complete, validate only the test product:
 doc/dp2_v3/scripts/validate-hats.py bpz_test
 ```
 
-The engineering `pz_summary` catalog embeds the PDFs in
+The engineering `pz_summary` catalog uses the same Rubin DP2 scalar contract
+as the official routes, with the `bpz_test_z_*` prefix, and embeds the PDFs in
 `bpz_test_ens_interp`, using 601-element `float32` `xvals` and `yvals` lists.
+It retains `coord_ra`, `coord_dec`, `i_gaap1p0Mag_sfd`, and
+`refExtendedness`; definitions and ordering are in the
+[DP2 v3 overview](../README.md).
 The lightweight validator opens the catalog with LSDB, reconstructs a bounded
 sample through `qp`, checks PDF health and summaries, and compares the HATS
 and Stage 2 row counts.

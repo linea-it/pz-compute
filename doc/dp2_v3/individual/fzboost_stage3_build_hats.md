@@ -43,9 +43,32 @@ After the driver completes, validate this product with:
 doc/dp2_v3/scripts/validate-hats.py fzboost
 ```
 
-The final catalog is `pz_summary` inside the HATS collection. In addition to
-the scalar columns, it contains the DP1-inspired nested column
-`fzboost_ens_interp`, with `xvals` and `yvals` lists of 601 `float32` values.
+The final catalog is `pz_summary` inside the HATS collection. Its ordered
+top-level schema is:
+
+```text
+objectId
+coord_ra
+coord_dec
+fzboost_z_mode
+fzboost_z_mean
+fzboost_z_median
+fzboost_z_best
+fzboost_z_err68_low
+fzboost_z_err68_high
+fzboost_z_err95_low
+fzboost_z_err95_high
+i_gaap1p0Mag_sfd
+refExtendedness
+fzboost_ens_interp
+```
+
+The scalar photo-z names and `float32` representation follow the public Rubin
+DP2 photo-z schema, while `coord_ra` and `coord_dec` deliberately retain the
+original DP2 Object provenance. The scientific definitions and numerical
+integration policy are documented in the [DP2 v3 overview](../README.md).
+The DP1-inspired nested column `fzboost_ens_interp` contains `xvals` and
+`yvals` lists of 601 `float32` values.
 The validator opens the catalog through LSDB, reconstructs a small
 `qp.Ensemble`, checks a bounded sample of PDFs and their scalar summaries, and
 compares the HATS row count with Stage 2. It intentionally does not scan every

@@ -51,6 +51,8 @@ set +e
       --pdf-layout=nested \
       --pdf-column="${PZ_ALGORITHM}_ens_interp" \
       --pdf-dtype=float32 \
+      --summary-schema=rubin-dp2 \
+      --summary-prefix="$PZ_ALGORITHM" \
       --margin-threshold="$PZ_HATS_MARGIN_ARCSEC" \
       --fast-path-size-mb=0 \
       --use-hats-import \

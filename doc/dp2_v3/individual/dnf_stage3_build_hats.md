@@ -32,9 +32,13 @@ After the driver completes, validate the DNF products:
 doc/dp2_v3/scripts/validate-hats.py dnf
 ```
 
-The final `pz_summary` HATS catalog contains the scalar columns and the
-DP1-inspired nested column `dnf_ens_interp`, whose `xvals` and `yvals` fields
-each contain 601 `float32` values. The validator opens it with LSDB,
+The final `pz_summary` HATS catalog uses the public Rubin DP2 scalar contract
+(`dnf_z_mode`, `dnf_z_mean`, `dnf_z_median`, `dnf_z_best`, and the named
+68%/95% bounds), retains `coord_ra`, `coord_dec`, `i_gaap1p0Mag_sfd`, and
+`refExtendedness`, and includes the DP1-inspired nested column
+`dnf_ens_interp`. Its `xvals` and `yvals` fields each contain 601 `float32`
+values. Definitions and column ordering are documented in the
+[DP2 v3 overview](../README.md). The validator opens it with LSDB,
 reconstructs a small `qp.Ensemble`, checks PDF health and reconstructed
 summaries, and compares the HATS and Stage 2 row counts without a full PDF
 scan.
