@@ -97,6 +97,59 @@ def test_rubin_summary_schema_adds_named_68_and_95_percentiles():
     assert summary["dnf_z_err95_high"][0] == 0.98
 
 
+def test_piecewise_linear_method_keeps_legacy_columns_and_float64():
+    builder = load_builder()
+    xvals = np.arange(101, dtype=np.float64) / 100.0
+    yvals = np.ones((1, len(xvals)), dtype=np.float64)
+
+    summary = builder.summarize_pdf(
+        xvals,
+        yvals,
+        prefix="dnf",
+        include_95_interval=True,
+        summary_method="piecewise-linear",
+    )
+
+    assert list(summary) == [
+        "dnf_z_mean",
+        "dnf_z_median",
+        "dnf_z_mode",
+        "dnf_z_err68_low",
+        "dnf_z_err68_high",
+        "dnf_z_err95_low",
+        "dnf_z_err95_high",
+    ]
+    assert all(values.dtype == np.float64 for values in summary.values())
+    assert np.isclose(summary["dnf_z_mean"][0], 0.5)
+    assert np.isclose(summary["dnf_z_median"][0], 0.5)
+    assert np.isclose(summary["dnf_z_err68_low"][0], 0.16)
+    assert np.isclose(summary["dnf_z_err68_high"][0], 0.84)
+    assert np.isclose(summary["dnf_z_err95_low"][0], 0.025)
+    assert np.isclose(summary["dnf_z_err95_high"][0], 0.975)
+
+
+def test_piecewise_linear_method_rejects_invalid_pdf_rows():
+    builder = load_builder()
+    xvals = np.linspace(0.0, 1.0, 101)
+    yvals = np.vstack(
+        [
+            np.full(len(xvals), np.nan),
+            np.zeros(len(xvals)),
+            np.r_[np.ones(len(xvals) - 1), -1.0],
+        ]
+    )
+
+    summary = builder.summarize_pdf(
+        xvals,
+        yvals,
+        prefix="dnf",
+        include_95_interval=True,
+        summary_method="piecewise-linear",
+    )
+
+    assert all(np.isnan(values).all() for values in summary.values())
+
+
 def test_rubin_dp2_schema_has_continuous_summaries_and_float32_output():
     builder = load_builder()
     xvals = np.linspace(0.0, 1.0, 101)

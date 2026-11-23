@@ -208,12 +208,26 @@ Do not embed a nested PDF column and do not create a companion PDF product.
 summary derived from the PDF.
 
 Every PDF-derived scalar must remain within the PDF grid `[0, 6]`. The
-floating-point calculation of the weighted mean is therefore bounded to the
-first and last grid values after division. This only corrects roundoff at the
-closed support boundary: the observed failure was `6.000000000000001`, the
-single next representable `float64` above `6.0`, for 34 `griz` and 15 `riz`
-objects whose other summaries were exactly `6.0`. It does not clip a fitted
-DNF point estimate or change the PDF.
+Stage 3 numerical contract interprets the sampled PDF as linear between
+adjacent grid points. It computes normalization and the mean with trapezoidal
+integration, builds the CDF from the same segment areas, and inverts each
+quantile inside its selected grid interval. The median and 68%/95% bounds are
+therefore continuous `float64` values rather than values quantized to the
+`0.01` grid spacing. The mode remains the grid point with maximum sampled PDF
+density. This policy is consistent with the trapezoidal normalization already
+applied in Stage 2 and does not add a risk-based point estimate.
+
+Before deriving summaries, Stage 3 requires an ordinary PDF row to be finite,
+non-negative, and to have a finite positive trapezoidal integral. The approved
+all-`NaN` no-estimate rows instead produce `NaN` in all seven PDF-derived
+columns. Any other invalid PDF pattern is rejected by the Stage 2 contract and
+cannot silently become a finite Stage 3 summary.
+
+The computed mean is bounded to the first and last grid values after division.
+This only corrects roundoff at the closed support boundary: the observed
+failure was `6.000000000000001`, the single next representable `float64` above
+`6.0`, for 34 `griz` and 15 `riz` objects. It does not clip `DNF_Z`, `DNF_ZN`,
+or change the PDF.
 
 ## Change control
 

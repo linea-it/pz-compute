@@ -5,11 +5,11 @@ DP2 DNF cModel `griz`/`riz` delivery. It must not contain private copies of
 generic repository functionality.
 
 Generic capabilities such as configurable band lists, selected-band SFD
-materialization, DNF ancillary extraction, PDF quantiles, and scalar-only HATS
-construction belong in the shared `rail_scripts/` implementation with
-backward-compatible defaults and tests. The scripts here opt into
-those capabilities explicitly and isolate paths, names, provenance, and Slurm
-submissions for the two custom variants.
+materialization, DNF ancillary extraction, piecewise-linear PDF summaries, and
+scalar-only HATS construction belong in the shared `rail_scripts/`
+implementation with backward-compatible defaults and tests. The scripts here
+opt into those capabilities explicitly and isolate paths, names, provenance,
+and Slurm submissions for the two custom variants.
 
 ## Available
 
@@ -45,8 +45,10 @@ submissions for the two custom variants.
 - `submit-hats.sh`: submits independent scalar-only Stage 3 drivers after
   verifying the Stage 2 production checksum contracts and destination safety.
 - `run-one-hats.sbatch`: builds one HATS collection with no nested or companion
-  PDF product, records driver/worker context, and invokes final validation.
+  PDF product, explicitly selects trapezoidal integration with continuous CDF
+  inversion, records driver/worker context, and invokes final validation.
 - `validate-hats.py`: enforces the exact 11-column schema and `float64` science
-  policy, scans every scalar row, requires the exact all-`NaN` no-estimate
-  pattern, compares finite `DNF_ZN` aggregates with Stage 2, rejects PDF
-  artifacts, and writes publication validation records.
+  policy, independently reconstructs the continuous PDF summaries, scans every
+  scalar row, requires the exact all-`NaN` no-estimate pattern, compares finite
+  `DNF_ZN` aggregates with Stage 2, rejects PDF artifacts, and writes
+  publication validation records.

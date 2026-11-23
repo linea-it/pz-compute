@@ -32,6 +32,9 @@ Options:
                             of the legacy unprefixed names [default: ].
     --summary-schema=<name> Scalar-summary calculation and naming contract.
                             Choices: legacy, rubin-dp2 [default: legacy].
+    --summary-method=<name> PDF integration used for scalar summaries.
+                            Choices: auto, discrete, piecewise-linear
+                            [default: auto].
     --include-95-interval  Add the 2.5th and 97.5th percentile scalar columns.
     --batch-size=<rows>    Number of rows converted per batch [default: 50000].
     --fast-path-size-mb=<mb>  Max staged parquet size to build with LSDB
@@ -136,6 +139,7 @@ class Configuration:
     embed_pdf: bool
     summary_prefix: str
     summary_schema: str
+    summary_method: str
     include_95_interval: bool
     batch_size: int
     fast_path_size_mb: float
@@ -245,6 +249,21 @@ def parse_cmdline() -> Configuration:
         raise SystemExit(
             "Error: --summary-schema=rubin-dp2 requires --summary-prefix."
         )
+    summary_method = args["--summary-method"]
+    if summary_method not in ("auto", "discrete", "piecewise-linear"):
+        raise SystemExit(
+            "Error: --summary-method must be 'auto', 'discrete', or "
+            "'piecewise-linear'."
+        )
+    if summary_method == "auto":
+        summary_method = (
+            "piecewise-linear" if summary_schema == "rubin-dp2" else "discrete"
+        )
+    if summary_schema == "rubin-dp2" and summary_method != "piecewise-linear":
+        raise SystemExit(
+            "Error: --summary-schema=rubin-dp2 requires "
+            "--summary-method=piecewise-linear (or auto)."
+        )
     include_95_interval = (
         args["--include-95-interval"] or summary_schema == "rubin-dp2"
     )
@@ -310,6 +329,7 @@ def parse_cmdline() -> Configuration:
         embed_pdf=embed_pdf,
         summary_prefix=summary_prefix,
         summary_schema=summary_schema,
+        summary_method=summary_method,
         include_95_interval=include_95_interval,
         batch_size=batch_size,
         fast_path_size_mb=fast_path_size_mb,
@@ -872,12 +892,11 @@ def risk_based_point_estimate(
     return result
 
 
-def summarize_rubin_dp2_pdf(
+def summarize_piecewise_linear_pdf(
     xvals: np.ndarray,
     yvals: np.ndarray,
-    prefix: str,
 ) -> dict[str, np.ndarray]:
-    """Calculate the per-algorithm Rubin DP2 scalar photo-z contract."""
+    """Summarize a PDF interpreted as linear between adjacent grid points."""
     xvals = np.asarray(xvals, dtype=np.float64)
     yvals = np.asarray(yvals, dtype=np.float64)
     weights = trapezoid_weights(xvals)
@@ -893,6 +912,7 @@ def summarize_rubin_dp2_pdf(
     cdf = np.cumsum(segment_areas, axis=1)
     mode = xvals[np.argmax(safe_yvals, axis=1)].astype(np.float64)
     mean = ((safe_yvals * xvals[None, :]) @ weights) / safe_totals
+    mean = np.clip(mean, xvals[0], xvals[-1])
     median = interpolated_quantile(
         xvals, safe_yvals, cdf, safe_totals, valid, 0.50
     )
@@ -908,19 +928,40 @@ def summarize_rubin_dp2_pdf(
     high95 = interpolated_quantile(
         xvals, safe_yvals, cdf, safe_totals, valid, 0.975
     )
-    best = risk_based_point_estimate(xvals, safe_yvals, valid)
-
     mode[~valid] = np.nan
     mean[~valid] = np.nan
     return {
-        f"{prefix}_z_mode": mode.astype(np.float32),
-        f"{prefix}_z_mean": mean.astype(np.float32),
-        f"{prefix}_z_median": median.astype(np.float32),
+        "mode": mode,
+        "mean": mean,
+        "median": median,
+        "err68_low": low68,
+        "err68_high": high68,
+        "err95_low": low95,
+        "err95_high": high95,
+    }
+
+
+def summarize_rubin_dp2_pdf(
+    xvals: np.ndarray,
+    yvals: np.ndarray,
+    prefix: str,
+) -> dict[str, np.ndarray]:
+    """Calculate the per-algorithm Rubin DP2 scalar photo-z contract."""
+    statistics = summarize_piecewise_linear_pdf(xvals, yvals)
+    valid = np.isfinite(statistics["mean"])
+    safe_yvals = np.where(valid[:, None], np.asarray(yvals, dtype=np.float64), 0.0)
+    best = risk_based_point_estimate(
+        np.asarray(xvals, dtype=np.float64), safe_yvals, valid
+    )
+    return {
+        f"{prefix}_z_mode": statistics["mode"].astype(np.float32),
+        f"{prefix}_z_mean": statistics["mean"].astype(np.float32),
+        f"{prefix}_z_median": statistics["median"].astype(np.float32),
         f"{prefix}_z_best": best.astype(np.float32),
-        f"{prefix}_z_err68_low": low68.astype(np.float32),
-        f"{prefix}_z_err68_high": high68.astype(np.float32),
-        f"{prefix}_z_err95_low": low95.astype(np.float32),
-        f"{prefix}_z_err95_high": high95.astype(np.float32),
+        f"{prefix}_z_err68_low": statistics["err68_low"].astype(np.float32),
+        f"{prefix}_z_err68_high": statistics["err68_high"].astype(np.float32),
+        f"{prefix}_z_err95_low": statistics["err95_low"].astype(np.float32),
+        f"{prefix}_z_err95_high": statistics["err95_high"].astype(np.float32),
     }
 
 
@@ -930,9 +971,40 @@ def summarize_pdf(
     prefix: str = "",
     include_95_interval: bool = False,
     summary_schema: str = "legacy",
+    summary_method: str = "discrete",
 ) -> dict[str, np.ndarray]:
     if summary_schema == "rubin-dp2":
         return summarize_rubin_dp2_pdf(xvals, yvals, prefix)
+
+    if summary_method == "piecewise-linear":
+        statistics = summarize_piecewise_linear_pdf(xvals, yvals)
+        if prefix:
+            result = {
+                f"{prefix}_z_mean": statistics["mean"],
+                f"{prefix}_z_median": statistics["median"],
+                f"{prefix}_z_mode": statistics["mode"],
+                f"{prefix}_z_err68_low": statistics["err68_low"],
+                f"{prefix}_z_err68_high": statistics["err68_high"],
+            }
+            if include_95_interval:
+                result[f"{prefix}_z_err95_low"] = statistics["err95_low"]
+                result[f"{prefix}_z_err95_high"] = statistics["err95_high"]
+            return result
+
+        result = {
+            "zmode": statistics["mode"],
+            "zmean": statistics["mean"],
+            "zmedian": statistics["median"],
+            "z_p16": statistics["err68_low"],
+            "z_p84": statistics["err68_high"],
+        }
+        if include_95_interval:
+            result["z_p025"] = statistics["err95_low"]
+            result["z_p975"] = statistics["err95_high"]
+        return result
+
+    if summary_method != "discrete":
+        raise ValueError(f"unsupported summary method: {summary_method}")
 
     yvals = np.asarray(yvals, dtype=np.float64)
     totals = yvals.sum(axis=1)
@@ -1196,6 +1268,7 @@ def write_summary_parts(
                 cfg.summary_prefix,
                 cfg.include_95_interval,
                 cfg.summary_schema,
+                cfg.summary_method,
             )
             propagated = {
                 name: dataset[start:stop]

@@ -238,28 +238,104 @@ def stage2_stats(
     return result
 
 
-def weighted_quantile(xvals: np.ndarray, yvals: np.ndarray, q: float) -> np.ndarray:
-    totals = yvals.sum(axis=1)
-    cumulative = np.cumsum(yvals, axis=1)
-    result = np.full(len(yvals), np.nan, dtype=np.float64)
-    for index in np.flatnonzero(np.isfinite(totals) & (totals > 0)):
-        position = np.searchsorted(
-            cumulative[index], q * totals[index], side="left"
+def trapezoid_weights(xvals: np.ndarray) -> np.ndarray:
+    xvals = np.asarray(xvals, dtype=np.float64)
+    if xvals.ndim != 1 or len(xvals) < 2 or not np.all(np.diff(xvals) > 0):
+        raise ValueError("PDF grid must contain at least two increasing values")
+    delta = np.diff(xvals)
+    weights = np.empty_like(xvals)
+    weights[0] = delta[0] / 2
+    weights[-1] = delta[-1] / 2
+    weights[1:-1] = (delta[:-1] + delta[1:]) / 2
+    return weights
+
+
+def interpolated_quantile(
+    xvals: np.ndarray,
+    yvals: np.ndarray,
+    cumulative: np.ndarray,
+    totals: np.ndarray,
+    valid: np.ndarray,
+    quantile: float,
+) -> np.ndarray:
+    widths = np.diff(xvals)
+    target = quantile * totals
+    indices = np.argmax(cumulative >= target[:, None], axis=1)
+    rows = np.arange(len(yvals))
+    previous = np.where(
+        indices == 0, 0.0, cumulative[rows, np.maximum(indices - 1, 0)]
+    )
+    local_area = np.maximum(target - previous, 0.0)
+    y0 = yvals[rows, indices]
+    y1 = yvals[rows, indices + 1]
+    width = widths[indices]
+    slope = y1 - y0
+    scaled_area = local_area / width
+
+    fraction = np.zeros(len(yvals), dtype=np.float64)
+    nearly_flat = np.abs(slope) <= 1e-14 * np.maximum(1.0, np.abs(y0))
+    flat_nonzero = nearly_flat & (y0 > 0)
+    fraction[flat_nonzero] = scaled_area[flat_nonzero] / y0[flat_nonzero]
+    curved = ~nearly_flat
+    discriminant = np.maximum(
+        y0[curved] * y0[curved]
+        + 2 * slope[curved] * scaled_area[curved],
+        0.0,
+    )
+    fraction[curved] = (
+        -y0[curved] + np.sqrt(discriminant)
+    ) / slope[curved]
+    result = xvals[indices] + np.clip(fraction, 0.0, 1.0) * width
+    result[~valid] = np.nan
+    return result
+
+
+def piecewise_linear_summaries(
+    xvals: np.ndarray, yvals: np.ndarray
+) -> dict[str, np.ndarray]:
+    """Independently reconstruct the Stage 3 continuous PDF summaries."""
+    xvals = np.asarray(xvals, dtype=np.float64)
+    yvals = np.asarray(yvals, dtype=np.float64)
+    weights = trapezoid_weights(xvals)
+    finite_nonnegative = np.isfinite(yvals).all(axis=1) & (yvals >= 0).all(axis=1)
+    totals = yvals @ weights
+    valid = finite_nonnegative & np.isfinite(totals) & (totals > 0)
+    safe_yvals = np.where(valid[:, None], yvals, 0.0)
+    safe_totals = np.where(valid, totals, 1.0)
+    segment_areas = 0.5 * (
+        safe_yvals[:, :-1] + safe_yvals[:, 1:]
+    ) * np.diff(xvals)[None, :]
+    cumulative = np.cumsum(segment_areas, axis=1)
+
+    mode = xvals[np.argmax(safe_yvals, axis=1)].astype(np.float64)
+    mean = np.clip(
+        ((safe_yvals * xvals[None, :]) @ weights) / safe_totals,
+        xvals[0],
+        xvals[-1],
+    )
+    mode[~valid] = np.nan
+    mean[~valid] = np.nan
+    result = {"mode": mode, "mean": mean}
+    for name, quantile in (
+        ("median", 0.50),
+        ("err68_low", 0.16),
+        ("err68_high", 0.84),
+        ("err95_low", 0.025),
+        ("err95_high", 0.975),
+    ):
+        result[name] = interpolated_quantile(
+            xvals,
+            safe_yvals,
+            cumulative,
+            safe_totals,
+            valid,
+            quantile,
         )
-        result[index] = xvals[min(position, len(xvals) - 1)]
     return result
 
 
 def bounded_pdf_mean(xvals: np.ndarray, yvals: np.ndarray) -> np.ndarray:
-    totals = yvals.sum(axis=1)
-    valid = np.isfinite(totals) & (totals > 0)
-    result = np.full(len(yvals), np.nan, dtype=np.float64)
-    result[valid] = np.clip(
-        (yvals[valid] * xvals).sum(axis=1) / totals[valid],
-        xvals[0],
-        xvals[-1],
-    )
-    return result
+    return piecewise_linear_summaries(xvals, yvals)["mean"]
 
 
 def stage2_scalar_sample(
@@ -284,18 +360,15 @@ def stage2_scalar_sample(
             .combine_chunks()
             .to_numpy(zero_copy_only=False)[indices]
         )
-        totals = yvals.sum(axis=1)
-        valid = np.isfinite(totals) & (totals > 0)
-        modes = np.full(len(yvals), np.nan, dtype=np.float64)
-        modes[valid] = xvals[np.argmax(yvals[valid], axis=1)]
+        summaries = piecewise_linear_summaries(xvals, yvals)
         values = {
-            "dnf_z_mean": bounded_pdf_mean(xvals, yvals),
-            "dnf_z_median": weighted_quantile(xvals, yvals, 0.50),
-            "dnf_z_mode": modes,
-            "dnf_z_err68_low": weighted_quantile(xvals, yvals, 0.16),
-            "dnf_z_err68_high": weighted_quantile(xvals, yvals, 0.84),
-            "dnf_z_err95_low": weighted_quantile(xvals, yvals, 0.025),
-            "dnf_z_err95_high": weighted_quantile(xvals, yvals, 0.975),
+            "dnf_z_mean": summaries["mean"],
+            "dnf_z_median": summaries["median"],
+            "dnf_z_mode": summaries["mode"],
+            "dnf_z_err68_low": summaries["err68_low"],
+            "dnf_z_err68_high": summaries["err68_high"],
+            "dnf_z_err95_low": summaries["err95_low"],
+            "dnf_z_err95_high": summaries["err95_high"],
             "DNF_ZN": zn,
         }
         return {
@@ -482,7 +555,7 @@ def write_validation_record(root: Path, variant: str, result: dict) -> Path:
     if destination.exists() or temporary.exists():
         raise FileExistsError(f"refusing to overwrite validation record: {destination}")
     document = {
-        "schema_version": 2,
+        "schema_version": 3,
         "project": "dp2_v3p1_custom",
         "variant": variant,
         "collection": hats_dir(root, variant).name,
@@ -490,6 +563,7 @@ def write_validation_record(root: Path, variant: str, result: dict) -> Path:
         "rows": result["rows"],
         "columns": list(SUMMARY_COLUMNS),
         "science_dtype": "float64",
+        "summary_method": "piecewise-linear",
         "pdf_layout": "none",
         "no_photometry_policy": "nan",
         "no_estimate_rows": result["no_estimate_rows"],

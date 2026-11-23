@@ -85,6 +85,36 @@ def test_stage2_cross_check_bounds_pdf_mean_after_upper_edge_roundoff():
     assert mean[0] == 6.0
 
 
+def test_stage2_cross_check_uses_continuous_piecewise_linear_quantiles():
+    validator = load_validator()
+    xvals = np.linspace(0.0, 1.0, 101)
+    yvals = np.ones((1, len(xvals)), dtype=np.float64)
+
+    summary = validator.piecewise_linear_summaries(xvals, yvals)
+
+    assert np.isclose(summary["mean"][0], 0.5)
+    assert np.isclose(summary["median"][0], 0.5)
+    assert np.isclose(summary["err68_low"][0], 0.16)
+    assert np.isclose(summary["err68_high"][0], 0.84)
+    assert np.isclose(summary["err95_low"][0], 0.025)
+    assert np.isclose(summary["err95_high"][0], 0.975)
+
+
+def test_stage2_cross_check_rejects_negative_and_all_nan_pdfs():
+    validator = load_validator()
+    xvals = np.linspace(0.0, 1.0, 101)
+    yvals = np.vstack(
+        [
+            np.r_[np.ones(len(xvals) - 1), -1.0],
+            np.full(len(xvals), np.nan),
+        ]
+    )
+
+    summary = validator.piecewise_linear_summaries(xvals, yvals)
+
+    assert all(np.isnan(values).all() for values in summary.values())
+
+
 def test_pdf_named_product_is_rejected(tmp_path):
     validator = load_validator()
     hats = tmp_path / "scalar-hats"
@@ -98,6 +128,7 @@ def test_stage3_runner_is_explicitly_scalar_only():
     runner = (PROJECT / "scripts/run-one-hats.sbatch").read_text()
     assert "--pdf-layout=none" in runner
     assert "--summary-prefix=dnf" in runner
+    assert "--summary-method=piecewise-linear" in runner
     assert "--include-95-interval" in runner
     assert "--require-complete-marker" in runner
     assert "--overwrite" not in runner
@@ -154,6 +185,7 @@ def test_validation_record_captures_publication_contract(tmp_path):
     assert document["rows"] == 12
     assert document["columns"] == list(validator.SUMMARY_COLUMNS)
     assert document["science_dtype"] == "float64"
+    assert document["summary_method"] == "piecewise-linear"
     assert document["pdf_layout"] == "none"
     assert document["no_photometry_policy"] == "nan"
     assert document["no_estimate_rows"] == 3

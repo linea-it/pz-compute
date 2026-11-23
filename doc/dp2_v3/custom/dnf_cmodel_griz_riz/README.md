@@ -22,9 +22,10 @@ project-specific preparation, launchers, provenance wrappers, validation, and
 accepted Apollo resources. Stage 2 has smoke, pilot and production launchers
 plus source-aware validation; its production defaults are fixed from
 successful five-shard Apollo pilots. Stage 3 has independent scalar-only
-launchers, complete schema and value validation, PDF-product rejection, and
-publication records. Stage 3 resource measurements remain to be collected
-from its first Apollo build.
+launchers, opt-in trapezoidal summaries with continuous CDF inversion,
+complete schema and value validation, PDF-product rejection, and publication
+records. Stage 3 resource measurements remain to be collected from its first
+Apollo build.
 
 The complete local Stage 1 rehearsal trained and validated both 554,676-row
 models from the prepared tables. This confirms the four-feature `griz` and
@@ -35,9 +36,10 @@ A local Stage 2 rehearsal with real Object photometry also validated both
 variants, including cModel SFD materialization, ANF estimation, normalized
 601-bin PDFs, row identity, and exact `DNF_ZN` propagation.
 
-Local Stage 3 builds produced two 11-column HATS collections from those real
-estimates. Both passed full scalar scans, interval ordering, Stage 2/HATS
-`DNF_ZN` aggregate comparison, and the no-PDF contract.
+Earlier local Stage 3 rehearsals produced two 11-column HATS collections and
+passed full scalar scans, interval ordering, Stage 2/HATS `DNF_ZN` aggregate
+comparison, and the no-PDF contract. Those artifacts predate the explicit
+piecewise-linear summary policy and must be rebuilt before publication.
 
 ## Execution guides
 

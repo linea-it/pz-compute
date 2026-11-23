@@ -143,8 +143,9 @@ The custom launcher requests only `DNF_ZN`.
 
 ### 6. Rubin-style scalar summary schema
 
-Extend `pz-build-hats` with explicit options for a summary prefix and the 95%
-interval. With prefix `dnf`, the custom schema is:
+Extend `pz-build-hats` with explicit options for a summary prefix, the 95%
+interval, and an opt-in piecewise-linear summary method. With prefix `dnf`,
+the custom schema is:
 
 ```text
 dnf_z_mean
@@ -162,14 +163,22 @@ and 2.5th/97.5th percentiles for 95%. The custom build also passes
 `--pdf-layout=none`, so PDFs are read from Stage 2 to derive scalars but are not
 published in nested or companion form.
 
-Bound the computed weighted mean to the closed PDF-grid support after its
-floating-point division. This removes only roundoff such as the next
-representable `float64` above the upper grid boundary; the strict Stage 3
-support validator remains unchanged.
+The custom build passes `--summary-method=piecewise-linear`. The implementation
+uses trapezoidal integration for the normalization and mean, constructs the CDF
+from trapezoidal segment areas, and solves for each quantile inside its selected
+grid interval. It retains `float64`, the requested names and ordering, and does
+not calculate `z_best`. Ordinary PDF rows must be finite, non-negative, and
+have a finite positive trapezoidal integral; the approved all-`NaN` rows remain
+the only no-estimate representation.
 
-Without these new options, `pz-build-hats` continues to emit the existing
-`zmode`, `zmean`, `zmedian`, `z_p16`, and `z_p84` columns and retains its
-current PDF-layout default.
+Bound the computed mean to the closed PDF-grid support after its floating-point
+division. This removes only roundoff such as the next representable `float64`
+above the upper grid boundary; the strict Stage 3 support validator remains
+unchanged.
+
+Without these opt-in options, `pz-build-hats` continues to emit the existing
+`zmode`, `zmean`, `zmedian`, `z_p16`, and `z_p84` columns, uses the historical
+discrete summary method, and retains its current PDF-layout default.
 
 ## Project-specific code
 

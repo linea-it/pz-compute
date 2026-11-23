@@ -27,6 +27,12 @@ The eight scientific columns are retained as `float64`. Scalar-only storage is
 small enough that reducing their precision is unnecessary. `objectId` and the
 coordinate types follow the DP2 Object input. The 68% interval is the
 16th/84th percentile pair and the 95% interval is the 2.5th/97.5th pair.
+Stage 3 passes `--summary-method=piecewise-linear`: normalization and the mean
+use trapezoidal integration, while the CDF uses the same trapezoidal segment
+areas and is inverted inside the selected interval. Consequently, quantiles
+are not restricted to the 601 grid nodes. The mode remains the node with
+maximum density. This opt-in numerical policy does not calculate `z_best`,
+does not change `DNF_ZN`, and does not alter the ordered schema above.
 
 ## 2. Submit both HATS builds
 
@@ -143,7 +149,8 @@ The validator:
 - requires `0 <= z <= 6` for all seven PDF-derived summaries;
 - requires `z95_low <= z68_low <= median <= z68_high <= z95_high`;
 - independently recomputes a bounded cross-check of all seven summaries from
-  the Stage 2 PDFs and matches them by `objectId`;
+  the Stage 2 PDFs using trapezoidal integration and continuous CDF inversion,
+  and matches them by `objectId`;
 - compares row counts, no-estimate counts, and finite `DNF_ZN` aggregates with
   Stage 2;
 - revalidates the Stage 2 production checksum contract;
