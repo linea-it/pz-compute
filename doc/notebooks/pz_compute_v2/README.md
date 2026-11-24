@@ -26,12 +26,32 @@ PZ_QA_CONFIG=doc/notebooks/pz_compute_v2/config/dp2-v3-fzboost.yaml \
 
 Open `doc/notebooks/pz_compute_v2/pz_compute_qa.ipynb` and run all cells.
 Equivalent configurations are provided for BPZ, DNF, and the BPZ test product.
+Two additional FlexZBoost examples use the `hpc-public` account:
+
+- `config/dp2-v3-fzboost-hpc-public.yaml` for the LIneA-produced HATS catalog;
+- `config/dp2-v3-fzboost-rubin-hpc-public.yaml` for the multi-algorithm
+  reference catalog.
 
 ## Configuration
 
 `redshift.column` selects the scalar estimate used in the histograms. The
 displayed interval and bin count are set by `minimum`, `maximum`, and `bins`.
 The default DP2-v3 configurations use each algorithm's `*_z_best` column.
+By default, the `describe` table covers every numeric scalar column. For a
+multi-algorithm catalog, `describe.include_contains` limits that table using
+case-insensitive column-name substrings. The Rubin FlexZBoost example therefore
+describes only columns whose names contain `fzboost` while still listing the
+complete catalog schema.
+
+The optional `report` section supplies the author, contact, and timezone. The
+notebook evaluates the current date at execution time in that timezone:
+
+```yaml
+report:
+  author: Luigi Lucas de Carvalho Silva
+  contact: luigi.lcsilva@gmail.com
+  timezone: America/Sao_Paulo
+```
 
 Selections are optional and evaluated together in one scalar projection. A
 selection may combine `equals`, `minimum`, `maximum`, and `finite` filters:

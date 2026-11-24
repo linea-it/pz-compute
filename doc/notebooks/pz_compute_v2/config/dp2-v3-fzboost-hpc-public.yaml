@@ -1,0 +1,72 @@
+run:
+  name: DP2 FlexZBoost GAaP 1.0
+  data_release: DP2
+  processing_version: dp2-v3
+  algorithm: fzboost
+
+paths:
+  summary_hats: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/fzboost/stage3/output/pz-fzboost-gaap1p0-clipped-hats
+  report_dir: null
+
+redshift:
+  column: fzboost_z_best
+  minimum: 0.0
+  maximum: 6.0
+  bins: 120
+
+describe:
+  percentiles: [0.25, 0.50, 0.75]
+
+report:
+  author: Luigi Lucas de Carvalho Silva
+  contact: luigi.lcsilva@gmail.com
+  timezone: America/Sao_Paulo
+
+selections:
+  - name: all
+    label: All objects
+    description: All catalog rows before any configured science selection.
+  - name: clean_i_lt_25
+    label: "i_gaap1p0Mag_sfd < 25"
+    description: Selection based on finite SFD-corrected GAaP i-band magnitude.
+    filters:
+      - column: i_gaap1p0Mag_sfd
+        maximum: 25.0
+        finite: true
+  - name: galaxies
+    label: "Extended sources (galaxy proxy)"
+    description: >-
+      Reference-band extended sources used as a practical galaxy proxy, with
+      null classifications excluded. Completeness, purity, and stellar
+      contamination can be characterized separately with suitable reference data.
+    filters:
+      - column: refExtendedness
+        equals: 1
+        finite: true
+  - name: galaxies_i_lt_25
+    label: "Extended sources with i_gaap1p0Mag_sfd < 25"
+    description: >-
+      Intersection of the configured extended-source proxy and magnitude cut;
+      the same classification caveats apply.
+    filters:
+      - column: refExtendedness
+        equals: 1
+        finite: true
+      - column: i_gaap1p0Mag_sfd
+        maximum: 25.0
+        finite: true
+
+cluster:
+  type: slurm
+  minimum_jobs: 4
+  maximum_jobs: 16
+  cores: 2
+  memory: 16GiB
+  processes: 1
+  queue: cpu_small
+  account: hpc-public
+  interface: null
+  walltime: "01:00:00"
+  wait_timeout: 600
+  job_extra_directives:
+    - --propagate

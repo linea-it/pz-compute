@@ -8,10 +8,13 @@ histograms for the complete catalog and optional filtered samples.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from html import escape
 from pathlib import Path
 import json
 import os
+import warnings
+from zoneinfo import ZoneInfo
 
 import dask
 from dask import delayed
@@ -147,29 +150,42 @@ def start_cluster(config: dict):
     elif cluster_type == "slurm":
         from dask_jobqueue import SLURMCluster
 
-        cluster = SLURMCluster(
-            n_workers=settings.get("minimum_jobs", 4)
-            * settings.get("processes", 1),
-            queue=settings.get("queue", "cpu"),
-            account=settings.get("account", "hpc-public"),
-            cores=settings.get("cores", 2),
-            memory=settings.get("memory", "8GiB"),
-            processes=settings.get("processes", 1),
-            interface=settings.get("interface"),
-            walltime=settings.get("walltime", "01:00:00"),
-            job_extra_directives=settings.get(
-                "job_extra_directives", ["--propagate"]
-            ),
-        )
-        cluster.adapt(
-            minimum_jobs=settings.get("minimum_jobs", 4),
-            maximum_jobs=settings.get("maximum_jobs", 16),
-        )
-        client = Client(cluster)
-        client.wait_for_workers(
-            settings.get("minimum_jobs", 4),
-            timeout=settings.get("wait_timeout", 300),
-        )
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"Port 8787 is already in use.*",
+                category=UserWarning,
+                module=r"distributed\.node",
+            )
+            warnings.filterwarnings(
+                "ignore",
+                message=r"Couldn't detect a suitable IP address.*",
+                category=RuntimeWarning,
+                module=r"distributed\.utils",
+            )
+            cluster = SLURMCluster(
+                n_workers=settings.get("minimum_jobs", 4)
+                * settings.get("processes", 1),
+                queue=settings.get("queue", "cpu"),
+                account=settings.get("account", "hpc-public"),
+                cores=settings.get("cores", 2),
+                memory=settings.get("memory", "8GiB"),
+                processes=settings.get("processes", 1),
+                interface=settings.get("interface"),
+                walltime=settings.get("walltime", "01:00:00"),
+                job_extra_directives=settings.get(
+                    "job_extra_directives", ["--propagate"]
+                ),
+            )
+            cluster.adapt(
+                minimum_jobs=settings.get("minimum_jobs", 4),
+                maximum_jobs=settings.get("maximum_jobs", 16),
+            )
+            client = Client(cluster)
+            client.wait_for_workers(
+                settings.get("minimum_jobs", 4),
+                timeout=settings.get("wait_timeout", 300),
+            )
     elif cluster_type == "existing":
         address = settings.get("scheduler_address") or os.environ.get(
             "DASK_SCHEDULER_ADDRESS"
@@ -303,9 +319,24 @@ def _schema_table(catalog, columns: list[str], nested: set[str]) -> pd.DataFrame
     ).set_index("column")
 
 
+def _describe_columns(config: dict, numeric_columns: list[str]) -> list[str]:
+    """Apply optional case-insensitive substring filters to scalar columns."""
+    contains = config.get("describe", {}).get("include_contains", [])
+    if isinstance(contains, str):
+        contains = [contains]
+    needles = [str(value).casefold() for value in contains if str(value)]
+    if not needles:
+        return numeric_columns
+    return [
+        column
+        for column in numeric_columns
+        if any(needle in column.casefold() for needle in needles)
+    ]
+
+
 def run_qa(config: dict) -> QAResult:
     """Run scalar-only HATS characterization without projecting PDF columns."""
-    catalog = lsdb.open_catalog(config["paths"]["summary_hats"])
+    catalog = lsdb.open_catalog(config["paths"]["summary_hats"], columns="all")
     columns = [str(name) for name in catalog.columns]
     nested_columns = {str(name) for name in catalog.nested_columns}
     scalar_columns = [name for name in columns if name not in nested_columns]
@@ -318,21 +349,44 @@ def run_qa(config: dict) -> QAResult:
     if missing:
         raise KeyError(f"Missing scalar HATS columns: {missing}")
 
-    scalar_ddf = catalog[scalar_columns].to_dask_dataframe()
+    catalog_dtypes = catalog.dtypes
     numeric_columns = [
-        name for name, dtype in scalar_ddf.dtypes.items() if is_numeric_dtype(dtype)
+        name
+        for name in scalar_columns
+        if name in catalog_dtypes.index and is_numeric_dtype(catalog_dtypes[name])
     ]
     if redshift_column not in numeric_columns:
         raise TypeError(f"Configured redshift column is not numeric: {redshift_column}")
 
+    describe_columns = _describe_columns(config, numeric_columns)
+    if not describe_columns:
+        raise ValueError("No numeric scalar columns matched the describe configuration")
+
+    histogram_columns = list(dict.fromkeys([redshift_column, *selection_columns]))
+    projected = set(describe_columns) | set(histogram_columns)
+    projected_columns = [name for name in scalar_columns if name in projected]
+    # Reopen with an explicit physical projection. Selecting columns only after
+    # opening an all-column catalog can leave heavy nested fields in upstream
+    # read tasks, causing avoidable worker-memory pressure before SelectColumns
+    # runs. The first catalog remains metadata-only; this second catalog drives
+    # the distributed scan and cannot read the PDF column.
+    projected_catalog = lsdb.open_catalog(
+        config["paths"]["summary_hats"], columns=projected_columns
+    )
+    scalar_ddf = projected_catalog.to_dask_dataframe()
+
     percentiles = [float(value) for value in config["describe"]["percentiles"]]
-    describe_task = scalar_ddf[numeric_columns].describe(percentiles=percentiles)
+    # Dask percentile currently rejects pandas nullable numeric dtypes, and
+    # unsigned integer means can overflow before division. A statistics-only
+    # float64 projection avoids both problems; the schema table still reports
+    # every original catalog dtype.
+    describe_ddf = scalar_ddf[describe_columns].astype("float64")
+    describe_task = describe_ddf.describe(percentiles=percentiles)
 
     z_min = float(config["redshift"]["minimum"])
     z_max = float(config["redshift"]["maximum"])
     bins = int(config["redshift"]["bins"])
     edges = np.linspace(z_min, z_max, bins + 1, dtype=np.float64)
-    histogram_columns = list(dict.fromkeys([redshift_column, *selection_columns]))
     histogram_ddf = scalar_ddf[histogram_columns]
     histogram_tasks = [
         delayed(_histogram_partition)(
@@ -396,9 +450,34 @@ def columns_box(result: QAResult) -> str:
         suffix = " <em>nested — not read</em>" if name in nested else ""
         items.append(f"<li><code>{escape(name)}</code>{suffix}</li>")
     return (
-        '<div style="max-height:320px; overflow-y:auto; border:1px solid #bbb; '
-        'border-radius:6px; padding:0.6rem 1rem; background:#fafafa">'
+        '<div style="max-height:320px; overflow-y:auto; '
+        'border:1px solid var(--jp-border-color2, #888); border-radius:6px; '
+        'padding:0.6rem 1rem; background:var(--jp-layout-color1, transparent); '
+        'color:var(--jp-ui-font-color1, inherit)">'
         f"<ol style=\"margin:0; padding-left:1.5rem\">{''.join(items)}</ol></div>"
+    )
+
+
+def execution_metadata_html(
+    config: dict, execution_time: datetime | None = None
+) -> str:
+    """Render author metadata with the execution date in the configured zone."""
+    settings = config.get("report", {})
+    timezone_name = settings.get("timezone", "America/Sao_Paulo")
+    timezone = ZoneInfo(timezone_name)
+    if execution_time is None:
+        execution_time = datetime.now(timezone)
+    elif execution_time.tzinfo is None:
+        execution_time = execution_time.replace(tzinfo=timezone)
+    else:
+        execution_time = execution_time.astimezone(timezone)
+    author = escape(str(settings.get("author", "Not specified")))
+    contact = escape(str(settings.get("contact", "Not specified")))
+    verified = execution_time.strftime("%B %d, %Y")
+    return (
+        f"Author: {author}<br>"
+        f"Contact: {contact}<br>"
+        f"Last verified execution: {verified}<br>"
     )
 
 

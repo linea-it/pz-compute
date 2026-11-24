@@ -18,6 +18,11 @@ redshift:
 describe:
   percentiles: [0.25, 0.50, 0.75]
 
+report:
+  author: Luigi Lucas de Carvalho Silva
+  contact: luigi.lcsilva@gmail.com
+  timezone: America/Sao_Paulo
+
 selections:
   - name: all
     label: All objects
