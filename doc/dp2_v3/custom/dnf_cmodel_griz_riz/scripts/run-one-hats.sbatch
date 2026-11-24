@@ -48,6 +48,7 @@ mkdir -p "$benchmark_dir" "$worker_log_dir" "$driver_log_dir" \
     printf 'variant=%s\n' "$PZ_CUSTOM_VARIANT"
     printf 'pdf_layout=none\n'
     printf 'science_dtype=float64\n'
+    printf 'summary_schema=rubin-dp2\n'
     printf 'summary_method=piecewise-linear\n'
     printf 'margin_threshold_arcsec=%s\n' "$PZ_HATS_MARGIN_ARCSEC"
 } > "$benchmark_dir/run-context.log"
@@ -62,8 +63,9 @@ set +e
       --require-complete-marker \
       --pdf-layout=none \
       --summary-prefix=dnf \
+      --summary-schema=rubin-dp2 \
+      --summary-dtype=float64 \
       --summary-method=piecewise-linear \
-      --include-95-interval \
       --catalog-name=pz_summary \
       --margin-threshold="$PZ_HATS_MARGIN_ARCSEC" \
       --fast-path-size-mb=0 \

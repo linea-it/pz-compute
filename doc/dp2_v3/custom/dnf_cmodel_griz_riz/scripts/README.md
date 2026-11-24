@@ -46,9 +46,10 @@ and Slurm submissions for the two custom variants.
   verifying the Stage 2 production checksum contracts and destination safety.
 - `run-one-hats.sbatch`: builds one HATS collection with no nested or companion
   PDF product, explicitly selects trapezoidal integration with continuous CDF
-  inversion, records driver/worker context, and invokes final validation.
-- `validate-hats.py`: enforces the exact 11-column schema and `float64` science
-  policy, independently reconstructs the continuous PDF summaries, scans every
-  scalar row, requires the exact all-`NaN` no-estimate pattern, compares finite
-  `DNF_ZN` aggregates with Stage 2, rejects PDF artifacts, and writes
-  publication validation records.
+  inversion and the Rubin risk-based point estimate, records driver/worker
+  context, and invokes final validation.
+- `validate-hats.py`: enforces the exact 12-column schema and `float64` science
+  policy, independently reconstructs the continuous PDF summaries and
+  risk-based point estimate, scans every scalar row, requires the exact
+  all-`NaN` no-estimate pattern, compares finite `DNF_ZN` aggregates with
+  Stage 2, rejects PDF artifacts, and writes publication validation records.

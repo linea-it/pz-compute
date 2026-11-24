@@ -175,7 +175,7 @@ replacement, none of its selected bands has both a usable magnitude and a
 usable magnitude error. For exactly those rows:
 
 - the internal PDF row is all `NaN` rather than a fabricated distribution;
-- all seven PDF-derived delivered summaries are `NaN`;
+- all eight PDF-derived delivered summaries are `NaN`;
 - delivered `DNF_ZN` is `NaN`, because its neighbor was selected from an
   identical imputed limit vector with no object-specific photometric content;
 - coordinates and object identity remain present and unchanged;
@@ -185,7 +185,7 @@ All science columns must be finite for every row outside this mask. The Stage
 2 validator derives the mask independently from the source parquet and
 requires exact agreement with the complete `DNF_ZN` mask and PDF counters. It
 also checks both no-estimate and ordinary PDF rows in its bounded payload
-sample. Stage 3 requires all eight science values to be `NaN` together for the
+sample. Stage 3 requires all nine science values to be `NaN` together for the
 recorded number of no-estimate rows and rejects partial nulls, infinities, or
 additional `NaN`s. Do not impose an error floor, create a delta PDF, substitute
 a prior, or remove these objects.
@@ -194,9 +194,10 @@ a prior, or remove these objects.
 
 In addition to object identity and coordinates required by HATS, publish:
 
+- `dnf_z_mode`;
 - `dnf_z_mean`;
 - `dnf_z_median`;
-- `dnf_z_mode`;
+- `dnf_z_best`;
 - `dnf_z_err68_low`;
 - `dnf_z_err68_high`;
 - `dnf_z_err95_low`;
@@ -207,6 +208,11 @@ Do not embed a nested PDF column and do not create a companion PDF product.
 `DNF_ZN` is the nearest-neighbor point estimate produced by DNF; it is not a
 summary derived from the PDF.
 
+`dnf_z_best` minimizes the RAIL Tanaka loss integrated over the PDF, with
+`gamma=0.15`, Simpson integration, and a bounded search on `[0, 6]`. It is a
+PDF-derived decision point and is distinct from the fitted `DNF_Z` and the
+nearest-neighbor `DNF_ZN` estimator outputs.
+
 Every PDF-derived scalar must remain within the PDF grid `[0, 6]`. The
 Stage 3 numerical contract interprets the sampled PDF as linear between
 adjacent grid points. It computes normalization and the mean with trapezoidal
@@ -215,11 +221,12 @@ quantile inside its selected grid interval. The median and 68%/95% bounds are
 therefore continuous `float64` values rather than values quantized to the
 `0.01` grid spacing. The mode remains the grid point with maximum sampled PDF
 density. This policy is consistent with the trapezoidal normalization already
-applied in Stage 2 and does not add a risk-based point estimate.
+applied in Stage 2. The separate `dnf_z_best` calculation follows the
+risk-based definition above.
 
 Before deriving summaries, Stage 3 requires an ordinary PDF row to be finite,
 non-negative, and to have a finite positive trapezoidal integral. The approved
-all-`NaN` no-estimate rows instead produce `NaN` in all seven PDF-derived
+all-`NaN` no-estimate rows instead produce `NaN` in all eight PDF-derived
 columns. Any other invalid PDF pattern is rejected by the Stage 2 contract and
 cannot silently become a finite Stage 3 summary.
 

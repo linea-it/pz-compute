@@ -32,6 +32,8 @@ Options:
                             of the legacy unprefixed names [default: ].
     --summary-schema=<name> Scalar-summary calculation and naming contract.
                             Choices: legacy, rubin-dp2 [default: legacy].
+    --summary-dtype=<dtype> Numeric dtype for Rubin-DP2 scalar summaries.
+                            Choices: float32, float64 [default: float32].
     --summary-method=<name> PDF integration used for scalar summaries.
                             Choices: auto, discrete, piecewise-linear
                             [default: auto].
@@ -139,6 +141,7 @@ class Configuration:
     embed_pdf: bool
     summary_prefix: str
     summary_schema: str
+    summary_dtype: str
     summary_method: str
     include_95_interval: bool
     batch_size: int
@@ -249,6 +252,11 @@ def parse_cmdline() -> Configuration:
         raise SystemExit(
             "Error: --summary-schema=rubin-dp2 requires --summary-prefix."
         )
+    summary_dtype = args["--summary-dtype"]
+    if summary_dtype not in ("float32", "float64"):
+        raise SystemExit(
+            "Error: --summary-dtype must be either 'float32' or 'float64'."
+        )
     summary_method = args["--summary-method"]
     if summary_method not in ("auto", "discrete", "piecewise-linear"):
         raise SystemExit(
@@ -329,6 +337,7 @@ def parse_cmdline() -> Configuration:
         embed_pdf=embed_pdf,
         summary_prefix=summary_prefix,
         summary_schema=summary_schema,
+        summary_dtype=summary_dtype,
         summary_method=summary_method,
         include_95_interval=include_95_interval,
         batch_size=batch_size,
@@ -945,6 +954,7 @@ def summarize_rubin_dp2_pdf(
     xvals: np.ndarray,
     yvals: np.ndarray,
     prefix: str,
+    dtype: str = "float32",
 ) -> dict[str, np.ndarray]:
     """Calculate the per-algorithm Rubin DP2 scalar photo-z contract."""
     statistics = summarize_piecewise_linear_pdf(xvals, yvals)
@@ -953,15 +963,16 @@ def summarize_rubin_dp2_pdf(
     best = risk_based_point_estimate(
         np.asarray(xvals, dtype=np.float64), safe_yvals, valid
     )
+    output_dtype = np.dtype(dtype)
     return {
-        f"{prefix}_z_mode": statistics["mode"].astype(np.float32),
-        f"{prefix}_z_mean": statistics["mean"].astype(np.float32),
-        f"{prefix}_z_median": statistics["median"].astype(np.float32),
-        f"{prefix}_z_best": best.astype(np.float32),
-        f"{prefix}_z_err68_low": statistics["err68_low"].astype(np.float32),
-        f"{prefix}_z_err68_high": statistics["err68_high"].astype(np.float32),
-        f"{prefix}_z_err95_low": statistics["err95_low"].astype(np.float32),
-        f"{prefix}_z_err95_high": statistics["err95_high"].astype(np.float32),
+        f"{prefix}_z_mode": statistics["mode"].astype(output_dtype),
+        f"{prefix}_z_mean": statistics["mean"].astype(output_dtype),
+        f"{prefix}_z_median": statistics["median"].astype(output_dtype),
+        f"{prefix}_z_best": best.astype(output_dtype),
+        f"{prefix}_z_err68_low": statistics["err68_low"].astype(output_dtype),
+        f"{prefix}_z_err68_high": statistics["err68_high"].astype(output_dtype),
+        f"{prefix}_z_err95_low": statistics["err95_low"].astype(output_dtype),
+        f"{prefix}_z_err95_high": statistics["err95_high"].astype(output_dtype),
     }
 
 
@@ -972,9 +983,10 @@ def summarize_pdf(
     include_95_interval: bool = False,
     summary_schema: str = "legacy",
     summary_method: str = "discrete",
+    summary_dtype: str = "float32",
 ) -> dict[str, np.ndarray]:
     if summary_schema == "rubin-dp2":
-        return summarize_rubin_dp2_pdf(xvals, yvals, prefix)
+        return summarize_rubin_dp2_pdf(xvals, yvals, prefix, summary_dtype)
 
     if summary_method == "piecewise-linear":
         statistics = summarize_piecewise_linear_pdf(xvals, yvals)
@@ -1269,6 +1281,7 @@ def write_summary_parts(
                 cfg.include_95_interval,
                 cfg.summary_schema,
                 cfg.summary_method,
+                cfg.summary_dtype,
             )
             propagated = {
                 name: dataset[start:stop]

@@ -28,9 +28,10 @@ def valid_frame():
             "objectId": [1, 2],
             "coord_ra": [10.0, 20.0],
             "coord_dec": [-10.0, 10.0],
+            "dnf_z_mode": [0.4, 1.4],
             "dnf_z_mean": [0.5, 1.5],
             "dnf_z_median": [0.5, 1.5],
-            "dnf_z_mode": [0.4, 1.4],
+            "dnf_z_best": [0.48, 1.48],
             "dnf_z_err68_low": [0.3, 1.3],
             "dnf_z_err68_high": [0.7, 1.7],
             "dnf_z_err95_low": [0.1, 1.1],
@@ -115,6 +116,16 @@ def test_stage2_cross_check_rejects_negative_and_all_nan_pdfs():
     assert all(np.isnan(values).all() for values in summary.values())
 
 
+def test_stage2_cross_check_reconstructs_risk_based_best():
+    validator = load_validator()
+    xvals = np.linspace(0.0, 2.0, 201)
+    yvals = np.exp(-0.5 * ((xvals - 0.73) / 0.04) ** 2)[None, :]
+
+    best = validator.risk_based_best(xvals, yvals)
+
+    assert abs(best[0] - 0.73) < 0.01
+
+
 def test_pdf_named_product_is_rejected(tmp_path):
     validator = load_validator()
     hats = tmp_path / "scalar-hats"
@@ -129,8 +140,9 @@ def test_stage3_runner_is_explicitly_scalar_only():
     submitter = (PROJECT / "scripts/submit-hats.sh").read_text()
     assert "--pdf-layout=none" in runner
     assert "--summary-prefix=dnf" in runner
+    assert "--summary-schema=rubin-dp2" in runner
+    assert "--summary-dtype=float64" in runner
     assert "--summary-method=piecewise-linear" in runner
-    assert "--include-95-interval" in runner
     assert "--require-complete-marker" in runner
     assert "--overwrite" not in runner
     assert "--delete-hdf5-outputs" not in runner
@@ -179,7 +191,7 @@ def test_validation_record_captures_publication_contract(tmp_path):
         "griz",
         {
             "rows": 12,
-            "columns": 11,
+            "columns": 12,
             "no_estimate_rows": 3,
             "margin_arcsec": 5.0,
         },
@@ -191,6 +203,7 @@ def test_validation_record_captures_publication_contract(tmp_path):
     assert document["columns"] == list(validator.SUMMARY_COLUMNS)
     assert document["science_dtype"] == "float64"
     assert document["summary_method"] == "piecewise-linear"
+    assert document["summary_schema"] == "rubin-dp2"
     assert document["pdf_layout"] == "none"
     assert document["no_photometry_policy"] == "nan"
     assert document["no_estimate_rows"] == 3

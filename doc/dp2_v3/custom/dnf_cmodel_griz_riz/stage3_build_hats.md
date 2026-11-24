@@ -7,15 +7,16 @@ column or companion PDF product is published. This is an explicit custom
 
 ## 1. Final schema and numeric policy
 
-Each collection contains exactly 11 top-level columns in this order:
+Each collection contains exactly 12 top-level columns in this order:
 
 ```text
 objectId
 coord_ra
 coord_dec
+dnf_z_mode
 dnf_z_mean
 dnf_z_median
-dnf_z_mode
+dnf_z_best
 dnf_z_err68_low
 dnf_z_err68_high
 dnf_z_err95_low
@@ -23,16 +24,18 @@ dnf_z_err95_high
 DNF_ZN
 ```
 
-The eight scientific columns are retained as `float64`. Scalar-only storage is
+The nine scientific columns are retained as `float64`. Scalar-only storage is
 small enough that reducing their precision is unnecessary. `objectId` and the
 coordinate types follow the DP2 Object input. The 68% interval is the
 16th/84th percentile pair and the 95% interval is the 2.5th/97.5th pair.
-Stage 3 passes `--summary-method=piecewise-linear`: normalization and the mean
-use trapezoidal integration, while the CDF uses the same trapezoidal segment
-areas and is inverted inside the selected interval. Consequently, quantiles
-are not restricted to the 601 grid nodes. The mode remains the node with
-maximum density. This opt-in numerical policy does not calculate `z_best`,
-does not change `DNF_ZN`, and does not alter the ordered schema above.
+Stage 3 passes `--summary-schema=rubin-dp2`, `--summary-dtype=float64`, and
+`--summary-method=piecewise-linear`. Normalization and the mean use trapezoidal
+integration, while the CDF uses the same trapezoidal segment areas and is
+inverted inside the selected interval. Consequently, quantiles are not
+restricted to the 601 grid nodes. The mode remains the node with maximum
+density. `dnf_z_best` minimizes the RAIL Tanaka risk with `gamma=0.15`, Simpson
+integration, and bounded optimization over `[0, 6]`. It does not change
+`DNF_ZN`, which remains the independent estimator ancillary value.
 
 ## 2. Submit both HATS builds
 
@@ -142,15 +145,16 @@ doc/dp2_v3/custom/dnf_cmodel_griz_riz/scripts/validate-hats.py all
 
 The validator:
 
-- requires the exact ordered 11-column schema and no nested columns;
-- requires `float64` for all eight scientific values;
-- scans every HATS row for valid coordinates and either eight finite science
+- requires the exact ordered 12-column schema and no nested columns;
+- requires `float64` for all nine scientific values;
+- scans every HATS row for valid coordinates and either nine finite science
   values or the approved all-`NaN` no-estimate pattern;
-- requires `0 <= z <= 6` for all seven PDF-derived summaries;
+- requires `0 <= z <= 6` for all eight PDF-derived summaries;
 - requires `z95_low <= z68_low <= median <= z68_high <= z95_high`;
-- independently recomputes a bounded cross-check of all seven summaries from
-  the Stage 2 PDFs using trapezoidal integration and continuous CDF inversion,
-  and matches them by `objectId`;
+- independently recomputes a bounded cross-check of all eight summaries from
+  the Stage 2 PDFs, using trapezoidal integration and continuous CDF inversion
+  for the distribution summaries and SciPy bounded risk minimization for
+  `dnf_z_best`, then matches them by `objectId`;
 - compares row counts, no-estimate counts, and finite `DNF_ZN` aggregates with
   Stage 2;
 - revalidates the Stage 2 production checksum contract;

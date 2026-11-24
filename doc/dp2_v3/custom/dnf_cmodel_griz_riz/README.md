@@ -16,7 +16,7 @@ The implementation boundary and backward-compatibility plan are recorded in
 The scientific request is defined. Generic band selection, copy-on-write-safe
 DNF non-detection handling, allow-listed `DNF_ZN` propagation, and Rubin-style
 scalar HATS summaries have local smoke coverage. The reviewed no-photometry
-policy preserves every row and writes `NaN` to all eight science fields when
+policy preserves every row and writes `NaN` to all nine science fields when
 no selected band is usable, without adding a flag column. Stage 1 has
 project-specific preparation, launchers, provenance wrappers, validation, and
 accepted Apollo resources. Stage 2 has smoke, pilot and production launchers
@@ -36,10 +36,12 @@ A local Stage 2 rehearsal with real Object photometry also validated both
 variants, including cModel SFD materialization, ANF estimation, normalized
 601-bin PDFs, row identity, and exact `DNF_ZN` propagation.
 
-Earlier local Stage 3 rehearsals produced two 11-column HATS collections and
-passed full scalar scans, interval ordering, Stage 2/HATS `DNF_ZN` aggregate
-comparison, and the no-PDF contract. Those artifacts predate the explicit
-piecewise-linear summary policy and must be rebuilt before publication.
+Earlier local Stage 3 rehearsals produced two 11-column HATS collections under
+the superseded contract; the approved product now has 12 columns including
+`dnf_z_best`. Those earlier collections passed full scalar scans, interval
+ordering, Stage 2/HATS `DNF_ZN` aggregate
+comparison, and the no-PDF contract. Those artifacts must be rebuilt for the
+approved schema before publication.
 
 ## Execution guides
 

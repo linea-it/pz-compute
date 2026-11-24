@@ -14,7 +14,7 @@ midpoint diagnostic are global. The latter reports the concentration of
 corresponding `DNF_ZN` concentration.
 
 The HATS scan starts a Dask `SLURMCluster` by default. Each catalog is opened
-with `lsdb.open_catalog()`, projected to the 11 required columns, and scanned
+with `lsdb.open_catalog()`, projected to the 12 required columns, and scanned
 once across all main-catalog partitions. Workers return only fixed-size
 histograms, counters, three 64-bit identifier fingerprints, and the small
 deterministic sample. The Stage 2 pass opens HDF5 files only to read persisted

@@ -192,6 +192,23 @@ def test_rubin_dp2_schema_has_continuous_summaries_and_float32_output():
     assert 0.0 <= summary["fzboost_z_best"][0] <= 1.0
 
 
+def test_rubin_dp2_schema_supports_float64_output():
+    builder = load_builder()
+    xvals = np.linspace(0.0, 1.0, 101)
+    yvals = np.ones((1, len(xvals)))
+
+    summary = builder.summarize_pdf(
+        xvals,
+        yvals,
+        prefix="dnf",
+        summary_schema="rubin-dp2",
+        summary_dtype="float64",
+    )
+
+    assert all(values.dtype == np.float64 for values in summary.values())
+    assert "dnf_z_best" in summary
+
+
 def test_rubin_dp2_best_tracks_a_narrow_pdf_peak():
     builder = load_builder()
     xvals = np.linspace(0.0, 2.0, 201)

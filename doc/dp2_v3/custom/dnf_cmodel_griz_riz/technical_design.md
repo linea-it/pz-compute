@@ -121,13 +121,13 @@ adapter permits undefined fitted parameters only on that mask and returns an
 all-`NaN` internal PDF row after validating every ordinary estimate.
 
 Before ancillary propagation, `rail-estimate` also masks internal `DNF_ZN` for
-the same rows. This produces `NaN` for all seven Stage 3 PDF-derived summaries
+the same rows. This produces `NaN` for all eight Stage 3 PDF-derived summaries
 and for delivered `DNF_ZN`, while retaining object identity, coordinates, row
 count, and order. No flag column is added. The default shared behavior remains
 `error`; the `nan` policy is explicit and requires stable DNF PDF generation.
 
 Stage 2 recomputes the mask from the source parquet and checks sampled PDFs,
-the complete `DNF_ZN` mask, and persisted counters. Stage 3 requires all eight
+the complete `DNF_ZN` mask, and persisted counters. Stage 3 requires all nine
 science fields to be `NaN` together for exactly the recorded no-estimate count
 and rejects partial nulls, infinities, or unapproved non-finite values.
 
@@ -143,14 +143,14 @@ The custom launcher requests only `DNF_ZN`.
 
 ### 6. Rubin-style scalar summary schema
 
-Extend `pz-build-hats` with explicit options for a summary prefix, the 95%
-interval, and an opt-in piecewise-linear summary method. With prefix `dnf`,
-the custom schema is:
+Use the Rubin-DP2 summary contract in `pz-build-hats`, with an explicit summary
+prefix and output dtype. With prefix `dnf`, the custom schema is:
 
 ```text
+dnf_z_mode
 dnf_z_mean
 dnf_z_median
-dnf_z_mode
+dnf_z_best
 dnf_z_err68_low
 dnf_z_err68_high
 dnf_z_err95_low
@@ -163,13 +163,15 @@ and 2.5th/97.5th percentiles for 95%. The custom build also passes
 `--pdf-layout=none`, so PDFs are read from Stage 2 to derive scalars but are not
 published in nested or companion form.
 
-The custom build passes `--summary-method=piecewise-linear`. The implementation
+The custom build passes `--summary-schema=rubin-dp2` and
+`--summary-dtype=float64`. The implementation
 uses trapezoidal integration for the normalization and mean, constructs the CDF
 from trapezoidal segment areas, and solves for each quantile inside its selected
-grid interval. It retains `float64`, the requested names and ordering, and does
-not calculate `z_best`. Ordinary PDF rows must be finite, non-negative, and
-have a finite positive trapezoidal integral; the approved all-`NaN` rows remain
-the only no-estimate representation.
+grid interval. It retains `float64` and the Rubin ordering. The risk-based
+`dnf_z_best` uses the RAIL Tanaka loss (`gamma=0.15`), Simpson integration, and
+a bounded, vectorized Brent search. Ordinary PDF rows must be finite,
+non-negative, and have a finite positive trapezoidal integral; the approved
+all-`NaN` rows remain the only no-estimate representation.
 
 Bound the computed mean to the closed PDF-grid support after its floating-point
 division. This removes only roundoff such as the next representable `float64`
@@ -189,7 +191,7 @@ Scripts below this project directory will own:
 - dedicated artifact roots for each variant;
 - explicit opt-in arguments to the generic capabilities;
 - smoke, pilot, production, and validation commands;
-- schema validation for the eight requested scientific columns;
+- schema validation for the nine requested scientific columns;
 - run records and PZ Server publication metadata.
 
 They will reuse the official DP2 environment, SFD coefficient file, Object
@@ -230,7 +232,7 @@ The implemented local increments have established:
 - exact Stage 2 row fingerprints and checksum-sealed manifest validation;
 - scalar-only Rubin-style HATS staging with finite, ordered estimated values
   and complete all-`NaN` no-estimate rows;
-- complete 11-column HATS builds with `float64` science values, no PDF
+- complete 12-column HATS builds with `float64` science values, no PDF
   artifacts, Stage 2/HATS `DNF_ZN` aggregate agreement, and sealed publication
   validation records;
 - an official-default six-band GAaP smoke retaining the `ugrizy` SFD marker

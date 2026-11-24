@@ -26,9 +26,10 @@ SUMMARY_COLUMNS = (
     "objectId",
     "coord_ra",
     "coord_dec",
+    "dnf_z_mode",
     "dnf_z_mean",
     "dnf_z_median",
-    "dnf_z_mode",
+    "dnf_z_best",
     "dnf_z_err68_low",
     "dnf_z_err68_high",
     "dnf_z_err95_low",
@@ -334,6 +335,36 @@ def piecewise_linear_summaries(
     return result
 
 
+def risk_based_best(xvals: np.ndarray, yvals: np.ndarray) -> np.ndarray:
+    """Independently reconstruct the RAIL Tanaka-risk point estimate."""
+    from scipy.integrate import simpson
+    from scipy.optimize import minimize_scalar
+
+    result = np.full(len(yvals), np.nan, dtype=np.float64)
+    for index, density in enumerate(np.asarray(yvals, dtype=np.float64)):
+        total = simpson(density, x=xvals)
+        if (
+            not np.isfinite(density).all()
+            or (density < 0).any()
+            or not np.isfinite(total)
+            or total <= 0
+        ):
+            continue
+
+        def risk(candidate: float) -> float:
+            residual = (candidate - xvals) / (0.15 * (1.0 + xvals))
+            loss = 1.0 - 1.0 / (1.0 + residual * residual)
+            return float(simpson(density * loss, x=xvals))
+
+        result[index] = minimize_scalar(
+            risk,
+            bounds=(float(xvals[0]), float(xvals[-1])),
+            method="bounded",
+            options={"xatol": 1e-5},
+        ).x
+    return result
+
+
 def bounded_pdf_mean(xvals: np.ndarray, yvals: np.ndarray) -> np.ndarray:
     return piecewise_linear_summaries(xvals, yvals)["mean"]
 
@@ -361,10 +392,12 @@ def stage2_scalar_sample(
             .to_numpy(zero_copy_only=False)[indices]
         )
         summaries = piecewise_linear_summaries(xvals, yvals)
+        best = risk_based_best(xvals, yvals)
         values = {
+            "dnf_z_mode": summaries["mode"],
             "dnf_z_mean": summaries["mean"],
             "dnf_z_median": summaries["median"],
-            "dnf_z_mode": summaries["mode"],
+            "dnf_z_best": best,
             "dnf_z_err68_low": summaries["err68_low"],
             "dnf_z_err68_high": summaries["err68_high"],
             "dnf_z_err95_low": summaries["err95_low"],
@@ -394,8 +427,13 @@ def validate_scalar_sample(
     for identifier, expected_values in expected.items():
         for name, expected_value in expected_values.items():
             actual_value = float(actual[identifier][name])
+            tolerance = 2e-5 if name == "dnf_z_best" else 1e-12
             if not np.isclose(
-                actual_value, expected_value, rtol=0, atol=1e-12, equal_nan=True
+                actual_value,
+                expected_value,
+                rtol=0,
+                atol=tolerance,
+                equal_nan=True,
             ):
                 raise ValueError(
                     f"{variant}: {name} differs for objectId={identifier}: "
@@ -555,7 +593,7 @@ def write_validation_record(root: Path, variant: str, result: dict) -> Path:
     if destination.exists() or temporary.exists():
         raise FileExistsError(f"refusing to overwrite validation record: {destination}")
     document = {
-        "schema_version": 3,
+        "schema_version": 4,
         "project": "dp2_v3p1_custom",
         "variant": variant,
         "collection": hats_dir(root, variant).name,
@@ -563,6 +601,7 @@ def write_validation_record(root: Path, variant: str, result: dict) -> Path:
         "rows": result["rows"],
         "columns": list(SUMMARY_COLUMNS),
         "science_dtype": "float64",
+        "summary_schema": "rubin-dp2",
         "summary_method": "piecewise-linear",
         "pdf_layout": "none",
         "no_photometry_policy": "nan",
