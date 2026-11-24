@@ -14,8 +14,16 @@ esac
 
 : "${PZ_RUN_ROOT:?source env-dp2-stage3-hats.sh first}"
 : "${PZ_PY:?source env-dp2-stage3-hats.sh first}"
+: "${PZ_COMPUTE_DIR:?source env-dp2-stage3-hats.sh first}"
 command -v sbatch >/dev/null
 command -v pz-build-hats >/dev/null
+
+command -v git >/dev/null || {
+    echo "git is required on the submission host to record provenance" >&2
+    exit 1
+}
+PZ_COMPUTE_REVISION=$(git -C "$PZ_COMPUTE_DIR" rev-parse HEAD)
+test -n "$PZ_COMPUTE_REVISION"
 
 scripts_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PZ_DP2_ROOT=${PZ_DP2_ROOT:-$PZ_RUN_ROOT/dp2-v3}
@@ -88,7 +96,7 @@ for algorithm in "${algorithms[@]}"; do
       --time="$PZ_HATS_DRIVER_TIME" \
       --output="$driver_log_dir/slurm-%j.out" \
       --error="$driver_log_dir/slurm-%j.err" \
-      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_DP2_ROOT="$PZ_DP2_ROOT",PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_STAGE3_RUN_TAG="$run_tag",PZ_HATS_MIN_WORKERS="$PZ_HATS_MIN_WORKERS",PZ_HATS_MAX_WORKERS="$PZ_HATS_MAX_WORKERS",PZ_HATS_SCALE_DOWN_DELAY="$PZ_HATS_SCALE_DOWN_DELAY",PZ_HATS_MARGIN_ARCSEC="$PZ_HATS_MARGIN_ARCSEC",PZ_HATS_WORKER_TIME="$PZ_HATS_WORKER_TIME" \
+      --export=ALL,PZ_ALGORITHM="$algorithm",PZ_DP2_ROOT="$PZ_DP2_ROOT",PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET",PZ_STAGE3_RUN_TAG="$run_tag",PZ_HATS_MIN_WORKERS="$PZ_HATS_MIN_WORKERS",PZ_HATS_MAX_WORKERS="$PZ_HATS_MAX_WORKERS",PZ_HATS_SCALE_DOWN_DELAY="$PZ_HATS_SCALE_DOWN_DELAY",PZ_HATS_MARGIN_ARCSEC="$PZ_HATS_MARGIN_ARCSEC",PZ_HATS_WORKER_TIME="$PZ_HATS_WORKER_TIME",PZ_COMPUTE_REVISION="$PZ_COMPUTE_REVISION" \
       "$scripts_dir/run-one-hats.sbatch")
     job_id=${job_id%%;*}
     printf '%s\t%s\t%s\t%s\n' \

@@ -126,6 +126,7 @@ def test_pdf_named_product_is_rejected(tmp_path):
 
 def test_stage3_runner_is_explicitly_scalar_only():
     runner = (PROJECT / "scripts/run-one-hats.sbatch").read_text()
+    submitter = (PROJECT / "scripts/submit-hats.sh").read_text()
     assert "--pdf-layout=none" in runner
     assert "--summary-prefix=dnf" in runner
     assert "--summary-method=piecewise-linear" in runner
@@ -133,6 +134,10 @@ def test_stage3_runner_is_explicitly_scalar_only():
     assert "--require-complete-marker" in runner
     assert "--overwrite" not in runner
     assert "--delete-hdf5-outputs" not in runner
+    assert 'printf \'git_commit=%s\\n\' "$PZ_COMPUTE_REVISION"' in runner
+    assert "git -C" not in runner
+    assert 'PZ_COMPUTE_REVISION=$(git -C "$PZ_COMPUTE_DIR" rev-parse HEAD)' in submitter
+    assert 'PZ_COMPUTE_REVISION="$PZ_COMPUTE_REVISION"' in submitter
 
 
 def test_delivery_qa_notebook_and_renderer_preserve_auditable_outputs():

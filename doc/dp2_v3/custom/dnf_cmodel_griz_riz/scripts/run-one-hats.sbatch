@@ -10,6 +10,7 @@ for name in PZ_CUSTOM_VARIANT PZ_DP2_ROOT PZ_DP2_CUSTOM_ROOT \
   PZ_HATS_WORKER_TIME PZ_COMPUTE_DIR PZ_PY; do
     test -n "${!name:-}" || { echo "missing $name" >&2; exit 1; }
 done
+: "${PZ_COMPUTE_REVISION:?missing PZ_COMPUTE_REVISION}"
 
 case "$PZ_CUSTOM_VARIANT" in griz|riz) ;; *) exit 2 ;; esac
 
@@ -43,7 +44,7 @@ mkdir -p "$benchmark_dir" "$worker_log_dir" "$driver_log_dir" \
     date --iso-8601=seconds
     hostname
     "$PZ_PY" --version
-    git -C "$PZ_COMPUTE_DIR" rev-parse HEAD
+    printf 'git_commit=%s\n' "$PZ_COMPUTE_REVISION"
     printf 'variant=%s\n' "$PZ_CUSTOM_VARIANT"
     printf 'pdf_layout=none\n'
     printf 'science_dtype=float64\n'

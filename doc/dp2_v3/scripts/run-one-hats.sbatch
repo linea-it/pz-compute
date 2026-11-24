@@ -12,6 +12,7 @@ set -o pipefail
 : "${PZ_HATS_MARGIN_ARCSEC:?missing PZ_HATS_MARGIN_ARCSEC}"
 : "${PZ_HATS_WORKER_TIME:?missing PZ_HATS_WORKER_TIME}"
 : "${PZ_COMPUTE_DIR:?missing PZ_COMPUTE_DIR}"
+: "${PZ_COMPUTE_REVISION:?missing PZ_COMPUTE_REVISION}"
 : "${PZ_PY:?missing PZ_PY}"
 command -v pz-build-hats >/dev/null
 
@@ -35,7 +36,7 @@ mkdir -p "$benchmark_dir" "$worker_log_dir" "$driver_log_dir" "$stage3_run/outpu
     date --iso-8601=seconds
     hostname
     "$PZ_PY" --version
-    git -C "$PZ_COMPUTE_DIR" rev-parse HEAD
+    printf 'git_commit=%s\n' "$PZ_COMPUTE_REVISION"
     printf 'margin_threshold_arcsec=%s\n' "$PZ_HATS_MARGIN_ARCSEC"
 } > "$benchmark_dir/run-context.log"
 printf '%s\n' "$worker_job_name" > "$benchmark_dir/worker-job-name.txt"
