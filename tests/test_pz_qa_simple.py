@@ -305,6 +305,8 @@ def test_v2_notebook_is_simple_and_has_stable_cell_ids():
     assert "columns_box" in text
     assert "result.describe" in text
     assert "plot_redshift_distributions" in text
+    assert "plt.show()" in text
+    assert "display(figure)" not in text
     assert "logo-linea" in text
     assert "execution_metadata_html" in text
     assert "### Acknowledgments" in text
