@@ -8,7 +8,8 @@ import pandas as pd
 
 
 ROOT = Path(__file__).parents[1]
-sys.path.insert(0, str(ROOT / "doc" / "notebooks"))
+NOTEBOOK_DIR = ROOT / "doc" / "notebooks" / "pz_compute_v1"
+sys.path.insert(0, str(NOTEBOOK_DIR))
 
 import pz_qa  # noqa: E402
 
@@ -51,7 +52,7 @@ def test_selection_report_is_derived_from_configuration():
 
 
 def test_all_shipped_selections_include_report_context():
-    for config_path in (ROOT / "doc" / "notebooks" / "config").glob("*.yaml"):
+    for config_path in (NOTEBOOK_DIR / "config").glob("*.yaml"):
         config = pz_qa.load_config(config_path)
         assert all(selection.get("description") for selection in config["selections"])
         assert config["cluster"]["minimum_jobs"] == 48
@@ -63,7 +64,7 @@ def test_all_shipped_selections_include_report_context():
 
 
 def test_general_qa_notebook_cells_have_stable_ids():
-    notebook_path = ROOT / "doc" / "notebooks" / "pz_compute_qa.ipynb"
+    notebook_path = NOTEBOOK_DIR / "pz_compute_qa.ipynb"
     notebook = json.loads(notebook_path.read_text())
     ids = [cell.get("id") for cell in notebook["cells"]]
     assert all(ids)
@@ -81,7 +82,7 @@ def test_main_catalog_row_count_comes_from_loaded_catalog_metadata():
 
 
 def test_dp2_v3_configs_open_collection_roots_without_pz_summary_suffix():
-    config_dir = ROOT / "doc" / "notebooks" / "config"
+    config_dir = NOTEBOOK_DIR / "config"
     for name in (
         "dp2-v3-fzboost.yaml",
         "dp2-v3-bpz.yaml",
@@ -91,7 +92,7 @@ def test_dp2_v3_configs_open_collection_roots_without_pz_summary_suffix():
         config = pz_qa.load_config(config_dir / name)
         assert Path(config["paths"]["summary_hats"]).name != "pz_summary"
 
-    source = (ROOT / "doc" / "notebooks" / "pz_qa.py").read_text()
+    source = (NOTEBOOK_DIR / "pz_qa.py").read_text()
     assert "lsdb.open_catalog(summary_path)" in source
     assert "lsdb.read_hats(summary_path)" not in source
 
@@ -281,7 +282,7 @@ def test_pdf_summaries_match_stage3_discrete_definitions():
 def test_dp2_v3_qa_configs_use_full_nested_layout():
     for algorithm in ("fzboost", "bpz", "dnf", "bpz-test"):
         config = pz_qa.load_config(
-            ROOT / "doc" / "notebooks" / "config" / f"dp2-v3-{algorithm}.yaml"
+            NOTEBOOK_DIR / "config" / f"dp2-v3-{algorithm}.yaml"
         )
         assert config["pdf"]["layout"] == "nested"
         assert config["metrics"]["max_pdf_partitions"] == 4

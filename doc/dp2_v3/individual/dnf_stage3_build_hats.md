@@ -51,8 +51,11 @@ production run.
 For the optional full-catalog science notebook QA, start Jupyter with:
 
 ```bash
-PZ_QA_CONFIG=doc/notebooks/config/dp2-v3-dnf.yaml jupyter lab
+PZ_QA_CONFIG=doc/notebooks/pz_compute_v2/config/dp2-v3-dnf.yaml jupyter lab
 ```
+
+Open `doc/notebooks/pz_compute_v2/pz_compute_qa.ipynb` for the lightweight,
+scalar-only HATS characterization.
 
 ## Profile the driver and Dask workers
 
