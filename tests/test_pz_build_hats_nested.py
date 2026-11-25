@@ -42,6 +42,46 @@ def test_nested_pdf_array_matches_dp1_struct_of_lists_schema():
     assert nested[1].as_py()["xvals"] == nested[0].as_py()["xvals"]
 
 
+@pytest.mark.parametrize("invalid", [None, "partial PDF", "finite summary"])
+def test_official_dnf_nested_sample_validates_no_estimate_rows(invalid):
+    import importlib.util
+    import pandas as pd
+
+    path = ROOT / "doc/dp2_v3/scripts/validate-hats.py"
+    spec = importlib.util.spec_from_file_location("official_hats_validator", path)
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    x = np.linspace(0, 6, 601)
+    y = np.vstack([np.exp(-0.5 * ((x - 1.5) / 0.2)**2), np.full(x.size, np.nan)])
+    stats = load_builder().summarize_pdf(x, y, prefix="dnf", summary_schema="rubin-dp2")
+    if invalid == "partial PDF":
+        y[1, 0] = 0
+    elif invalid == "finite summary":
+        stats["dnf_z_best"][1] = 0
+
+    frame = pd.DataFrame({
+        "objectId": [1, 2], "coord_ra": [1., 2.], "coord_dec": [0., 0.],
+        **stats, "i_gaap1p0Mag_sfd": [20., np.nan], "refExtendedness": [1., np.nan],
+        "dnf_ens_interp": [
+            {"xvals": x.astype(np.float32), "yvals": values.astype(np.float32)}
+            for values in y
+        ],
+    })
+
+    class Catalog:
+        columns = frame.columns
+        nested_columns = ["dnf_ens_interp"]
+
+        def __getitem__(self, columns):
+            return frame[columns]
+
+    if invalid is None:
+        assert validator.validate_nested_sample(Catalog(), "dnf") == 2
+    else:
+        with pytest.raises(AssertionError, match="non-finite values|non-NaN scalar"):
+            validator.validate_nested_sample(Catalog(), "dnf")
+
+
 def test_dp2_stage3_runner_builds_nested_only_algorithm_column():
     source = RUNNER.read_text(encoding="utf-8")
     submitter = SUBMITTER.read_text(encoding="utf-8")

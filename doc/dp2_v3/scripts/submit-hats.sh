@@ -73,6 +73,10 @@ for algorithm in "${algorithms[@]}"; do
         echo "$algorithm: expected $input_count Stage 2 outputs, found $output_count" >&2
         exit 1
     }
+    if [ "$algorithm" = dnf ]; then
+        PZ_DP2_ROOT="$PZ_DP2_ROOT" PZ_DP2_INPUT_DATASET="$PZ_DP2_INPUT_DATASET" \
+          "$PZ_PY" "$scripts_dir/validate-stage2.py" dnf
+    fi
 
     stage3_run=$PZ_DP2_ROOT/$algorithm/stage3
     if [ "$algorithm" = bpz_test ]; then

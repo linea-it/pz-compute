@@ -39,6 +39,13 @@ successful `qp.Ensemble` reconstruction for a bounded sample, the configured
 default margin catalog, and no leftover Parquet staging or duplicate companion
 PDF tree.
 
+The DNF submission also checks the full Stage 2 manifest for the current
+stable-PDF and no-photometry policies. In the HATS catalog, an object without
+usable photometry keeps its row and redshift grid, with all nested `yvals`
+and all eight scalar photo-z summaries set to `NaN`. The validator checks
+this pattern on sampled no-estimate rows, reconstructs the summaries for
+sampled finite PDFs, and rejects partially invalid PDFs in the sample.
+
 Stage 3 uses `--pdf-layout=nested`. The temporary Parquet staging is deleted
 automatically only after the HATS build succeeds. Stage 2 HDF5 outputs are
 retained through validation and profiling; the batch does not create the old

@@ -62,6 +62,13 @@ for algorithm in "${algorithms[@]}"; do
         echo "Model or config changed; rerun the $algorithm smoke test" >&2
         exit 1
     }
+    if [ "$algorithm" = dnf ]; then
+        "$PZ_PY" "$scripts_dir/validate-stage2.py" dnf \
+          --file "$run_dir/smoke/smoke-test.hdf5" --sfd-config "$PZ_SFD_CONFIG" || {
+            echo "Rerun the DNF smoke test with the current PDF policy" >&2
+            exit 1
+        }
+    fi
 done
 
 for algorithm in "${algorithms[@]}"; do

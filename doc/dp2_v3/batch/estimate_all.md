@@ -17,6 +17,13 @@ writes the algorithm-specific `smoke/READY` checksums. For official BPZ it also
 validates the 136-template tree and warms the AB cache before any concurrent
 array tasks can start.
 
+For DNF, the shared smoke and array launchers enable log-space Gaussian PDF
+evaluation and the `nan` no-photometry policy. The latter keeps objects
+without a usable magnitude–error pair in any of the six selected bands and
+stores an all-`NaN` PDF. The smoke and array validators check the persisted
+policy and report the counts of no-estimate rows and recovered legacy
+underflows.
+
 Failure of the smoke test stops the workflow without submitting a pilot.
 
 ## 2. Five-largest-shard pilot
@@ -56,6 +63,11 @@ walltime is merely close to its configured limit still advances: interpreting
 that headroom is a tuning decision that must already have been made in the
 individual workflow.
 
+The historical DNF pilot predates these PDF policies. Before using batch
+for DNF, review the runtime, memory, and quality counters from a
+[new individual pilot](../individual/dnf_stage2_estimate.md#2-run-and-profile-the-mandatory-five-file-pilot)
+with both protections enabled.
+
 ## 3. Complete production array
 
 Only after the pilot profile and validation pass does the controller submit the
@@ -79,9 +91,9 @@ $PZ_DP2_ROOT/<algorithm>/stage2/benchmark/production-<jobid>/
 $PZ_DP2_ROOT/<algorithm>/stage2/benchmark/live-production-<jobid>/
 ```
 
-It finally validates every expected HDF5 against the full manifest. Complete
-pilot outputs are recognized and skipped by their corresponding production
-array tasks, exactly as in the manual workflow.
+It finally validates every expected HDF5 against the full manifest. Production
+tasks reuse pilot outputs that pass the current Stage 2 checks. For DNF,
+those checks also require the current stable-PDF and no-photometry policies.
 
 ## 4. Result and failure boundary
 

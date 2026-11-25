@@ -115,10 +115,12 @@ for algorithm in "${algorithms[@]}"; do
     rm -f "$run_dir/smoke/READY"
 
     echo "Smoke test: $algorithm"
-    bpz_args=()
+    estimator_args=()
     if [ "$PZ_RAIL_ALGORITHM" = bpz ]; then
-        bpz_args+=(--bpz-ref-data-path="$PZ_BPZ_DATA_ROOT")
+        estimator_args+=(--bpz-ref-data-path="$PZ_BPZ_DATA_ROOT")
         echo "BPZ reference data: $PZ_BPZ_DATA_ROOT"
+    elif [ "$PZ_RAIL_ALGORITHM" = dnf ]; then
+        estimator_args+=(--dnf-stable-pdf --dnf-no-photometry-policy=nan)
     fi
 
     "$PZ_COMPUTE_DIR/rail_scripts/rail-estimate" \
@@ -134,35 +136,10 @@ for algorithm in "${algorithms[@]}"; do
       --column-template-error='{band}_gaap1p0MagErr_sfd' \
       --row-id-column=objectId \
       --output-columns=i_gaap1p0Mag_sfd,refExtendedness \
-      "${bpz_args[@]}"
+      "${estimator_args[@]}"
 
-    "$PZ_PY" - "$output" "$PZ_SFD_CONFIG" <<'PY'
-import h5py
-import numpy as np
-import sys
-import yaml
-
-with open(sys.argv[2], encoding="utf-8") as stream:
-    expected_sfd = yaml.safe_load(stream)["sfd_a_ebv"]
-
-with h5py.File(sys.argv[1], "r") as handle:
-    rows, bins = handle["data/yvals"].shape
-    assert bins == 601
-    assert handle["ancillary/i_gaap1p0Mag_sfd"].shape == (rows,)
-    assert handle["ancillary/refExtendedness"].shape == (rows,)
-    marker = handle["pz_compute"].attrs
-    assert bool(marker["complete"])
-    assert int(marker["row_count"]) == rows
-    assert marker["row_id_column"] == "objectId"
-    assert marker["sfd_bands"] == "ugrizy"
-    np.testing.assert_allclose(
-        marker["sfd_a_ebv"],
-        [expected_sfd[band] for band in "ugrizy"],
-        rtol=0,
-        atol=0,
-    )
-print("valid:", sys.argv[1], rows)
-PY
+    "$PZ_PY" "$scripts_dir/validate-stage2.py" "$algorithm" \
+      --file "$output" --sfd-config "$PZ_SFD_CONFIG"
     ready_files=("$model" "$PZ_ESTIMATE_CONFIG" "$PZ_SFD_CONFIG")
     if [ "$PZ_RAIL_ALGORITHM" = bpz ]; then
         mapfile -t bpz_reference_files < <(

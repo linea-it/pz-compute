@@ -10,6 +10,9 @@ cd "$PZ_COMPUTE_DIR"
 doc/dp2_v3/scripts/submit-hats.sh dnf
 ```
 
+Submission checks the full Stage 2 manifest and requires the stable-PDF and
+no-photometry policy counters on each DNF HDF5 file.
+
 The default Dask cluster starts with one requested worker and scales adaptively
 up to 80. Each worker requests 2 CPUs, 40 GiB, and 12 hours; idle workers become
 eligible for scale-down after approximately 180 seconds. There is no
@@ -41,7 +44,10 @@ values. Definitions and column ordering are documented in the
 [DP2 v3 overview](../README.md). The validator opens it with LSDB,
 reconstructs a small `qp.Ensemble`, checks PDF health and reconstructed
 summaries, and compares the HATS and Stage 2 row counts without a full PDF
-scan.
+scan. A DNF object without usable photometry keeps its row and grid. Its
+nested `yvals` and all eight scalar photo-z summaries are `NaN`. The
+validator checks this pattern for sampled no-estimate rows and reconstructs
+the summaries from the sampled finite PDFs.
 
 Successful construction removes `<hats_dir>.parquet_staging/` automatically
 and does not create a duplicate `<hats_dir>.pdf/` companion. Keep the Stage 2
@@ -55,7 +61,9 @@ PZ_QA_CONFIG=doc/notebooks/pz_compute_v2/config/dp2-v3-dnf.yaml jupyter lab
 ```
 
 Open `doc/notebooks/pz_compute_v2/pz_compute_qa.ipynb` for the lightweight,
-scalar-only HATS characterization.
+scalar-only HATS characterization. The supplied YAML uses the shared
+spectroscopic test set. See the [QA configuration](../../notebooks/pz_compute_v2/README.md#optional-spectroscopic-comparison)
+to set its location or disable the comparison.
 
 ## Profile the driver and Dask workers
 

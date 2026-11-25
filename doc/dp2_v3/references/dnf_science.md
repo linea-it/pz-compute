@@ -71,6 +71,13 @@ errors from the Object catalog using the versioned LSSTCam coefficients in
 [`dp2-v3-sfd-lsstcam.yaml`](../config/dp2-v3-sfd-lsstcam.yaml):
 `[4.78, 3.65, 2.70, 2.06, 1.58, 1.31]` in `ugrizy` order.
 
+The LIneA six-band DNF workflow enables log-space Gaussian evaluation and
+trapezoidal normalization on the same redshift grid. It retains objects with
+no usable selected-band magnitude–error pair before non-detection replacement
+and writes an all-`NaN` PDF and all-`NaN` PDF-derived summaries for them.
+The Stage 2 metadata records the policy, the count of such rows, and the
+count of PDFs recovered from legacy all-zero underflow.
+
 ## Trusted reference artifact
 
 The trusted PZ Server product is

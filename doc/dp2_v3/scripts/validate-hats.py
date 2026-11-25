@@ -112,7 +112,18 @@ def validate_nested_sample(catalog, algorithm: str) -> int:
     grid = xvals[0].astype(np.float64)
     matrix = np.stack(yvals).astype(np.float64)
     assert np.isfinite(grid).all() and np.all(np.diff(grid) > 0), algorithm
-    assert np.isfinite(matrix).all(), algorithm
+    sampled_rows = len(sample)
+    if algorithm == "dnf":
+        no_estimate = np.isnan(matrix).all(axis=1)
+        summaries = sample[science_columns(algorithm)].to_numpy(dtype=float, na_value=np.nan)
+        assert np.isnan(summaries[no_estimate]).all(), (
+            "dnf: a no-estimate PDF has a non-NaN scalar summary"
+        )
+        sample = sample.loc[~no_estimate]
+        matrix = matrix[~no_estimate]
+        if not len(matrix):
+            return sampled_rows
+    assert np.isfinite(matrix).all(), f"{algorithm}: non-finite values in an estimated PDF"
     assert np.all(matrix >= 0), algorithm
     totals = matrix.sum(axis=1)
     assert np.all(totals > 0), algorithm
@@ -155,7 +166,7 @@ def validate_nested_sample(catalog, algorithm: str) -> int:
             ).x
         )
     assert np.allclose(best, expected_best, rtol=0, atol=2e-5), algorithm
-    return len(sample)
+    return sampled_rows
 
 
 def validate(root: Path, input_root: Path, algorithm: str) -> None:
@@ -170,7 +181,7 @@ def validate(root: Path, input_root: Path, algorithm: str) -> None:
     pdf_dir = Path(f"{hats_dir}.pdf")
     staging = Path(f"{hats_dir}.parquet_staging")
 
-    catalog = lsdb.open_catalog(hats_dir)
+    catalog = lsdb.open_catalog(hats_dir, columns="all")
     expected_margin = float(
         os.environ.get("PZ_HATS_MARGIN_ARCSEC", DEFAULT_MARGIN_ARCSEC)
     )

@@ -3,6 +3,15 @@
 This is the canonical individual path for official six-band DP2 DNF. The run
 stays under `$PZ_DP2_ROOT/dnf/stage2/`.
 
+The smoke, pilot, and full array use `--dnf-stable-pdf` and
+`--dnf-no-photometry-policy=nan`. The estimator evaluates the Gaussian
+relative to its peak in log-space and normalizes it on the existing 601-point
+grid. This recovers PDFs that would otherwise underflow to zero across the
+grid. A row with no usable magnitude–error pair in any of the six selected
+bands before non-detection replacement keeps its object ID and receives an
+all-`NaN` PDF. Stage 2 records the counts of no-estimate rows and recovered
+legacy underflows. The ANF fit and model configuration are the same.
+
 ## 1. Check the model and run the smoke test
 
 ```bash
@@ -17,8 +26,9 @@ PZ_SMOKE_ROWS=10000 doc/dp2_v3/scripts/smoke-estimates.sh dnf
 ```
 
 The smoke path projects 10,000 rows, materializes the reviewed LSSTCam SFD
-columns, runs DNF with the versioned configuration, and writes model, YAML,
-and SFD-configuration checksums to
+columns, runs DNF with the versioned configuration, validates the persisted
+PDF and photometry policy counters, and writes model, YAML, and SFD-configuration
+checksums to
 `$PZ_DP2_ROOT/dnf/stage2/smoke/READY`.
 
 ## 2. Run and profile the mandatory five-file pilot
@@ -67,8 +77,10 @@ performance/slurm/slurm-profile \
   --fail-on-unsuccessful
 
 cat "$stage2/benchmark/pilot-$pilot_jobid/summary.log"
+doc/dp2_v3/scripts/validate-stage2.py dnf --manifest "$pilot_manifest"
 ```
 
+The historical pilot predates the stable-PDF and no-estimate policies.
 Pilot array job `217097` completed all five largest shards. Its maximum RSS was
 28.57 GiB, its longest task took 56 minutes 26 seconds, and aggregate CPU use
 was 0.994 logical CPU per running task. The resulting defaults are 82
@@ -80,7 +92,8 @@ intentionally leaves coexistence headroom. See
 [`dnf_runs.md`](../references/dnf_runs.md) for the measurements and capacity
 calculation. Override `PZ_DNF_MAX_CONCURRENT`, `PZ_DNF_MEMORY`, and
 `PZ_DNF_TIME` only when newer pilot evidence or a different partition supports
-a change.
+a change. Check the new pilot's runtime, memory, and DNF quality counters
+before submitting the full array.
 
 ## 3. Submit and profile the complete catalog
 
@@ -149,7 +162,9 @@ $PZ_DP2_ROOT/dnf/stage2/
 └── submitted-job-ids.tsv
 ```
 
-Complete HDF5 files are validated and skipped on resubmission. The scientific
+Complete HDF5 files that pass the current policy checks are skipped on
+resubmission, including the five pilot files. Incompatible files are moved
+aside before being recomputed. The scientific
 feature, neighbor, PDF, missing-data, and version contracts are documented in
 [`dnf_science.md`](../references/dnf_science.md).
 
