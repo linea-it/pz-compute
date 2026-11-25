@@ -7,6 +7,7 @@ histograms for the complete catalog and optional filtered samples.
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from html import escape
@@ -179,15 +180,25 @@ def start_cluster(config: dict):
                     "job_extra_directives", ["--propagate"]
                 ),
             )
-            cluster.adapt(
-                minimum_jobs=settings.get("minimum_jobs", 4),
-                maximum_jobs=settings.get("maximum_jobs", 16),
-            )
-            client = Client(cluster)
-            client.wait_for_workers(
-                settings.get("minimum_jobs", 4),
-                timeout=settings.get("wait_timeout", 300),
-            )
+            client = None
+            try:
+                cluster.adapt(
+                    minimum_jobs=settings.get("minimum_jobs", 4),
+                    maximum_jobs=settings.get("maximum_jobs", 16),
+                )
+                client = Client(cluster)
+                client.wait_for_workers(
+                    settings.get("minimum_jobs", 4),
+                    timeout=settings.get("wait_timeout", 300),
+                )
+            except BaseException:
+                # Preserve the startup error while cleaning up submitted jobs.
+                if client is not None:
+                    with suppress(Exception):
+                        client.close()
+                with suppress(Exception):
+                    cluster.close()
+                raise
     elif cluster_type == "existing":
         address = settings.get("scheduler_address") or os.environ.get(
             "DASK_SCHEDULER_ADDRESS"

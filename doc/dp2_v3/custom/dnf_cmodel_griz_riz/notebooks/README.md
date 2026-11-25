@@ -44,7 +44,7 @@ qa_summary.json               # machine-readable aggregate QA record
 SHA256SUMS                    # checksums for the three delivery artifacts
 ```
 
-The default SLURM profile starts 48 adaptive workers and can scale to 96, with
+The default SLURM profile waits for 16 workers and can scale to 48, with
 two cores, one process, 40 GiB, and one hour per worker in `cpu_photoz`. These
 settings can be overridden before rendering:
 

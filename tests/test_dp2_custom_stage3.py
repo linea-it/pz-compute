@@ -163,8 +163,8 @@ def test_delivery_qa_notebook_and_renderer_preserve_auditable_outputs():
     assert "dp2_clean_test_set.parquet" in rendered_text
     assert '"Flag 4": (4,), "Flags 3 and 4": (3, 4)' in rendered_text
     assert "PZ_QA_DASK_CLUSTER" in rendered_text
-    assert 'PZ_QA_DASK_MINIMUM_JOBS\", \"48' in rendered_text
-    assert 'PZ_QA_DASK_MAXIMUM_JOBS\", \"96' in rendered_text
+    assert 'PZ_QA_DASK_MINIMUM_JOBS\", \"16' in rendered_text
+    assert 'PZ_QA_DASK_MAXIMUM_JOBS\", \"48' in rendered_text
     assert 'PZ_QA_DASK_CORES\", \"2' in rendered_text
     assert 'PZ_QA_DASK_MEMORY\", \"40GiB' in rendered_text
     assert 'os.environ.get(\"PZ_QA_DASK_INTERFACE\") or None' in rendered_text

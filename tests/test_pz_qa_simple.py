@@ -9,6 +9,7 @@ from datetime import datetime
 import dask.dataframe as dd
 import numpy as np
 import pandas as pd
+import pytest
 
 
 ROOT = Path(__file__).parents[1]
@@ -312,6 +313,35 @@ def test_slurm_startup_suppresses_only_known_distributed_warnings(monkeypatch):
         )
 
     assert captured == []
+
+
+def test_slurm_startup_timeout_closes_client_and_cluster(monkeypatch):
+    qa = load_simple_qa()
+    closed = []
+    cluster = SimpleNamespace(
+        adapt=lambda **kwargs: None,
+        close=lambda: closed.append("cluster"),
+    )
+
+    def wait_for_workers(workers, timeout):
+        assert (workers, timeout) == (16, 600)
+        raise TimeoutError("workers did not arrive")
+
+    client = SimpleNamespace(
+        wait_for_workers=wait_for_workers,
+        close=lambda: closed.append("client"),
+    )
+    monkeypatch.setitem(
+        sys.modules, "dask_jobqueue", SimpleNamespace(SLURMCluster=lambda **kwargs: cluster)
+    )
+    monkeypatch.setattr(qa, "Client", lambda _: client)
+
+    with pytest.raises(TimeoutError, match="workers did not arrive"):
+        qa.start_cluster({
+            "cluster": {"type": "slurm", "minimum_jobs": 16, "maximum_jobs": 48, "wait_timeout": 600}
+        })
+
+    assert closed == ["client", "cluster"]
 
 
 def test_v2_notebook_is_simple_and_has_stable_cell_ids():
