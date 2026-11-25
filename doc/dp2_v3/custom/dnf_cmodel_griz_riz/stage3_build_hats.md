@@ -57,6 +57,26 @@ all destinations before submitting either driver. It refuses to overwrite a
 HATS catalog, staging directory, PDF-named product, validation record, or
 completion marker.
 
+### Rebuild an existing 11-column product
+
+The HATS collection name is the same across schema versions. A collection
+with 11 columns was built under the previous contract and must be rebuilt
+to include `dnf_z_best`. Check that the launcher in `$PZ_COMPUTE_DIR` contains
+`--summary-schema=rubin-dp2` and `--summary-dtype=float64`. To check which
+revision built an existing product, see `git_commit` in the corresponding
+`stage3/benchmark/<run-tag>/run-context.log` and the column list in
+`stage3/production/VALIDATION.json`.
+
+After confirming the affected variant has no running Stage 3 jobs, move
+its entire `stage3/` directory to a new backup location. This preserves the
+old HATS, validation record, and logs together and clears the destinations
+checked by the launcher. Then run `submit-hats.sh griz`, `submit-hats.sh riz`,
+or `submit-hats.sh all` for the affected variants. The rebuild reuses the
+validated Stage 2 PDFs. Once it completes, confirm that the new
+`VALIDATION.json` lists `dnf_z_best` before rendering QA.
+
+### Worker sizing and output locations
+
 The conservative initial worker shape matches the proven official HATS
 allocation: one initial worker, adaptive scaling to 80, two CPUs, 40 GiB, and
 12 hours per worker. Scalar-only construction is expected to be lighter, so
