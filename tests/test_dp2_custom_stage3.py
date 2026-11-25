@@ -160,9 +160,8 @@ def test_delivery_qa_notebook_and_renderer_preserve_auditable_outputs():
     renderer = QA_RENDERER.read_text(encoding="utf-8")
 
     assert notebook["nbformat"] == 4
-    assert "representative external reference sample" in rendered_text
-    assert "legacy_gaussian_all_zero_rows" in rendered_text
-    assert "no_usable_selected_band_rows" in rendered_text
+    assert "dp2_clean_test_set.parquet" in rendered_text
+    assert '"Flag 4": (4,), "Flags 3 and 4": (3, 4)' in rendered_text
     assert "PZ_QA_DASK_CLUSTER" in rendered_text
     assert 'PZ_QA_DASK_MINIMUM_JOBS\", \"48' in rendered_text
     assert 'PZ_QA_DASK_MAXIMUM_JOBS\", \"96' in rendered_text
@@ -171,11 +170,9 @@ def test_delivery_qa_notebook_and_renderer_preserve_auditable_outputs():
     assert 'os.environ.get(\"PZ_QA_DASK_INTERFACE\") or None' in rendered_text
     assert all(cell.get("id") for cell in notebook["cells"])
     assert "start_cluster" in rendered_text
-    assert "identifier multiset fingerprints" in rendered_text
-    assert "global scan" in rendered_text
-    assert "PDF-grid midpoint concentration" in rendered_text
-    assert "midpoint_width68_sum" in rendered_text
-    assert "DNF_ZN also near 3 fraction" in rendered_text
+    assert 'HIST_COLUMNS = ("dnf_z_best", "DNF_ZN")' in rendered_text
+    assert "NMAD" in rendered_text
+    assert "overflow-y:auto" in rendered_text
     assert "to_dask_dataframe" in rendered_text
     assert "qa_summary.json" in rendered_text
     assert "--execute" in renderer

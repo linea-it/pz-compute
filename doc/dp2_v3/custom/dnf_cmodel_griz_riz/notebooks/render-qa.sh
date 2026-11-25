@@ -5,7 +5,6 @@ set -euo pipefail
 : "${PZ_COMPUTE_DIR:?source env-dp2-stage3-hats.sh first}"
 : "${PZ_DP2_ROOT:?set PZ_DP2_ROOT first}"
 : "${PZ_DP2_CUSTOM_ROOT:?set PZ_DP2_CUSTOM_ROOT first}"
-: "${PZ_DP2_INPUT_DATASET:?set PZ_DP2_INPUT_DATASET first}"
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source_notebook=$script_dir/dnf_cmodel_griz_riz_qa.ipynb
