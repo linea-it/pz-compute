@@ -77,7 +77,7 @@ def test_filters_support_equality_and_numeric_bounds():
     assert qa._selection_mask(frame, selection).tolist() == [True, False, False, False]
 
 
-def test_simple_qa_never_projects_nested_columns(monkeypatch):
+def test_simple_qa_never_projects_nested_columns(monkeypatch, tmp_path):
     qa = load_simple_qa()
     frame = pd.DataFrame(
         {
@@ -215,6 +215,26 @@ def test_simple_qa_never_projects_nested_columns(monkeypatch):
     }
     assert opened[0]["columns"] == "all"
     assert opened[1]["columns"] == catalog.projections[0]
+
+    reference = tmp_path / "test.parquet"
+    pd.DataFrame({
+        "objectId": frame["objectId"].iloc[[0, 0, 1, 2, 3]].to_numpy(),
+        "redshift": [1.2, 0.2, 0.8, 1.3, 1.6],
+        "instrument_type_homogenized": ["s", "s", "s", "s", "g"],
+        "z_flag_homogenized": [3, 4, 3, 4, 4],
+    }).to_parquet(reference)
+    filtered_config["paths"] = {**config["paths"], "spectroscopic_test_set": str(reference)}
+    compared = qa.run_qa(filtered_config)
+    metrics = compared.spectroscopic_metrics
+    assert metrics["matched in HATS"].tolist() == [2, 3]
+    assert metrics["finite photo-z"].tolist() == [1, 2]
+    assert metrics["median bias"].tolist() == [0.0, 0.0]
+    assert compared.spectroscopic_pairs["Flag 4"].index[0] == frame["objectId"].iloc[0]
+    assert compared.redshift_histograms["all"].sum() == 3
+    assert "fzboost_ens_interp" not in catalog.projections[-1]
+    figure, axes = qa.plot_spectroscopic_comparison(compared)
+    assert len(axes) == 2
+    qa.plt.close(figure)
 
 
 def test_describe_column_filter_is_case_insensitive():

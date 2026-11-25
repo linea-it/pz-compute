@@ -78,6 +78,27 @@ Multiple filters use logical AND. Lower bounds are inclusive and upper bounds
 are exclusive. At least one unfiltered selection is required for the global
 distribution.
 
+### Optional spectroscopic comparison
+
+The supplied DP2 YAMLs enable two side-by-side plots of the configured
+`redshift.column` versus the spectroscopic redshift, using the shared test set
+under `common/validation/`. Set `paths.spectroscopic_test_set: null` to skip
+this section, or override the path for a different environment:
+
+```yaml
+paths:
+  spectroscopic_test_set: ${PZ_DP2_ROOT}/common/validation/dp2_clean_test_set.parquet
+```
+
+Use a test set matched by `objectId` to the same Object catalog and excluded
+from the estimator's training set. The notebook uses spectroscopy (instrument
+type `s`) and reports flag 4 alone and flags 3+4 together. For repeat
+measurements, it keeps the highest flag, takes the median for measurements
+whose normalized spread is at most 0.001, and excludes conflicting objects.
+The table reports sample sizes, median normalized residual, NMAD, and
+outlier fraction. The optional CSV export also writes
+`spectroscopic-metrics.csv`.
+
 Set `paths.report_dir` to write `schema.csv`, `describe.csv`,
 `selection-counts.csv`, `redshift-histograms.csv`, and `summary.json`.
 

@@ -39,6 +39,8 @@ class QAResult:
     selection_counts: pd.DataFrame
     redshift_edges: np.ndarray
     redshift_histograms: dict[str, np.ndarray]
+    spectroscopic_metrics: pd.DataFrame | None = None
+    spectroscopic_pairs: dict[str, pd.DataFrame] | None = None
 
 
 def load_config(path: str | Path) -> dict:
@@ -51,7 +53,7 @@ def load_config(path: str | Path) -> dict:
 
     config["_config_path"] = str(path)
     paths = config.setdefault("paths", {})
-    for key in ("summary_hats", "report_dir"):
+    for key in ("summary_hats", "report_dir", "spectroscopic_test_set"):
         value = paths.get(key)
         if value:
             expanded = Path(os.path.expandvars(os.path.expanduser(str(value))))
@@ -334,6 +336,53 @@ def _describe_columns(config: dict, numeric_columns: list[str]) -> list[str]:
     ]
 
 
+def _spectroscopic_samples(path: str | Path) -> dict[str, pd.Series]:
+    reference = pd.read_parquet(
+        path, columns=["objectId", "redshift", "instrument_type_homogenized", "z_flag_homogenized"]
+    )
+    valid = reference.loc[
+        reference["instrument_type_homogenized"].eq("s")
+        & reference["objectId"].notna()
+        & np.isfinite(reference["redshift"])
+        & (reference["redshift"] >= 0)
+    ]
+    samples = {}
+    for label, flags in (("Flag 4", (4,)), ("Flags 3 + 4", (3, 4))):
+        selected = valid.loc[valid["z_flag_homogenized"].isin(flags)]
+        best_flag = selected.groupby("objectId")["z_flag_homogenized"].transform("max")
+        best = selected.loc[selected["z_flag_homogenized"].eq(best_flag)]
+        redshifts = best.groupby("objectId")["redshift"].agg(["min", "max", "median"])
+        agrees = (redshifts["max"] - redshifts["min"]) <= 0.001 * (1 + redshifts["median"])
+        samples[label] = redshifts.loc[agrees, "median"].rename("z_spec")
+    return samples
+
+
+def _spectroscopic_matches(frame, ids, redshift_column):
+    return frame.loc[frame["objectId"].isin(ids), ["objectId", redshift_column]]
+
+
+def _compare_spectroscopy(samples, matches, redshift_column):
+    predictions = matches.set_index("objectId")[redshift_column].rename("z_phot")
+    pairs = {}
+    metrics = []
+    for label, reference in samples.items():
+        matched = reference.to_frame().join(predictions, how="inner", validate="one_to_one")
+        finite = np.isfinite(matched["z_phot"].to_numpy(dtype=float, na_value=np.nan))
+        pairs[label] = matched.loc[finite]
+        dz = (pairs[label]["z_phot"] - pairs[label]["z_spec"]) / (1 + pairs[label]["z_spec"])
+        bias = float(dz.median()) if len(dz) else np.nan
+        metrics.append({
+            "selection": label,
+            "reference objects": len(reference),
+            "matched in HATS": len(matched),
+            "finite photo-z": len(dz),
+            "median bias": bias,
+            "NMAD": 1.4826 * float((dz - bias).abs().median()) if len(dz) else np.nan,
+            "outlier fraction": float((dz.abs() > 0.15).mean()) if len(dz) else np.nan,
+        })
+    return pd.DataFrame(metrics).set_index("selection"), pairs
+
+
 def run_qa(config: dict) -> QAResult:
     """Run scalar-only HATS characterization without projecting PDF columns."""
     catalog = lsdb.open_catalog(config["paths"]["summary_hats"], columns="all")
@@ -345,6 +394,9 @@ def run_qa(config: dict) -> QAResult:
     redshift_column = str(config["redshift"]["column"])
     selection_columns = _selection_columns(config["selections"])
     required = {redshift_column, *selection_columns}
+    reference_path = config["paths"].get("spectroscopic_test_set")
+    if reference_path:
+        required.add("objectId")
     missing = sorted(required - set(scalar_columns))
     if missing:
         raise KeyError(f"Missing scalar HATS columns: {missing}")
@@ -363,6 +415,8 @@ def run_qa(config: dict) -> QAResult:
         raise ValueError("No numeric scalar columns matched the describe configuration")
 
     histogram_columns = list(dict.fromkeys([redshift_column, *selection_columns]))
+    if reference_path and "objectId" not in histogram_columns:
+        histogram_columns.append("objectId")
     projected = set(describe_columns) | set(histogram_columns)
     projected_columns = [name for name in scalar_columns if name in projected]
     # Reopen with an explicit physical projection. Selecting columns only after
@@ -388,18 +442,33 @@ def run_qa(config: dict) -> QAResult:
     bins = int(config["redshift"]["bins"])
     edges = np.linspace(z_min, z_max, bins + 1, dtype=np.float64)
     histogram_ddf = scalar_ddf[histogram_columns]
+    histogram_parts = histogram_ddf.to_delayed()
     histogram_tasks = [
         delayed(_histogram_partition)(
             partition, config["selections"], redshift_column, edges
         )
-        for partition in histogram_ddf.to_delayed()
+        for partition in histogram_parts
     ]
     histogram_task = _tree_reduce(histogram_tasks, config["selections"])
     # Dask DataFrame expressions and delayed reductions use different graph
     # representations. Compute them separately to avoid materializing a mixed
     # graph on the client.
     describe_raw = describe_task.compute()
-    histogram_result = dask.compute(histogram_task)[0]
+    spectroscopic_metrics = spectroscopic_pairs = None
+    if reference_path:
+        samples = _spectroscopic_samples(reference_path)
+        ids = samples["Flag 4"].index.union(samples["Flags 3 + 4"].index).to_numpy()
+        match_tasks = [
+            delayed(_spectroscopic_matches)(part, ids, redshift_column)
+            for part in histogram_parts
+        ]
+        histogram_result, *matches = dask.compute(histogram_task, *match_tasks)
+        matched = pd.concat(matches, ignore_index=True) if matches else histogram_ddf._meta
+        spectroscopic_metrics, spectroscopic_pairs = _compare_spectroscopy(
+            samples, matched, redshift_column
+        )
+    else:
+        histogram_result = dask.compute(histogram_task)[0]
 
     describe = describe_raw.T
     describe.insert(1, "null", row_count - describe["count"])
@@ -439,6 +508,8 @@ def run_qa(config: dict) -> QAResult:
         selection_counts=pd.DataFrame(count_rows).set_index("sample"),
         redshift_edges=edges,
         redshift_histograms=histograms,
+        spectroscopic_metrics=spectroscopic_metrics,
+        spectroscopic_pairs=spectroscopic_pairs,
     )
 
 
@@ -511,6 +582,22 @@ def plot_redshift_distributions(result: QAResult):
     return figure, axes
 
 
+def plot_spectroscopic_comparison(result: QAResult):
+    """Plot the configured photo-z estimate against the spectroscopic reference."""
+    pairs = result.spectroscopic_pairs
+    fig, axes = plt.subplots(1, len(pairs), figsize=(9, 4.5), layout="constrained")
+    combined = pd.concat(pairs.values())
+    lower = min(0.0, combined["z_phot"].min()) if len(combined) else 0.0
+    upper = max(0.1, combined.max().max()) if len(combined) else 6.0
+    for ax, (label, sample) in zip(axes, pairs.items()):
+        ax.scatter(sample["z_spec"], sample["z_phot"], s=5, alpha=0.3, rasterized=True)
+        ax.plot([lower, upper], [lower, upper], color="0.5", linewidth=1)
+        ax.set(xlim=(lower, upper), ylim=(lower, upper), xlabel="Spectroscopic redshift",
+               ylabel=result.config["redshift"]["column"], title=f"{label} (N={len(sample):,})")
+        ax.set_aspect("equal", adjustable="box")
+    return fig, axes
+
+
 def write_report(result: QAResult) -> Path | None:
     """Write compact CSV/JSON tables when paths.report_dir is configured."""
     destination_value = result.config.get("paths", {}).get("report_dir")
@@ -521,6 +608,8 @@ def write_report(result: QAResult) -> Path | None:
     result.schema.to_csv(destination / "schema.csv")
     result.describe.to_csv(destination / "describe.csv")
     result.selection_counts.to_csv(destination / "selection-counts.csv")
+    if result.spectroscopic_metrics is not None:
+        result.spectroscopic_metrics.to_csv(destination / "spectroscopic-metrics.csv")
 
     histogram = pd.DataFrame(
         {

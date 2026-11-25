@@ -7,6 +7,7 @@ run:
 paths:
   summary_hats: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/fzboost/stage3/output/pz-fzboost-gaap1p0-clipped-hats
   report_dir: null
+  spectroscopic_test_set: /scratch/users/app.photoz/pz-compute-runs/dp2-v3/common/validation/dp2_clean_test_set.parquet
 
 redshift:
   column: fzboost_z_best
