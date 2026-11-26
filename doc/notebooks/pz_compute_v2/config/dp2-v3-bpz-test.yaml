@@ -16,6 +16,10 @@ redshift:
   maximum: 6.0
   bins: 120
 
+spectroscopic_plot:
+  minimum: 0.0
+  maximum: 2.0
+
 describe:
   percentiles: [0.25, 0.50, 0.75]
 

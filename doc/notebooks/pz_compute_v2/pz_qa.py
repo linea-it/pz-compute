@@ -22,6 +22,7 @@ from dask import delayed
 from dask.distributed import Client, LocalCluster
 import lsdb
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
@@ -77,6 +78,9 @@ def load_config(path: str | Path) -> dict:
         raise ValueError("redshift.minimum must be smaller than redshift.maximum")
     if bins < 1:
         raise ValueError("redshift.bins must be positive")
+
+    spec_plot = config.setdefault("spectroscopic_plot", {})
+    spec_plot["minimum"], spec_plot["maximum"] = spectroscopic_plot_limits(**spec_plot)
 
     selections = config.setdefault(
         "selections", [{"name": "all", "label": "All objects"}]
@@ -593,19 +597,45 @@ def plot_redshift_distributions(result: QAResult):
     return figure, axes
 
 
+def spectroscopic_plot_limits(minimum=0.0, maximum=2.0) -> tuple[float, float]:
+    limits = float(minimum), float(maximum)
+    if not np.isfinite(limits).all() or limits[0] >= limits[1]:
+        raise ValueError("spectroscopic_plot requires finite minimum < maximum")
+    return limits
+
+
+def draw_spectroscopic_heatmaps(fig, axes, panels, limits):
+    """Draw paired redshift counts on a common grid and logarithmic color scale."""
+    edges = np.linspace(*limits, 61)
+    histograms = [
+        np.histogram2d(z_spec, z_phot, bins=(edges, edges))[0].T
+        for z_spec, z_phot, _, _ in panels
+    ]
+    norm = LogNorm(vmin=1, vmax=max(2, max(hist.max() for hist in histograms)))
+    for ax, hist, (_, _, ylabel, title) in zip(axes, histograms, panels):
+        image = ax.imshow(
+            np.ma.masked_equal(hist, 0), origin="lower", interpolation="nearest",
+            extent=(*limits, *limits), cmap="viridis", norm=norm, aspect="equal",
+        )
+        ax.grid(False)
+        ax.plot(limits, limits, color="0.5", linewidth=1, linestyle="--")
+        ax.set(
+            xlim=limits, ylim=limits, xlabel="Spectroscopic redshift", ylabel=ylabel,
+            title=f"{title} (N in range={int(hist.sum()):,})",
+        )
+    fig.colorbar(image, ax=list(axes), label="Objects per bin (log scale)")
+
+
 def plot_spectroscopic_comparison(result: QAResult):
     """Plot the configured photo-z estimate against the spectroscopic reference."""
     pairs = result.spectroscopic_pairs
-    fig, axes = plt.subplots(1, len(pairs), figsize=(9, 4.5), layout="constrained")
-    combined = pd.concat(pairs.values())
-    lower = min(0.0, combined["z_phot"].min()) if len(combined) else 0.0
-    upper = max(0.1, combined.max().max()) if len(combined) else 6.0
-    for ax, (label, sample) in zip(axes, pairs.items()):
-        ax.scatter(sample["z_spec"], sample["z_phot"], s=5, alpha=0.3, rasterized=True)
-        ax.plot([lower, upper], [lower, upper], color="0.5", linewidth=1)
-        ax.set(xlim=(lower, upper), ylim=(lower, upper), xlabel="Spectroscopic redshift",
-               ylabel=result.config["redshift"]["column"], title=f"{label} (N={len(sample):,})")
-        ax.set_aspect("equal", adjustable="box")
+    limits = spectroscopic_plot_limits(**result.config.get("spectroscopic_plot", {}))
+    fig, axes = plt.subplots(1, len(pairs), figsize=(10, 4.5), layout="constrained")
+    panels = [
+        (sample["z_spec"], sample["z_phot"], result.config["redshift"]["column"], label)
+        for label, sample in pairs.items()
+    ]
+    draw_spectroscopic_heatmaps(fig, axes, panels, limits)
     return fig, axes
 
 

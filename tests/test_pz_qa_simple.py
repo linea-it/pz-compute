@@ -36,6 +36,7 @@ def test_v2_configs_are_scalar_only_and_use_algorithm_point_estimates():
     for filename, redshift_column in expected.items():
         config = qa.load_config(NOTEBOOK_DIR / "config" / filename)
         assert config["redshift"]["column"] == redshift_column
+        assert config["spectroscopic_plot"] == {"minimum": 0.0, "maximum": 2.0}
         assert "pdf" not in config
         assert "thresholds" not in config
         assert config["cluster"]["minimum_jobs"] == 8
@@ -235,6 +236,18 @@ def test_simple_qa_never_projects_nested_columns(monkeypatch, tmp_path):
     assert "fzboost_ens_interp" not in catalog.projections[-1]
     figure, axes = qa.plot_spectroscopic_comparison(compared)
     assert len(axes) == 2
+    assert len(figure.axes) == 3
+    assert all(ax.get_xlim() == ax.get_ylim() == (0.0, 2.0) for ax in axes)
+    assert [ax.images[0].get_array().sum() for ax in axes] == [1, 2]
+    assert axes[0].images[0].norm is axes[1].images[0].norm
+    qa.plt.close(figure)
+
+    compared.config["spectroscopic_plot"] = {"minimum": 0.4, "maximum": 1.0}
+    figure, axes = qa.plot_spectroscopic_comparison(compared)
+    assert all(ax.get_xlim() == ax.get_ylim() == (0.4, 1.0) for ax in axes)
+    assert axes[0].images[0].get_array().count() == 0
+    assert axes[1].images[0].get_array().sum() == 1
+    assert compared.spectroscopic_metrics["finite photo-z"].tolist() == [1, 2]
     qa.plt.close(figure)
 
 

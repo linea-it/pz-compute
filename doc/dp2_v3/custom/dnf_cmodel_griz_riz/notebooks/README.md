@@ -19,6 +19,12 @@ for `dnf_z_mean`, `dnf_z_best`, and `DNF_ZN`, and empirical coverage of
 the 68% and 95% intervals. The metrics apply to the selected spectroscopic
 sample. The notebook reads scalar HATS columns.
 
+The spectroscopic heatmaps use a shared logarithmic colorbar for object
+counts per bin within each figure. Both axes default to redshift 0–2.
+Set `PZ_QA_SPEC_Z_MIN` and `PZ_QA_SPEC_Z_MAX` before executing the notebook or
+running `render-qa.sh` to change the view. The accuracy and coverage metrics
+use the full paired samples.
+
 After both Stage 3 products validate, render the delivery artifacts with:
 
 ```bash
