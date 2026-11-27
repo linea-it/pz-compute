@@ -33,5 +33,4 @@ time.
 
 The object count is the sum of `input_rows` in `task-metadata.tsv` and matches
 `hats_nrows` in the Stage 3 primary `pz_summary` catalog. The Slurm figures come
-from `summary.json`. Both benchmark files are archived under
-`not-tracked/2026-11-27/fzboost/stage2/benchmark/production-231501/`.
+from the Stage 2 benchmark `summary.json` for Slurm array `231501`.
