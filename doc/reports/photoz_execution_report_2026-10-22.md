@@ -14,7 +14,7 @@ The DP2 run provides the most representative production-scale measurement. Its 2
 
 The DP2 BPZ Test did not complete. Two full-catalog attempts exceeded their memory allocations, and a third attempt with a higher limit was interrupted when the cluster had to be released. Consequently, no BPZ Test products should yet be treated as complete or scientifically validated.
 
-Scientific QA reports for the completed FlexZBoost products are temporarily available at [dev.linea.org.br/~luigi.silva/general_files/](https://dev.linea.org.br/~luigi.silva/general_files/). They will be presented separately.
+Scientific QA reports for the completed FlexZBoost products will be presented separately.
 
 ## Production outputs
 
