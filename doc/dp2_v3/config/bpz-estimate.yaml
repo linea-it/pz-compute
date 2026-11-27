@@ -1,0 +1,28 @@
+zmin: 0.0
+zmax: 6.0
+nzbins: 601
+dz: 0.01
+nondetect_val: .nan
+unobserved_val: -99.0
+mag_limits:
+  u_gaap1p0Mag_sfd: 26.5
+  g_gaap1p0Mag_sfd: 27.8
+  r_gaap1p0Mag_sfd: 27.1
+  i_gaap1p0Mag_sfd: 26.7
+  z_gaap1p0Mag_sfd: 25.8
+  y_gaap1p0Mag_sfd: 24.6
+filter_list:
+  - lsstcam_u
+  - lsstcam_g
+  - lsstcam_r
+  - lsstcam_i
+  - lsstcam_z
+  - lsstcam_y
+spectra_file: cosmossedswdust136.list
+madau_flag: "yes"
+no_prior: false
+p_min: 0.005
+gauss_kernel: 0.0
+zp_errors: [0.03, 0.03, 0.03, 0.03, 0.03, 0.03]
+mag_err_min: 0.005
+override_file_offsets: false

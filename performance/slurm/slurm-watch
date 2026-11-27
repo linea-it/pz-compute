@@ -1,0 +1,342 @@
+#!/usr/bin/env python3
+"""Sample inexpensive live Slurm and filesystem metrics for one workflow."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+import time
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+SSTAT_FIELDS = (
+    "JobID",
+    "AveCPU",
+    "AveRSS",
+    "MaxRSS",
+    "MaxVMSize",
+    "AveDiskRead",
+    "AveDiskWrite",
+    "MaxDiskRead",
+    "MaxDiskWrite",
+)
+TERMINAL_STATES = {
+    "BOOT_FAIL",
+    "CANCELLED",
+    "COMPLETED",
+    "DEADLINE",
+    "FAILED",
+    "NODE_FAIL",
+    "OUT_OF_MEMORY",
+    "PREEMPTED",
+    "REVOKED",
+    "TIMEOUT",
+}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Poll squeue and sstat at low frequency while jobs are active, and "
+            "optionally sample filesystem capacity."
+        )
+    )
+    parser.add_argument("--job-id", action="append", default=[])
+    parser.add_argument("--job-id-file", action="append", default=[], type=Path)
+    parser.add_argument(
+        "--job-name",
+        action="append",
+        default=[],
+        help="also follow queued jobs with this exact name (repeatable)",
+    )
+    parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--interval-seconds", type=float, default=60.0)
+    parser.add_argument("--startup-timeout-seconds", type=float, default=300.0)
+    parser.add_argument("--storage-path", action="append", default=[], type=Path)
+    parser.add_argument("--context", action="append", default=[], metavar="KEY=VALUE")
+    args = parser.parse_args()
+    if args.interval_seconds <= 0:
+        parser.error("--interval-seconds must be positive")
+    if args.startup_timeout_seconds < 0:
+        parser.error("--startup-timeout-seconds must be nonnegative")
+    if not args.job_id and not args.job_id_file and not args.job_name:
+        parser.error("provide --job-id, --job-id-file, or --job-name")
+    return args
+
+
+def collect_job_ids(args: argparse.Namespace) -> list[str]:
+    values = []
+    for value in args.job_id:
+        values.extend(value.split(","))
+    for path in args.job_id_file:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            value = line.split("#", 1)[0].strip()
+            if value:
+                values.extend(value.split(","))
+    result = []
+    for value in values:
+        value = value.strip().split(";", 1)[0]
+        if not re.fullmatch(r"[0-9]+(?:_[0-9]+)?", value):
+            raise SystemExit(f"invalid Slurm job id: {value!r}")
+        if value not in result:
+            result.append(value)
+    return result
+
+
+def run(command: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, text=True, capture_output=True)
+
+
+def array_task_count(job_id: str) -> int:
+    match = re.search(r"_\[([^]]+)\]", job_id)
+    if not match:
+        return 1
+    expression = match.group(1).split("%", 1)[0]
+    count = 0
+    for item in expression.split(","):
+        if "-" in item:
+            start, end = item.split("-", 1)
+            if ":" in end:
+                end, step = end.split(":", 1)
+            else:
+                step = "1"
+            count += (int(end) - int(start)) // int(step) + 1
+        else:
+            count += 1
+    return count
+
+
+def query_queue(job_ids: list[str], job_names: list[str]) -> list[dict[str, object]]:
+    commands = []
+    if job_ids:
+        commands.append(
+            [
+                "squeue",
+                "--noheader",
+                f"--jobs={','.join(job_ids)}",
+                "--format=%i|%T|%r",
+            ]
+        )
+    commands.extend(
+        ["squeue", "--noheader", f"--name={name}", "--format=%i|%T|%r"]
+        for name in job_names
+    )
+
+    rows_by_key = {}
+    for command in commands:
+        result = run(command)
+        if result.returncode:
+            raise RuntimeError(result.stderr.strip() or "squeue failed")
+        for line in result.stdout.splitlines():
+            fields = line.split("|", 2)
+            if len(fields) != 3:
+                continue
+            job_id, state, reason = (field.strip() for field in fields)
+            row = {
+                "job_id": job_id,
+                "state": state,
+                "reason": reason or "None",
+                "task_count": array_task_count(job_id),
+            }
+            rows_by_key[(job_id, state, reason)] = row
+    return list(rows_by_key.values())
+
+
+def live_job_ids(anchor_job_ids: list[str], queue_rows: list[dict[str, object]]) -> list[str]:
+    result = list(anchor_job_ids)
+    for row in queue_rows:
+        match = re.match(r"([0-9]+)", str(row["job_id"]))
+        if match and match.group(1) not in result:
+            result.append(match.group(1))
+    return result
+
+
+def query_steps(job_ids: list[str]) -> list[dict[str, str]]:
+    result = run(
+        [
+            "sstat",
+            f"--jobs={','.join(job_ids)}",
+            "--allsteps",
+            "--parsable2",
+            "--noheader",
+            "--units=K",
+            f"--format={','.join(SSTAT_FIELDS)}",
+        ]
+    )
+    if result.returncode:
+        return []
+    rows = []
+    for line in result.stdout.splitlines():
+        values = line.rstrip("|").split("|")
+        if len(values) == len(SSTAT_FIELDS):
+            rows.append(dict(zip(SSTAT_FIELDS, values)))
+    return rows
+
+
+def accounting_is_terminal(job_ids: list[str]) -> bool:
+    result = run(
+        [
+            "sacct",
+            "-X",
+            f"--jobs={','.join(job_ids)}",
+            "--noheader",
+            "--parsable2",
+            "--format=State",
+        ]
+    )
+    if result.returncode:
+        return False
+    states = [
+        line.rstrip("|").split()[0].rstrip("+")
+        for line in result.stdout.splitlines()
+        if line.strip("|")
+    ]
+    return bool(states) and all(state in TERMINAL_STATES for state in states)
+
+
+def filesystem_row(path: Path) -> dict[str, object]:
+    resolved = path.resolve()
+    stats = os.statvfs(resolved)
+    return {
+        "path": str(resolved),
+        "total_bytes": stats.f_blocks * stats.f_frsize,
+        "available_bytes": stats.f_bavail * stats.f_frsize,
+        "free_bytes": stats.f_bfree * stats.f_frsize,
+    }
+
+
+def main() -> int:
+    args = parse_args()
+    job_ids = collect_job_ids(args)
+    for command in ("squeue", "sstat", "sacct"):
+        if run([command, "--version"]).returncode:
+            raise SystemExit(f"required command is unavailable: {command}")
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    queue_path = args.output_dir / "scheduler-samples.tsv"
+    step_path = args.output_dir / "step-samples.tsv"
+    storage_path = args.output_dir / "storage-samples.tsv"
+    queue_fields = ["timestamp_utc", "job_id", "state", "reason", "task_count"]
+    step_fields = ["timestamp_utc", *SSTAT_FIELDS]
+    storage_fields = [
+        "timestamp_utc",
+        "path",
+        "total_bytes",
+        "available_bytes",
+        "free_bytes",
+    ]
+    state_max = Counter()
+    reason_max = Counter()
+    storage_min = {}
+    samples = 0
+    started = time.monotonic()
+    status = "completed"
+
+    context_values = {}
+    for item in args.context:
+        if "=" not in item:
+            raise SystemExit("--context values must use KEY=VALUE")
+        key, value = item.split("=", 1)
+        context_values[key] = value
+    context = {
+        "started_at_utc": datetime.now(timezone.utc).isoformat(),
+        "hostname": socket.gethostname(),
+        "command": sys.argv,
+        "job_ids": job_ids,
+        "job_names": args.job_name,
+        "interval_seconds": args.interval_seconds,
+        "context": context_values,
+    }
+    (args.output_dir / "monitor-context.json").write_text(
+        json.dumps(context, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    try:
+        with (
+            queue_path.open("w", encoding="utf-8", newline="") as queue_stream,
+            step_path.open("w", encoding="utf-8", newline="") as step_stream,
+            storage_path.open("w", encoding="utf-8", newline="") as storage_stream,
+        ):
+            queue_writer = csv.DictWriter(queue_stream, fieldnames=queue_fields, delimiter="\t")
+            step_writer = csv.DictWriter(step_stream, fieldnames=step_fields, delimiter="\t")
+            storage_writer = csv.DictWriter(
+                storage_stream, fieldnames=storage_fields, delimiter="\t"
+            )
+            queue_writer.writeheader()
+            step_writer.writeheader()
+            storage_writer.writeheader()
+            saw_queue_rows = False
+            while True:
+                timestamp = datetime.now(timezone.utc).isoformat()
+                queue_rows = query_queue(job_ids, args.job_name)
+                saw_queue_rows = saw_queue_rows or bool(queue_rows)
+                state_counts = Counter()
+                reason_counts = Counter()
+                for row in queue_rows:
+                    count = int(row["task_count"])
+                    state_counts[str(row["state"])] += count
+                    reason_counts[str(row["reason"])] += count
+                    queue_writer.writerow({"timestamp_utc": timestamp, **row})
+                for key, value in state_counts.items():
+                    state_max[key] = max(state_max[key], value)
+                for key, value in reason_counts.items():
+                    reason_max[key] = max(reason_max[key], value)
+
+                current_job_ids = live_job_ids(job_ids, queue_rows)
+                step_rows = query_steps(current_job_ids) if current_job_ids else []
+                for row in step_rows:
+                    step_writer.writerow({"timestamp_utc": timestamp, **row})
+                for path in args.storage_path:
+                    row = filesystem_row(path)
+                    storage_writer.writerow({"timestamp_utc": timestamp, **row})
+                    key = str(row["path"])
+                    available = int(row["available_bytes"])
+                    storage_min[key] = min(storage_min.get(key, available), available)
+                queue_stream.flush()
+                step_stream.flush()
+                storage_stream.flush()
+                samples += 1
+
+                anchors_terminal = bool(job_ids) and accounting_is_terminal(job_ids)
+                names_finished = bool(args.job_name) and saw_queue_rows and not queue_rows
+                if not queue_rows and (anchors_terminal or (not job_ids and names_finished)):
+                    break
+                if not queue_rows and time.monotonic() - started >= args.startup_timeout_seconds:
+                    status = "startup_timeout"
+                    break
+                time.sleep(args.interval_seconds)
+    except KeyboardInterrupt:
+        status = "interrupted"
+
+    summary = {
+        "schema_version": 1,
+        "status": status,
+        "finished_at_utc": datetime.now(timezone.utc).isoformat(),
+        "samples": samples,
+        "max_tasks_by_state": dict(sorted(state_max.items())),
+        "max_tasks_by_reason": dict(sorted(reason_max.items())),
+        "minimum_available_bytes_by_path": dict(sorted(storage_min.items())),
+        "artifacts": [
+            queue_path.name,
+            step_path.name,
+            storage_path.name,
+            "monitor-context.json",
+        ],
+    }
+    (args.output_dir / "monitor-summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0 if status in {"completed", "interrupted"} else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,354 @@
+"""Photometric columns derived at estimation time.
+
+This module deliberately has no RAIL dependency so its transformations can be
+tested independently and reused by command-line front ends.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from math import log
+
+import numpy as np
+
+
+# Legacy default retained for callers outside the versioned DP2 v3 workflow.
+# DP2 v3 passes its pinned LSSTCam coefficients explicitly.
+SFD_A_EBV = {
+    "u": 4.81,
+    "g": 3.64,
+    "r": 2.70,
+    "i": 2.06,
+    "z": 1.58,
+    "y": 1.31,
+}
+SFD_BANDS = tuple("ugrizy")
+SFD_SUFFIX = "_sfd"
+AB_NJY_ZEROPOINT = 31.4
+MAG_ERROR_FACTOR = 2.5 / log(10.0)
+INPUT_PHOTOMETRY_QUALITY_VERSION = "selected-photometry-v1"
+
+
+def parse_column_list(value: str | None) -> tuple[str, ...]:
+    """Parse a comma-separated list while retaining order and removing duplicates."""
+    result = []
+    seen = set()
+    for raw_name in (value or "").split(","):
+        name = raw_name.strip()
+        if not name:
+            continue
+        if "/" in name:
+            raise ValueError(f"column names cannot contain '/': {name}")
+        if name not in seen:
+            result.append(name)
+            seen.add(name)
+    return tuple(result)
+
+
+def table_column_names(table) -> set[str]:
+    columns = getattr(table, "columns", None)
+    if columns is not None:
+        return set(columns)
+    if isinstance(table, Mapping):
+        return set(table)
+    raise TypeError(f"unsupported input table type: {type(table).__name__}")
+
+
+def table_row_count(table) -> int:
+    """Return a table row count without relying on column order."""
+    columns = table_column_names(table)
+    if not columns:
+        return 0
+    first = next(iter(columns))
+    return len(table[first])
+
+
+def _column(table, name: str) -> np.ndarray:
+    return np.asarray(table[name])
+
+
+def _set_column(table, name: str, values: np.ndarray) -> None:
+    if not hasattr(table, "__setitem__"):
+        raise TypeError(f"input table is not mutable: {type(table).__name__}")
+    table[name] = values
+
+
+def projected_input_columns(
+    schema_names: Sequence[str],
+    required_columns: Sequence[str],
+    ebv_column: str,
+) -> list[str]:
+    """Choose only parquet fields needed to supply or derive requested columns."""
+    available = set(schema_names)
+    selected = []
+    for name in required_columns:
+        if name in available:
+            candidates = (name,)
+        elif name.endswith(SFD_SUFFIX):
+            raw = name[: -len(SFD_SUFFIX)]
+            if raw in available:
+                candidates = (raw,)
+            elif raw.endswith("MagErr"):
+                prefix = raw[: -len("MagErr")]
+                candidates = (f"{prefix}Flux", f"{prefix}FluxErr")
+            elif raw.endswith("Mag"):
+                prefix = raw[: -len("Mag")]
+                candidates = (f"{prefix}Flux",)
+            else:
+                candidates = ()
+        else:
+            candidates = ()
+        for candidate in candidates:
+            if candidate in available and candidate not in selected:
+                selected.append(candidate)
+        if (
+            name.endswith(f"Mag{SFD_SUFFIX}")
+            and name not in available
+            and ebv_column in available
+            and ebv_column not in selected
+        ):
+            selected.append(ebv_column)
+    return selected
+
+
+def _band_from_column(column: str) -> str:
+    band = column.split("_", 1)[0]
+    if band not in SFD_A_EBV:
+        raise ValueError(
+            f"cannot infer an LSST band from derived SFD column: {column}"
+        )
+    return band
+
+
+def _magnitude_from_flux(flux: np.ndarray) -> np.ndarray:
+    flux = np.asarray(flux, dtype=np.float64)
+    result = np.full(flux.shape, np.nan, dtype=np.float64)
+    valid = np.isfinite(flux) & (flux > 0)
+    result[valid] = AB_NJY_ZEROPOINT - 2.5 * np.log10(flux[valid])
+    return result
+
+
+def _magnitude_error_from_flux(flux: np.ndarray, flux_error: np.ndarray) -> np.ndarray:
+    flux = np.asarray(flux, dtype=np.float64)
+    flux_error = np.asarray(flux_error, dtype=np.float64)
+    result = np.full(np.broadcast_shapes(flux.shape, flux_error.shape), np.nan)
+    valid = np.isfinite(flux) & np.isfinite(flux_error) & (flux > 0)
+    result[valid] = MAG_ERROR_FACTOR * np.abs(flux_error[valid] / flux[valid])
+    return result
+
+
+def normalize_sfd_coefficients(
+    coefficients: Mapping[str, float] | None,
+) -> dict[str, float]:
+    """Validate and normalize an SFD coefficient mapping for all LSST bands."""
+    source = SFD_A_EBV if coefficients is None else coefficients
+    if not isinstance(source, Mapping):
+        raise ValueError("SFD coefficients must be a band-to-value mapping")
+    missing = [band for band in SFD_BANDS if band not in source]
+    extra = sorted(set(source) - set(SFD_BANDS))
+    if missing or extra:
+        raise ValueError(
+            f"SFD coefficients require exactly {''.join(SFD_BANDS)}; "
+            f"missing={missing}, extra={extra}"
+        )
+    try:
+        normalized = {band: float(source[band]) for band in SFD_BANDS}
+    except (TypeError, ValueError) as error:
+        raise ValueError("SFD coefficients must be numeric") from error
+    if not all(np.isfinite(value) and value >= 0 for value in normalized.values()):
+        raise ValueError("SFD coefficients must be finite and non-negative")
+    return normalized
+
+
+def materialize_sfd_columns(
+    table,
+    columns: Sequence[str],
+    ebv_column: str = "ebv",
+    sfd_a_ebv: Mapping[str, float] | None = None,
+) -> None:
+    """Materialize requested SFD columns in place, computing each at most once.
+
+    Magnitudes are corrected as ``mag_sfd = mag - R_band * E(B-V)``. Magnitude
+    uncertainties retain their measured value because a deterministic
+    foreground correction does not change the measurement uncertainty. If raw
+    magnitude columns are absent, LSST fluxes in nJy are converted first.
+    """
+    coefficients = normalize_sfd_coefficients(sfd_a_ebv)
+    for output_name in dict.fromkeys(columns):
+        if not output_name.endswith(SFD_SUFFIX):
+            continue
+        names = table_column_names(table)
+        if output_name in names:
+            continue
+
+        raw_name = output_name[: -len(SFD_SUFFIX)]
+        band = _band_from_column(output_name)
+
+        if raw_name.endswith("MagErr"):
+            if raw_name in names:
+                values = np.array(_column(table, raw_name), copy=True)
+            else:
+                prefix = raw_name[: -len("MagErr")]
+                flux_name = f"{prefix}Flux"
+                flux_error_name = f"{prefix}FluxErr"
+                missing = [name for name in (flux_name, flux_error_name) if name not in names]
+                if missing:
+                    raise ValueError(
+                        f"cannot derive {output_name}; missing input columns: {missing}"
+                    )
+                values = _magnitude_error_from_flux(
+                    _column(table, flux_name), _column(table, flux_error_name)
+                )
+        elif raw_name.endswith("Mag"):
+            if ebv_column not in names:
+                raise ValueError(
+                    f"cannot derive {output_name}; missing E(B-V) column: {ebv_column}"
+                )
+            if raw_name in names:
+                magnitude = np.asarray(_column(table, raw_name), dtype=np.float64)
+            else:
+                prefix = raw_name[: -len("Mag")]
+                flux_name = f"{prefix}Flux"
+                if flux_name not in names:
+                    raise ValueError(
+                        f"cannot derive {output_name}; missing input columns: "
+                        f"{raw_name} or {flux_name}"
+                    )
+                magnitude = _magnitude_from_flux(_column(table, flux_name))
+            values = magnitude - coefficients[band] * np.asarray(
+                _column(table, ebv_column), dtype=np.float64
+            )
+        else:
+            raise ValueError(
+                f"unsupported generated column {output_name}; SFD columns must end "
+                "in Mag_sfd or MagErr_sfd"
+            )
+
+        _set_column(table, output_name, values)
+
+
+def copy_columns(table, columns: Sequence[str]) -> dict[str, np.ndarray]:
+    """Copy selected columns before an estimator can mutate its input arrays."""
+    names = table_column_names(table)
+    missing = [name for name in columns if name not in names]
+    if missing:
+        raise ValueError(f"output columns are unavailable: {missing}")
+    return {name: np.array(_column(table, name), copy=True) for name in columns}
+
+
+def selected_photometry_quality_and_mask(
+    table,
+    bands: Sequence[str],
+    magnitude_columns: Sequence[str],
+    error_columns: Sequence[str],
+    nondetect_value: float,
+) -> tuple[dict[str, str | int], np.ndarray]:
+    """Summarize selected-band availability and return its no-estimate mask."""
+    if not (len(bands) == len(magnitude_columns) == len(error_columns)):
+        raise ValueError("band, magnitude, and error column counts must match")
+    if not bands:
+        raise ValueError("at least one selected band is required")
+    if len(set(bands)) != len(bands):
+        raise ValueError("selected bands must be unique")
+
+    names = table_column_names(table)
+    required = list(magnitude_columns) + list(error_columns)
+    missing_columns = [name for name in required if name not in names]
+    if missing_columns:
+        raise ValueError(
+            f"photometry quality columns are unavailable: {missing_columns}"
+        )
+
+    row_count = table_row_count(table)
+    use_nan = np.isnan(nondetect_value)
+    missing_masks = []
+    usable_masks = []
+    result: dict[str, str | int] = {
+        "method": INPUT_PHOTOMETRY_QUALITY_VERSION,
+        "rows": row_count,
+        "selected_bands": "".join(bands),
+    }
+
+    for band, magnitude_name, error_name in zip(
+        bands, magnitude_columns, error_columns
+    ):
+        if not band or not band.replace("_", "").isalnum():
+            raise ValueError(f"invalid band label for quality metadata: {band}")
+        magnitudes = np.asarray(_column(table, magnitude_name), dtype=np.float64)
+        errors = np.asarray(_column(table, error_name), dtype=np.float64)
+        if magnitudes.ndim != 1 or errors.ndim != 1:
+            raise ValueError("photometry quality columns must be one-dimensional")
+        if len(magnitudes) != row_count or len(errors) != row_count:
+            raise ValueError("photometry quality column row counts differ")
+
+        missing = np.isnan(magnitudes) if use_nan else np.isclose(
+            magnitudes, nondetect_value
+        )
+        usable = ~missing & np.isfinite(magnitudes) & np.isfinite(errors)
+        missing_masks.append(missing)
+        usable_masks.append(usable)
+        result[f"missing_{band}_rows"] = int(np.count_nonzero(missing))
+        result[f"unusable_{band}_rows"] = int(np.count_nonzero(~usable))
+
+    complete_nondetection = np.logical_and.reduce(missing_masks)
+    any_usable = np.logical_or.reduce(usable_masks)
+    result["complete_selected_band_nondetection_rows"] = int(
+        np.count_nonzero(complete_nondetection)
+    )
+    no_usable = ~any_usable
+    result["no_usable_selected_band_rows"] = int(np.count_nonzero(no_usable))
+    return result, no_usable
+
+
+def selected_photometry_quality(
+    table,
+    bands: Sequence[str],
+    magnitude_columns: Sequence[str],
+    error_columns: Sequence[str],
+    nondetect_value: float,
+) -> dict[str, str | int]:
+    """Summarize selected-band availability before non-detection replacement."""
+    quality, _ = selected_photometry_quality_and_mask(
+        table,
+        bands,
+        magnitude_columns,
+        error_columns,
+        nondetect_value,
+    )
+    return quality
+
+
+def replace_nondetections(
+    table,
+    magnitude_columns: Sequence[str],
+    error_columns: Sequence[str],
+    magnitude_limits: Mapping[str, float],
+    nondetect_value: float,
+    replacement_error: float = 1.0,
+) -> dict[str, int]:
+    """Apply configured magnitude-limit replacement without chained assignment."""
+    if len(magnitude_columns) != len(error_columns):
+        raise ValueError("magnitude and error column counts must match")
+    names = table_column_names(table)
+    required = list(magnitude_columns) + list(error_columns)
+    missing = [name for name in required if name not in names]
+    if missing:
+        raise ValueError(f"non-detection columns are unavailable: {missing}")
+    missing_limits = [name for name in magnitude_columns if name not in magnitude_limits]
+    if missing_limits:
+        raise ValueError(f"magnitude limits are unavailable: {missing_limits}")
+
+    counts = {}
+    use_nan = np.isnan(nondetect_value)
+    for magnitude_name, error_name in zip(magnitude_columns, error_columns):
+        magnitudes = np.array(_column(table, magnitude_name), copy=True)
+        errors = np.array(_column(table, error_name), copy=True)
+        mask = np.isnan(magnitudes) if use_nan else np.isclose(
+            magnitudes, nondetect_value
+        )
+        magnitudes[mask] = float(magnitude_limits[magnitude_name])
+        errors[mask] = float(replacement_error)
+        _set_column(table, magnitude_name, magnitudes)
+        _set_column(table, error_name, errors)
+        counts[magnitude_name] = int(np.count_nonzero(mask))
+    return counts

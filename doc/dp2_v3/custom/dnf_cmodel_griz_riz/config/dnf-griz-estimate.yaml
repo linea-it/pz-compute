@@ -1,0 +1,24 @@
+# Custom DP2 DNF cModel griz estimation configuration.
+# PDFs are computed internally; the Stage 3 delivery is scalar-only.
+zmin: 0.0
+zmax: 6.0
+nzbins: 601
+chunk_size: 10000
+nondetect_val: .nan
+bands:
+  - g_cModelMag_sfd
+  - r_cModelMag_sfd
+  - i_cModelMag_sfd
+  - z_cModelMag_sfd
+err_bands:
+  - g_cModelMagErr_sfd
+  - r_cModelMagErr_sfd
+  - i_cModelMagErr_sfd
+  - z_cModelMagErr_sfd
+mag_limits:
+  g_cModelMag_sfd: 27.8
+  r_cModelMag_sfd: 27.1
+  i_cModelMag_sfd: 26.7
+  z_cModelMag_sfd: 25.8
+redshift_col: redshift
+selection_mode: 1
